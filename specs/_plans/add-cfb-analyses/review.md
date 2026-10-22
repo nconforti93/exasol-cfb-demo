@@ -391,3 +391,8 @@ Result: 78 scenarios (69 + 9 new), all mapped; 34 tasks (31 + 3: 1.7, 3.7, 4.6),
 - `spikes/s4/` must be committed before probe 1.1(a).
 - 7.3 needs a window with no other session spending CFBD calls.
 - Owner review U3/Q13 (no `/teams/matchup`) stays open and does not block.
+
+## Cross-plan items from Phase 6 (2026-10-22)
+
+- **P6-a:** add `REQ_ROWS` (rows per slice) to `CFB_API_LIVE.GAME_PREVIEW`. Fallback: the app backend counts the result rows per slice itself.
+- **P6-b:** the IT harness keeps the `CFB_TEST_APP` password in memory and exposes it, so the Phase 6 E2E test can pass it to the app server process.
