@@ -76,6 +76,8 @@ entries:
     note: Elo and postgame win probability per game; the API has no games for 1871.
 
   # The pregame win probability is derived from spreads, so it starts with the betting-line era.
+  # These three weekly entries have distinct priorities (4, 5, 6) on purpose: entries of equal
+  # priority load season by season, which would make 28 one-slice batches instead of 2 fan-outs.
   - table: METRICS_WP_PREGAME
     profile: demo
     priority: 4
@@ -84,7 +86,7 @@ entries:
     refresh_class: weekly
   - table: RATINGS_SP
     profile: demo
-    priority: 4
+    priority: 5
     slicing: season
     seasons: {from: 2013}
     refresh_class: weekly
@@ -93,7 +95,7 @@ entries:
   # without RANKINGS_POLLS. The CFP committee polls start in 2014.
   - table: RANKINGS_POLLS_RANKS
     profile: demo
-    priority: 5
+    priority: 6
     slicing: season
     seasons: {from: 2014}
     refresh_class: weekly

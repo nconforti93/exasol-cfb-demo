@@ -57,12 +57,14 @@ coverage:
 	$(RUN) coverage report --include="vs/cfbd_vs/*"
 	$(RUN) coverage report --include="vs/gen/*"
 
+# `LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"` overrides loader settings of
+# loader/load-plan.yaml until the next deploy. `make deploy` also deploys the loader (loader/deploy.py).
 # `ARGS` passes options through, e.g. make deploy ARGS="--prefix PROBE_ --no-sync-api-features".
 # `--prefix` deploys that namespace as sys (not TEST_, which the integration harness owns) and is
 # refused together with the real connection.
 # scripts.deploy rebuilds the bundle itself, so a direct `python -m scripts.deploy` is also safe.
 deploy: db-check bundle
-	$(PY) -m scripts.deploy $(ARGS)
+	$(PY) -m scripts.deploy $(if $(LOADER_CONFIG),--loader-config "$(LOADER_CONFIG)") $(ARGS)
 
 grants: db-check
 	$(PY) -m scripts.grants $(ARGS)

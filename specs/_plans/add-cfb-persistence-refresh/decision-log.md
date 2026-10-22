@@ -558,6 +558,80 @@ No git commit is made before implementation.
   - `SUM(ROUND(x, 8))` over identical data differed by 9.3e-10 between evaluations; the DECIMAL sum never did.
 - **Promotes to ADR:** no (it amends [15], whose ADR states the final format)
 
+### [32] Two helper views, `LOADER_SETTINGS` and `LOAD_ORPHANS`, join the four views of the plan (task 3.2)
+
+- **Decision:**
+  - `LOADER_SETTINGS` is a one-row view: `CLOCK_UTC`, `NOW_UTC` (`NOW_OVERRIDE` or the clock), `CURRENT_SEASON`, the settings of `LOADER_CONFIG` as typed columns, and the virtual schema's `API_FEATURES`. Every other view and the Lua scripts read the date, the season and the gating from it.
+  - `LOAD_ORPHANS` lists the orphan slices (a loader-written `LOAD_LOG` row for a planned table whose key matches no `LOAD_SLICES` row). `LOAD_STATUS`, `BACKFILL_QUEUE` and the deploy warning read it.
+  - `vs/host/metaddl.py` creates the six views in the order `LOADER_SETTINGS`, `LOAD_SLICES`, `LOAD_ORPHANS`, `BACKFILL_QUEUE`, `LOAD_STATUS`, `QUOTA`; each reads only tables and views before it.
+- **Alternatives:** Repeat the clock and the feature test in each view; compute orphans inside `LOAD_STATUS` only.
+- **Rationale:** "Now" is one expression (probe 1.1l), so the test clock cannot drift between views. The orphan rule is needed in three places, and one definition keeps them equal.
+- **Promotes to ADR:** no
+
+### [33] `QUOTA.RESET_AT` is a UTC `TIMESTAMP`
+
+- **Decision:** `QUOTA.RESET_AT` is `/info`'s `resetAt` (ISO text with `T` and `Z`) converted to a `TIMESTAMP` in UTC. `PERIOD_START = ADD_MONTHS(RESET_AT, -1)`. `LOAD_LOG`, `FETCH_LOG` and `LOADER_SETTINGS.CLOCK_UTC` are UTC too, so the period test is a plain timestamp comparison.
+- **Alternatives:** Keep `resetAt` as text; convert it to the session time zone.
+- **Rationale:** The session time zone is `CET` on Personal (probe 1.1l). A local `RESET_AT` would move the month boundary by one or two hours against the `FETCH_LOG` rows it is compared with.
+- **Promotes to ADR:** no
+
+### [34] Spend attribution counts `FETCH_LOG.ATTEMPTS`, not rows
+
+- **Decision:** `QUOTA.BACKFILL_CALLS` and `REFRESH_CALLS` sum `GREATEST(COALESCE(ATTEMPTS, 1), 1)` over the `LIVE` `FETCH_LOG` rows of the current period whose `CONTEXT` is `BACKFILL#<run>` or `REFRESH_WEEK#<run>`. `OTHER_CALLS = GREATEST(0, USED_CALLS − BACKFILL_CALLS − REFRESH_CALLS)`.
+- **Alternatives:** Count rows (one per slice).
+- **Rationale:** A retried request costs the key a call per HTTP attempt. Counting rows would show the loader as cheaper than it is and push the difference into `OTHER_CALLS`. Batches that failed are rolled back, so their calls appear only in `OTHER_CALLS`.
+- **Promotes to ADR:** no
+
+### [35] `CALLS_TO_COMPLETE` includes tables that orphans block
+
+- **Decision:** `LOAD_STATUS.CALLS_TO_COMPLETE` and `QUOTA.DEMO_CALLS_TO_COMPLETE` / `FULL_CALLS_TO_COMPLETE` count every pending slice (not a gap, not quarantined), also those of a table blocked by orphans. `BACKFILL_QUEUE` leaves those tables out.
+- **Alternatives:** Count only what the queue can fetch now.
+- **Rationale:** The calls are still needed once the owner resolves the orphans, and the status must not report "nothing left" for a table that is stuck.
+- **Promotes to ADR:** no
+
+### [36] `LOAD_STATUS.BLOCKED_BY` holds a feature name or `'ORPHANS'`
+
+- **Decision:** `BLOCKED_BY` is the missing API feature of a gated entry (for example `weather`; the entry then has no slices), else `'ORPHANS'` when its table has orphan slices, else NULL. A missing feature wins over orphans.
+- **Alternatives:** Two columns (`BLOCKED_BY_FEATURE`, `HAS_ORPHANS`); a free-text reason.
+- **Rationale:** One column answers "why does this entry not load", and the two reasons are exclusive in practice: a gated table without its feature lists no slices, so it has no orphans (decision [38]). `ORPHAN_SLICES` carries the count.
+- **Promotes to ADR:** no
+
+### [37] The slice of a `season_range` or `none` entry is always planned
+
+- **Decision:** A `none` or `season_range` entry gives exactly one slice with `SEASON` NULL, whatever the current season is. Only `season` entries are limited to the seasons from `SEASON_FROM` to the current season (or `SEASON_TO`). A range's bounds are the entry's own `SEASON_FROM` / `SEASON_TO`.
+- **Alternatives:** Clip or drop a range whose end is beyond the current season.
+- **Rationale:** A range slice is one API call by definition (`CONFERENCES_AFFILIATIONS` 1869–2025). It does not depend on the clock, and `from_season` never skips it (review M4).
+- **Promotes to ADR:** no
+
+### [38] Gated tables never report orphans
+
+- **Decision:** `LOAD_ORPHANS` skips a table whose API feature is missing from `API_FEATURES`. `LOAD_SLICES` lists no slices for it then, so its stored slices would all look orphaned.
+- **Alternatives:** Report them with a note; treat a missing feature as an error.
+- **Rationale:** A missing feature is a normal state (the key's tier), not a catalog or plan change. The orphan rule (decision [23]) is for those. `LOAD_STATUS` shows the entry as blocked by the feature, and the orphans appear once the feature returns and the keys really do not match.
+- **Promotes to ADR:** no
+
+### [39] The demo plan gives each weekly entry its own priority (4, 5, 6)
+
+- **Decision:** In `loader/load-plan.yaml`, `METRICS_WP_PREGAME` has priority 4, `RATINGS_SP` 5 and `RANKINGS_POLLS_RANKS` 6, where the first draft had 4, 4 and 5. A test pins the season-sliced priorities as distinct. The backfill total stays 217 calls.
+- **Alternatives:** Keep equal priorities for `METRICS_WP_PREGAME` and `RATINGS_SP`.
+- **Rationale:** The queue order is priority, then newest season (decision [12]), so entries of equal priority load season by season, and a batch never mixes entries. The two endpoints would give 28 one-slice batches. Distinct priorities give one fan-out of 14 slices each: 2 batches.
+- **Promotes to ADR:** no
+
+### [40] The loader deploy validates first, installs the Lua in memory and keeps the plan file's hash
+
+- **Decision:**
+  - `loader/deploy.py` reads, validates and compiles the plan and the `LOADER_CONFIG` overrides before it sends any statement. An invalid plan or override changes nothing, and the four plan tables are replaced in one transaction (`set_autocommit(False)`, then `COMMIT`; `ROLLBACK` on failure).
+  - The Lua statements are built in memory for the namespace (`loader.bundle.build_script`), not read from `build/sql/loader_*.sql`. A script without sources is skipped with a notice.
+  - `LOAD_PLAN.PLAN_HASH` is the hash of the plan file. A `LOADER_CONFIG` override changes the settings but not the hash.
+  - `NOW_OVERRIDE` is dropped with a warning outside a `TEST_` namespace.
+- **Alternatives:**
+  - Install the files of `build/sql`.
+  - Hash the effective settings.
+- **Rationale:**
+  - The files hold the names of the real namespace, so a prefixed namespace would need its own file.
+  - A snapshot compares plan hashes on restore, and the October budget override on AWS must not make a local snapshot look like a different plan.
+- **Promotes to ADR:** no
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. The plan review (pre-implementation) is resolved in review.md § Review resolution. -->

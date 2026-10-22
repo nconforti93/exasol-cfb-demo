@@ -18,7 +18,7 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 
 ## Group C
 - [x] 2.3 Author `loader/load-plan.yaml`:
-- [ ] 3.3 Loader deploy `loader/deploy.py`, called by `scripts/deploy.py` after the VS deploy and by the IT ha
+- [x] 3.3 Loader deploy `loader/deploy.py`, called by `scripts/deploy.py` after the VS deploy and by the IT ha
 
 ## Group D
 - [ ] 5.1 `scripts/loader_cli.py` with the subcommands `backfill`, `refresh` and `quota`, and the make targets
