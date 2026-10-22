@@ -63,7 +63,7 @@ def test_the_reset_cleared_the_clock_and_kept_the_plan(harness: Harness) -> None
 
 def test_a_plan_variant_replaces_the_plan_and_registers_gaps(harness: Harness) -> None:
     report = harness.deploy_plan("gaps", {"now_override": NOW})
-    assert report.skipped_scripts == ("BACKFILL", "REFRESH_WEEK")
+    assert report.skipped_scripts == ("REFRESH_WEEK",)
     slices = harness.load_slices("GAMES")
     assert [row["SEASON"] for row in slices] == [1869, 1870, 1871, 1872]
     assert [row["IS_GAP"] for row in slices] == [False, False, True, False]
