@@ -20,16 +20,19 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 5. **AWS `default` is FREE** (exasol-cfb-demo-a4 confirmed at 14:06; add-engine-spikes is finished with both DBs). The AWS DB has no schemas; the `CFBD_API` connection should still exist, and 9.2 verifies it via `EXA_DBA_CONNECTIONS`. Never stop the instance (mandate). It also holds the shared files `docs/roadmap.md`, `specs/architecture.md` and `CLAUDE.md` until it sends "4.1 done". Check with ListAgents and SendMessage after the restart, because that session may also have restarted.
 6. Then continue with the queue under "Next steps".
 
-## Plan pipeline
+## Plan pipeline (updated 2026-10-23 early morning)
 
 | Plan | Phase | Where | State |
 |---|---|---|---|
-| add-cfbd-vs-foundation | 0 S1/S2 + 1 | main | **Recorded** (06498a3), live on AWS, 21/50 ledger. 7.4 network test is pending Nico |
-| add-engine-spikes | 0 S3/S4 | parallel session | Done (D19/D20); its files are untracked for it to commit |
-| add-cfb-persistence-refresh | 2 | worktree `../exasol-cfb-demo-p2` | Groups A–B done, 2.3 and 3.2 done; 3.3 deploy running |
-| add-cfb-analytical-model | 3 | worktree `../exasol-cfb-demo-p3` (from p2) | Reviewed and revised; Group A running |
-| add-cfb-score-engine | 4 | main (plan only) | Reviewed (approve with changes); revision running |
-| Phases 5–8 | | | Not planned yet |
+| add-cfbd-vs-foundation | 0 S1/S2 + 1 | main | **Recorded**, all tasks done; live on AWS; ledger 21 calls |
+| add-engine-spikes | 0 S3/S4 | parallel session | Done (D19/D20) |
+| add-cfb-persistence-refresh | 2 | worktree p2 | Groups A–G done (`20e0a9d`). Group H (7.3, 7.4 quality gate) running; then group I docs, code review, then live group J on AWS (217 calls) |
+| add-cfb-analytical-model | 3 | worktree p3 (merged p2) | Group A done; group B (2.1–2.4) running |
+| add-cfb-score-engine | 4 | main (plan) | Reviewed and revised; implementation follows Phase 3 |
+| add-cfb-analyses | 5 | main (plan) | Reviewed and revised; U3 confirmed |
+| add-cfb-app | 6 | main (plan) | Reviewed; revision running |
+| add-cfb-chat | 7 | main (plan) | Planning |
+| Phase 8 | | | Not planned yet |
 
 ## Inputs for Phase 4 (from add-engine-spikes, 2026-10-22)
 
