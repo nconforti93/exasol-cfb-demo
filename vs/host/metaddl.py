@@ -1,9 +1,11 @@
 """Render the `CFB_META` table DDL (`sql/meta/*.sql`) and other namespace SQL files.
 
 Two sets of tables: the foundation's (`meta_ddl_names`: `LOAD_LOG`, `FETCH_LOG`, created by the VS
-deploy) and the loader's (`loader_meta_ddl_names`, created by the loader deploy). Any SQL file may
-use the placeholders `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`, `{RESTORE_SCHEMA}`,
-`{INFRA_SCHEMA}` and `{VS_NAME}`; `render_namespace_sql` fills them from a `Namespace`.
+deploy) and the loader's (`loader_meta_ddl_names`, created by the loader deploy). The loader's views
+(`sql/loader/*.sql`, `loader_view_names` in creation order) read those tables and each other. Any
+SQL file may use the placeholders `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`,
+`{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}` and `{VS_NAME}`; `render_namespace_sql` fills them from a
+`Namespace`.
 """
 
 from __future__ import annotations
@@ -14,7 +16,9 @@ from pathlib import Path
 from vs.host.namespace import Namespace
 
 META_SCHEMA_PLACEHOLDER = "{META_SCHEMA}"
-META_DDL_DIR = Path(__file__).resolve().parents[2] / "sql" / "meta"
+SQL_DIR = Path(__file__).resolve().parents[2] / "sql"
+META_DDL_DIR = SQL_DIR / "meta"
+LOADER_VIEW_DIR = SQL_DIR / "loader"
 META_DDL_NAMES = ("load_log", "fetch_log")
 LOADER_META_DDL_NAMES = (
     "load_plan",
@@ -25,6 +29,14 @@ LOADER_META_DDL_NAMES = (
     "load_run",
     "refresh_log",
     "load_failures",
+)
+LOADER_VIEW_NAMES = (
+    "loader_settings",
+    "load_slices",
+    "load_orphans",
+    "backfill_queue",
+    "load_status",
+    "quota",
 )
 
 _SCHEMA_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
@@ -44,6 +56,18 @@ def meta_ddl_names() -> tuple[str, ...]:
 def loader_meta_ddl_names() -> tuple[str, ...]:
     """The loader's meta tables in creation order."""
     return LOADER_META_DDL_NAMES
+
+
+def loader_view_names() -> tuple[str, ...]:
+    """The loader's views in creation order: each reads only tables and views before it."""
+    return LOADER_VIEW_NAMES
+
+
+def render_loader_view(name: str, namespace: Namespace) -> str:
+    """One `CREATE OR REPLACE VIEW` statement of `sql/loader/<name>.sql` for `namespace`."""
+    if name not in LOADER_VIEW_NAMES:
+        raise MetaDdlError(f"unknown loader view {name!r}, expected one of {LOADER_VIEW_NAMES}")
+    return render_sql_file(LOADER_VIEW_DIR / f"{name}.sql", namespace)
 
 
 def render_meta_ddl(name: str, meta_schema: str) -> str:

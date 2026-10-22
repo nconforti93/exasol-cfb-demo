@@ -23,8 +23,8 @@ Every loader run leaves a record: which run it was, what it loaded, what every s
   - `BACKFILL` writes one row per batch (`BATCH <table> #<entry>`) and one `GAPS` row.
 
   Columns: `RUN_ID`, `STEP_NO`, `STEP_NAME`, `STEP_STATUS` (`RUNNING`, `DONE`, `FAILED`), `STARTED_AT`, `ENDED_AT`, `SLICES`, `ROWS_LOADED`, `CALLS`, `DETAIL`. A row is committed when its step starts and again when it ends. The `GAPS` row has 0 slices and 0 calls, and names the number of registered gaps in `DETAIL`.
-- `CFB_META.FETCH_LOG` (contract: `cfbd-vs/fetch-log`) gets one row per slice a run fetched, including slices without rows, with `CONTEXT = '<RUN_KIND>#<RUN_ID>'`. The rows equal what the reference capture helper (`vs/host/fetchlog.py`) writes for the same staged result.
-- `CFB_META.LOAD_LOG` (contract: `cfbd-vs/read-through`) gets one row per stored slice. `LOADED_BY` is `'<RUN_KIND>#<RUN_ID>'`, or `'LOAD_PLAN_GAP'` for registered gaps.
+- `CFB_META.FETCH_LOG` (contract: `cfbd-fetch/fetch-log`) gets one row per slice a run fetched, including slices without rows, with `CONTEXT = '<RUN_KIND>#<RUN_ID>'`. The rows equal what the reference capture helper (`vs/host/fetchlog.py`) writes for the same staged result.
+- `CFB_META.LOAD_LOG` (contract: `cfbd-fetch/read-through`) gets one row per stored slice. `LOADED_BY` is `'<RUN_KIND>#<RUN_ID>'`, or `'LOAD_PLAN_GAP'` for registered gaps.
 - `CFB_META.LOAD_FAILURES` has one row per failing slice: table, slice key, failure count, last error, last run and time (`loader/backfill`).
 - **Exclusive runs:** while a run is `RUNNING`, a second `BACKFILL`, `REFRESH_WEEK`, snapshot or restore is refused with a message naming the running run. A `RUNNING` row is stale, and the next run sets it to `ABANDONED` and proceeds, when:
   - its session no longer exists;

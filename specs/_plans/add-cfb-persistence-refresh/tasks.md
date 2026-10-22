@@ -13,7 +13,7 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 
 ## Group B
 - [x] 2.2 `loader/templates.py`
-- [~] 3.2 Views `sql/loader/{load_slices,backfill_queue,load_status,quota}.sql` [expert]
+- [x] 3.2 Views `sql/loader/{load_slices,backfill_queue,load_status,quota}.sql` [expert]
 - [x] 4.1 Bundler `loader/bundle.py` (no Lua logic):
 
 ## Group C
