@@ -32,6 +32,7 @@ generate:
 
 bundle:
 	$(PY) -m vs.bundle
+	$(PY) -m loader.bundle
 
 test:
 	$(RUN) pytest tests/unit tests/cli

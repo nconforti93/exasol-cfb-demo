@@ -1,16 +1,35 @@
-"""Render the `CFB_META` table DDL (`sql/meta/*.sql`) for a real or prefixed namespace."""
+"""Render the `CFB_META` table DDL (`sql/meta/*.sql`) and other namespace SQL files.
+
+Two sets of tables: the foundation's (`meta_ddl_names`: `LOAD_LOG`, `FETCH_LOG`, created by the VS
+deploy) and the loader's (`loader_meta_ddl_names`, created by the loader deploy). Any SQL file may
+use the placeholders `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`, `{RESTORE_SCHEMA}`,
+`{INFRA_SCHEMA}` and `{VS_NAME}`; `render_namespace_sql` fills them from a `Namespace`.
+"""
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
+from vs.host.namespace import Namespace
+
 META_SCHEMA_PLACEHOLDER = "{META_SCHEMA}"
 META_DDL_DIR = Path(__file__).resolve().parents[2] / "sql" / "meta"
 META_DDL_NAMES = ("load_log", "fetch_log")
+LOADER_META_DDL_NAMES = (
+    "load_plan",
+    "load_plan_gaps",
+    "loader_config",
+    "season_numbers",
+    "refresh_steps",
+    "load_run",
+    "refresh_log",
+    "load_failures",
+)
 
 _SCHEMA_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 _SQL_COMMENT = re.compile(r"^--.*\n", re.MULTILINE)
+_OPEN_PLACEHOLDER = re.compile(r"\{[A-Z][A-Z_]*\}")
 
 
 class MetaDdlError(ValueError):
@@ -18,16 +37,51 @@ class MetaDdlError(ValueError):
 
 
 def meta_ddl_names() -> tuple[str, ...]:
-    """The meta tables in creation order."""
+    """The foundation's meta tables in creation order."""
     return META_DDL_NAMES
+
+
+def loader_meta_ddl_names() -> tuple[str, ...]:
+    """The loader's meta tables in creation order."""
+    return LOADER_META_DDL_NAMES
 
 
 def render_meta_ddl(name: str, meta_schema: str) -> str:
     """One CREATE TABLE statement, comment-free and without a trailing semicolon."""
-    if name not in META_DDL_NAMES:
-        raise MetaDdlError(f"unknown meta DDL {name!r}, expected one of {META_DDL_NAMES}")
+    known = META_DDL_NAMES + LOADER_META_DDL_NAMES
+    if name not in known:
+        raise MetaDdlError(f"unknown meta DDL {name!r}, expected one of {known}")
     if not _SCHEMA_NAME.fullmatch(meta_schema):
         raise MetaDdlError(f"schema name {meta_schema!r} must be an UPPER_CASE identifier")
     text = (META_DDL_DIR / f"{name}.sql").read_text(encoding="utf-8")
     statement = _SQL_COMMENT.sub("", text).strip().removesuffix(";")
     return statement.replace(META_SCHEMA_PLACEHOLDER, meta_schema) + "\n"
+
+
+def render_namespace_sql(text: str, namespace: Namespace) -> str:
+    """`text` without whole-line comments and the trailing semicolon, placeholders filled.
+
+    Fills `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`, `{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}`
+    and `{VS_NAME}` with the names of `namespace`. An upper-case placeholder that is not one of
+    them is an error; lower-case braces (slice-key templates) are left alone.
+    """
+    names = {
+        "{META_SCHEMA}": namespace.meta_schema,
+        "{CORE_SCHEMA}": namespace.core_schema,
+        "{STAGE_SCHEMA}": namespace.stage_schema,
+        "{RESTORE_SCHEMA}": namespace.restore_schema,
+        "{INFRA_SCHEMA}": namespace.infra_schema,
+        "{VS_NAME}": namespace.vs_name,
+    }
+    statement = _SQL_COMMENT.sub("", text).strip().removesuffix(";")
+    for placeholder, value in names.items():
+        statement = statement.replace(placeholder, value)
+    open_ones = sorted(set(_OPEN_PLACEHOLDER.findall(statement)))
+    if open_ones:
+        raise MetaDdlError(f"unknown placeholder {', '.join(open_ones)} in the SQL text")
+    return statement + "\n"
+
+
+def render_sql_file(path: Path, namespace: Namespace) -> str:
+    """`render_namespace_sql` of a file."""
+    return render_namespace_sql(path.read_text(encoding="utf-8"), namespace)

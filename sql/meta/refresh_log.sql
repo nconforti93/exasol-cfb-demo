@@ -1,0 +1,15 @@
+-- One row per step of a run (REFRESH_WEEK steps, BACKFILL batches), committed when the step starts and ends.
+-- Rendered by vs/host/metaddl.py: {META_SCHEMA} becomes CFB_META, or TEST_CFB_META in the test namespace.
+
+CREATE TABLE {META_SCHEMA}.REFRESH_LOG (
+  RUN_ID DECIMAL(18,0) NOT NULL,
+  STEP_NO DECIMAL(5,0) NOT NULL,
+  STEP_NAME VARCHAR(160) UTF8 NOT NULL,
+  STEP_STATUS VARCHAR(10) UTF8 NOT NULL,
+  STARTED_AT TIMESTAMP NOT NULL,
+  ENDED_AT TIMESTAMP,
+  SLICES DECIMAL(9,0),
+  ROWS_LOADED DECIMAL(18,0),
+  CALLS DECIMAL(9,0),
+  DETAIL VARCHAR(2000) UTF8
+);

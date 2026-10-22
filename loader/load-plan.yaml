@@ -1,0 +1,99 @@
+# The load plan: which CFBD_VS tables are stored in CFB_CORE, in which slices, for which seasons.
+# `make deploy` validates it against vs/catalog/catalog.json and compiles every entry with the
+# adapter's own planner. Every slice the loader may fetch comes from here, so this file is also
+# the call estimate: `uv run python -m loader.plan --check --estimate` (demo profile: 217 calls).
+#
+# Entry order is the ENTRY_ID. Do not reorder entries without a redeploy. Known gaps come from
+# docs/cfbd-data-availability.md. `/games/schedule` is volatile and has no mirror, so it is not here.
+version: 1
+
+config:
+  monthly_call_budget: 1000
+  refresh_reserve: 150
+  quarantine_after: 2
+  season_rollover: "08-01"
+  season_final_after: "02-15"
+  refresh_profiles: [demo]
+
+snapshot:
+  schemas: [CFB_CORE]
+  meta_tables: [LOAD_LOG, FETCH_LOG]
+
+# Phase 3 adds step 100 (MODEL) here. Phase 2 owns no registered step.
+refresh_steps: []
+
+entries:
+  # Reference data: one call each.
+  - table: TEAMS
+    profile: demo
+    priority: 1
+    slicing: none
+    refresh_class: static
+  - table: VENUES
+    profile: demo
+    priority: 1
+    slicing: none
+    refresh_class: static
+  - table: CONFERENCES
+    profile: demo
+    priority: 1
+    slicing: none
+    refresh_class: static
+
+  # Affiliations accept a year range: 1869-2025 in one call, then one call per season.
+  - table: CONFERENCES_AFFILIATIONS
+    profile: demo
+    priority: 1
+    slicing: season_range
+    seasons: {from: 1869, to: 2025}
+    refresh_class: static
+  - table: CONFERENCES_AFFILIATIONS
+    profile: demo
+    priority: 1
+    slicing: season
+    seasons: {from: 2026}
+    refresh_class: static
+
+  - table: CALENDAR
+    profile: demo
+    priority: 2
+    slicing: season
+    seasons: {from: 2013}
+    refresh_class: static
+
+  # Assumption A4: one `/games?seasonType=both&year=Y` call returns every division.
+  # If the live check (foundation task 9.3) shows that /games without `classification` returns
+  # FBS only, replace this entry by one entry per division. Each repeats the lines below and adds
+  # `params: {classification: <fbs|fcs|ii|iii>}`; the demo profile then grows by about 157
+  # calls per extra division.
+  - table: GAMES
+    profile: demo
+    priority: 3
+    slicing: season
+    seasons: {from: 1869}
+    gaps: [1871]
+    refresh_class: weekly
+    note: Elo and postgame win probability per game; the API has no games for 1871.
+
+  # The pregame win probability is derived from spreads, so it starts with the betting-line era.
+  - table: METRICS_WP_PREGAME
+    profile: demo
+    priority: 4
+    slicing: season
+    seasons: {from: 2013}
+    refresh_class: weekly
+  - table: RATINGS_SP
+    profile: demo
+    priority: 4
+    slicing: season
+    seasons: {from: 2013}
+    refresh_class: weekly
+
+  # Only the ranks child table: it carries SEASON, SEASON_TYPE, WEEK and POLL itself, so it loads
+  # without RANKINGS_POLLS. The CFP committee polls start in 2014.
+  - table: RANKINGS_POLLS_RANKS
+    profile: demo
+    priority: 5
+    slicing: season
+    seasons: {from: 2014}
+    refresh_class: weekly

@@ -341,3 +341,178 @@ def test_the_synthetic_generator_works_as_provider(certs: tuple[Path, Path]) -> 
         assert get(server, "/definitely/not/an/endpoint")[0] == 404
     finally:
         server.stop()
+
+
+# --- /info modes: static fields and the counting mode ------------------------------------------
+
+
+def info(server: mock.MockCfbd) -> dict[str, Any]:
+    status, _, body = get(server, "/info")
+    assert status == 200
+    return dict(json.loads(body))
+
+
+def test_info_counting_mode_adds_the_data_requests_since_the_reset_to_the_base(
+    running: mock.MockCfbd,
+) -> None:
+    admin(running, "POST", "/_admin/info", {"mode": "counting", "base_used": 100})
+    assert info(running)["usedCalls"] == 100
+    get(running, "/games?year=2019")
+    get(running, "/games?year=2020")
+    get(running, "/nope")
+    body = info(running)
+    assert body["usedCalls"] == 103
+    assert body["remainingCalls"] == body["monthlyLimit"] - 103
+
+
+def test_info_requests_are_free_and_never_counted(running: mock.MockCfbd) -> None:
+    admin(running, "POST", "/_admin/info", {"mode": "counting", "base_used": 5})
+    for _ in range(4):
+        assert info(running)["usedCalls"] == 5
+
+
+def test_scripted_failures_count_because_retries_count_against_the_quota(
+    running: mock.MockCfbd,
+) -> None:
+    admin(running, "POST", "/_admin/info", {"mode": "counting"})
+    running.state.add_rule({"path": "/games", "status": 429, "times": 2})
+    get(running, "/games?year=1")
+    get(running, "/games?year=1")
+    get(running, "/games?year=1")
+    assert info(running)["usedCalls"] == 3
+
+
+def test_reset_restarts_the_count_and_returns_info_to_the_static_default(
+    running: mock.MockCfbd,
+) -> None:
+    admin(running, "POST", "/_admin/info", {"mode": "counting", "base_used": 10})
+    get(running, "/games?year=1")
+    admin(running, "POST", "/_admin/reset")
+    assert info(running)["usedCalls"] == mock.INFO_RESPONSE["usedCalls"]
+    get(running, "/games?year=2")
+    assert info(running)["usedCalls"] == mock.INFO_RESPONSE["usedCalls"]
+
+
+def test_static_mode_overrides_fields_and_derives_the_remaining_calls(
+    running: mock.MockCfbd,
+) -> None:
+    admin(
+        running,
+        "POST",
+        "/_admin/info",
+        {
+            "mode": "static",
+            "fields": {
+                "tierName": "Free",
+                "monthlyLimit": 1000,
+                "usedCalls": 900,
+                "resetAt": "2020-11-01T00:00:00Z",
+            },
+        },
+    )
+    body = info(running)
+    assert (body["tierName"], body["monthlyLimit"], body["usedCalls"]) == ("Free", 1000, 900)
+    assert body["remainingCalls"] == 100
+    assert body["resetAt"] == "2020-11-01T00:00:00Z"
+    get(running, "/games?year=1")
+    assert info(running)["usedCalls"] == 900
+
+
+def test_static_mode_keeps_a_remaining_value_that_is_given(running: mock.MockCfbd) -> None:
+    admin(
+        running,
+        "POST",
+        "/_admin/info",
+        {"mode": "static", "fields": {"monthlyLimit": 1000, "usedCalls": 999, "remainingCalls": 1}},
+    )
+    assert info(running)["remainingCalls"] == 1
+
+
+def test_counting_mode_can_use_a_larger_limit(running: mock.MockCfbd) -> None:
+    admin(
+        running,
+        "POST",
+        "/_admin/info",
+        {"mode": "counting", "base_used": 500, "fields": {"monthlyLimit": 3000}},
+    )
+    get(running, "/games?year=1")
+    body = info(running)
+    assert (body["usedCalls"], body["remainingCalls"]) == (501, 2499)
+
+
+def test_info_modes_build_on_the_providers_body(certs: tuple[Path, Path]) -> None:
+    def provider(path: str, query: dict[str, list[str]]) -> Any:
+        if path == "/info":
+            return {
+                "tierName": "FromProvider",
+                "monthlyLimit": 50,
+                "usedCalls": 0,
+                "remainingCalls": 50,
+                "features": {"graphQl": True},
+            }
+        return None
+
+    server = mock.MockCfbd(provider=provider)
+    server.start()
+    try:
+        admin(server, "POST", "/_admin/info", {"mode": "counting", "base_used": 2})
+        get(server, "/games?year=1")
+        body = info(server)
+        assert body["tierName"] == "FromProvider"
+        assert body["features"] == {"graphQl": True}
+        assert (body["usedCalls"], body["remainingCalls"]) == (3, 47)
+    finally:
+        server.stop()
+
+
+def test_info_modes_work_with_the_synthetic_provider() -> None:
+    server = mock.MockCfbd(provider=mock.load_provider("tests.synthetic.fake:response_for"))
+    server.start()
+    try:
+        assert info(server)["usedCalls"] == 0
+        admin(server, "POST", "/_admin/info", {"mode": "counting", "base_used": 7})
+        get(server, "/games?year=2024")
+        assert info(server)["usedCalls"] == 8
+        assert info(server)["tierName"] == "Free"
+    finally:
+        server.stop()
+
+
+def test_a_scripted_info_failure_still_wins_over_the_mode(running: mock.MockCfbd) -> None:
+    admin(running, "POST", "/_admin/info", {"mode": "counting"})
+    running.state.add_rule({"path": "/info", "status": 503, "times": 1})
+    assert get(running, "/info")[0] == 503
+    assert info(running)["usedCalls"] == 0
+
+
+def test_the_info_state_can_be_read_back(running: mock.MockCfbd) -> None:
+    assert admin(running, "GET", "/_admin/info") == {
+        "mode": "default",
+        "base_used": 0,
+        "fields": {},
+        "data_requests": 0,
+    }
+    admin(running, "POST", "/_admin/info", {"mode": "counting", "base_used": 4})
+    get(running, "/games?year=1")
+    state = admin(running, "GET", "/_admin/info")
+    assert (state["mode"], state["base_used"], state["data_requests"]) == ("counting", 4, 1)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"mode": "weird"},
+        {},
+        {"mode": "counting", "base_used": -1},
+        {"mode": "counting", "base_used": "5"},
+        {"mode": "static", "fields": {"colour": "red"}},
+        {"mode": "static", "fields": {"usedCalls": "many"}},
+        {"mode": "static", "fields": [1]},
+        {"mode": "counting", "fields": {"usedCalls": 5}},
+        {"mode": "static", "extra": 1},
+    ],
+)
+def test_info_admin_rejects_bad_requests(running: mock.MockCfbd, payload: dict[str, Any]) -> None:
+    with pytest.raises(mock.AdminError) as error:
+        admin(running, "POST", "/_admin/info", payload)
+    assert error.value.status == 400

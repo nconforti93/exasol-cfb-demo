@@ -1,0 +1,11 @@
+# Caps of the live-call ledger (vs/host/ledger.py). Edited by the owner only.
+#
+# plans:  calls a plan may spend over all months. A plan that is not listed is refused.
+# months: calls the whole key may spend in a calendar month (UTC), across all plans: the owner's
+#         authorization. A month without an entry refuses live calls until the owner adds one,
+#         for example "2026-11": 200 once the November budget is chosen.
+plans:
+  add-cfbd-vs-foundation: 50
+  add-cfb-persistence-refresh: 300
+months:
+  "2026-10": 400

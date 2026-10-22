@@ -534,6 +534,30 @@ No git commit is made before implementation.
 - **Rationale:** The foundation's promoted count is not final until its group I runs. Coordinating only within this log avoids collisions (orchestrator instruction).
 - **Promotes to ADR:** no
 
+### [31] Snapshot files are gzip CSV written and read by pyexasol, not Parquet via exapump (probe 1.2)
+
+- **Decision:**
+  - `make snapshot` writes one file per scope table: `export_to_file(…, export_params={"format": "gz", "with_column_names": True})`. `make restore` reads it with `import_from_file(…, import_params={"format": "gz", "skip": 1})`.
+  - Both use the target's pinned pyexasol connection. The manifest says `"format": "csv-gzip"`.
+  - DOUBLE uses Exasol's default text form (15 significant digits).
+  - Fingerprints:
+    - DOUBLE: `SUM(CAST(ROUND(x, 8) AS DECIMAL(36,8)))`;
+    - DATE: `SUM(DAYS_BETWEEN(d, DATE '1970-01-01'))`;
+    - TIMESTAMP: `SUM(SECONDS_BETWEEN(ts, TIMESTAMP '1970-01-01 00:00:00'))`, never `POSIX_TIME`.
+  - This amends [15]; the rest of [15] stands.
+- **Alternatives:**
+  - Parquet via exapump 0.13 (the plan's default; A2).
+  - A 17-digit DOUBLE format (`csv_cols … FORMAT='9.9999999999999999EEEE'`).
+- **Rationale** (`docs/spikes/s5-loader-probe.md` § "Snapshot format"):
+  - exapump 0.13 fails on VARCHAR values with a comma, double quote or newline: exit 1 and a 0-byte file. Every JSON column has those.
+  - It also silently trims leading and trailing spaces, and sometimes drops a double quote.
+  - Its Parquet files are untyped (`col0…` VARCHAR, positional).
+  - It writes no file for an empty table, and needs a lower-case certificate fingerprint.
+  - The pyexasol path round-trips every mirror and meta type exactly, including 2,000,000-character values and the 0001/9999 dates, except full-precision DOUBLEs (≤ 3.8e-12 relative).
+  - JSON-like short decimals came back exact (0 of 4,000 differ). The 17-digit format shifts about a third of all values by 1 ULP, because Exasol's text-to-DOUBLE parse is not correctly rounded.
+  - `SUM(ROUND(x, 8))` over identical data differed by 9.3e-10 between evaluations; the DECIMAL sum never did.
+- **Promotes to ADR:** no (it amends [15], whose ADR states the final format)
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. The plan review (pre-implementation) is resolved in review.md § Review resolution. -->

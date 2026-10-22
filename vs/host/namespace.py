@@ -48,6 +48,16 @@ class Namespace:
         return f"{self.prefix}CFB_CORE"
 
     @property
+    def stage_schema(self) -> str:
+        """The loader's staging schema: one normally empty table per planned mirror."""
+        return f"{self.prefix}CFB_STAGE"
+
+    @property
+    def restore_schema(self) -> str:
+        """The landing schema of a restore; it exists only while a restore runs."""
+        return f"{self.prefix}CFB_RESTORE"
+
+    @property
     def vs_name(self) -> str:
         return f"{self.prefix}CFBD_VS"
 

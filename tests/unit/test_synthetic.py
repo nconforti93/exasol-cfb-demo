@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +65,7 @@ def test_every_catalog_endpoint_has_a_response() -> None:
 @pytest.mark.parametrize("name", ENDPOINT_TABLES)
 def test_array_responses_hold_two_elements(name: str) -> None:
     body = body_of(name)
-    if isinstance(body, list):
+    if isinstance(body, list) and name != "CALENDAR":
         assert len(body) == 2
 
 
@@ -284,3 +285,94 @@ def test_large_response_of_a_raw_json_table_overflows_raw_json() -> None:
 
 def _as_sets(filters: dict[str, Any]) -> dict[str, list[Any]]:
     return {name: [value] for name, value in filters.items()}
+
+
+def calendar_rows(year: int) -> list[Any]:
+    rows: list[Any] = fake.body_for("/calendar", {"year": str(year)})
+    return rows
+
+
+def test_calendar_has_regular_weeks_one_to_fifteen_and_postseason_week_one() -> None:
+    rows = calendar_rows(2020)
+    regular = [r for r in rows if r["seasonType"] == "regular"]
+    postseason = [r for r in rows if r["seasonType"] == "postseason"]
+    assert [r["week"] for r in regular] == list(range(1, 16))
+    assert [r["week"] for r in postseason] == [1]
+    assert {r["season"] for r in rows} == {2020}
+    assert len(rows) == 16
+
+
+def test_calendar_weeks_start_on_saturdays_from_the_first_saturday_of_september() -> None:
+    regular = [r for r in calendar_rows(2020) if r["seasonType"] == "regular"]
+    starts = [datetime.fromisoformat(r["startDate"].replace("Z", "+00:00")) for r in regular]
+    assert starts[0].date().isoformat() == "2020-09-05"
+    assert all(start.weekday() == 5 for start in starts)
+    assert all((b - a).days == 7 for a, b in pairwise(starts))
+    assert fake.first_saturday_of_september(2026).isoformat() == "2026-09-05"
+    assert fake.first_saturday_of_september(2021).isoformat() == "2021-09-04"
+    assert fake.first_saturday_of_september(2024).isoformat() == "2024-09-07"
+
+
+def test_calendar_postseason_week_one_is_in_january_of_the_next_year() -> None:
+    (post,) = [r for r in calendar_rows(2020) if r["seasonType"] == "postseason"]
+    assert post["startDate"].startswith("2021-01-01")
+    assert post["endDate"].startswith("2021-01-15")
+
+
+def test_calendar_weeks_are_ordered_inside_themselves_and_deterministic() -> None:
+    for row in calendar_rows(2023):
+        assert row["startDate"] <= row["firstGameStart"] <= row["lastGameStart"] <= row["endDate"]
+    assert fake.response_for("/calendar", {"year": "2023"}) == fake.response_for(
+        "/calendar", {"year": "2023"}
+    )
+    assert fake.calendar_body(2023) == calendar_rows(2023)
+
+
+def test_calendar_follows_the_requested_year() -> None:
+    assert {r["season"] for r in calendar_rows(2019)} == {2019}
+    assert calendar_rows(2019)[0]["startDate"].startswith("2019-09-07")
+
+
+def test_calendar_flattens_with_offset_free_timestamps() -> None:
+    path, query = "/calendar", {"year": "2020"}
+    rows = flatten(table("CALENDAR"), fake.body_for(path, query))
+    assert len(rows) == 16
+    assert all(isinstance(row[4], datetime) and row[4].tzinfo is None for row in rows)
+
+
+def test_info_default_is_a_free_tier_with_nothing_used() -> None:
+    body = fake.body_for("/info")
+    for key, value in fake.INFO_DEFAULT.items():
+        assert body[key] == value
+    assert body["features"]["graphQl"] is True
+    assert body["monthlyLimit"] == body["remainingCalls"] + body["usedCalls"]
+    assert body["resetAt"].endswith("Z")
+
+
+def games_by_id(body: Any) -> dict[int, Any]:
+    return {game["id"]: game for game in body}
+
+
+def test_changed_games_body_scores_a_game_and_adds_one() -> None:
+    before = games_by_id(fake.body_for("/games", {"year": "2020", "week": "7"}))
+    after = games_by_id(fake.changed_games_body(2020, 7))
+    assert set(after) - set(before) == {401628321}
+    assert before[401628320]["completed"] is False
+    assert after[401628320]["completed"] is True
+    assert (after[401628320]["homePoints"], after[401628320]["awayPoints"]) == (31, 24)
+    assert after[401628319] == before[401628319]
+    assert {g["season"] for g in after.values()} == {2020}
+
+
+def test_changed_games_body_flattens_and_keeps_every_schema_field() -> None:
+    rows = flatten(table("GAMES"), fake.changed_games_body(2020, 7))
+    assert len(rows) == 3
+    assert all(len(row) == len(column_names("GAMES")) for row in rows)
+    unchanged = flatten(table("GAMES"), fake.body_for("/games", {"year": "2020", "week": "7"}))
+    assert len(unchanged) == 2
+
+
+def test_the_unchanged_games_response_is_what_it_was_before_the_variant_existed() -> None:
+    first = fake.response_for("/games", {"year": "2020", "week": "7"})
+    assert first == fake.response_for("/games", {"year": "2020", "week": "7"})
+    assert b"401628321" not in first
