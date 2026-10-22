@@ -1,0 +1,55 @@
+# Orchestrator status (autonomous run, started 2026-10-22)
+
+Mandate: finish the mission end to end through the speq loop (plan → review → implement → verify → record).
+
+Limits:
+- At most 400 CFBD calls in October 2026. November is not authorized.
+- AWS `default`: deploy and run only. Never stop, start or resize it.
+- Commit locally only, never push.
+- Make decisions myself and log them.
+- Check Exasol syntax and reserved words with the `exasol:*` skills.
+
+## RESUME AFTER RESTART (planned machine restart ~14:33 CEST, 2026-10-22)
+
+1. Bring local Exasol back with `exasol start -d local` (via the launcher, never exakit). Check it with a trivial PYTHON3 UDF.
+2. The mock sidecar container is gone after the reboot. The IT harness restarts it on its own (`tests/mock_cfbd/sidecar.py`).
+3. The IT lock file is `/tmp/claude-1002/-mnt-c-Users-nc-OneDrive---EXASOL-AG-Documents-Notes/d157cdb7-6061-4526-8ef3-8d5d6fabb341/scratchpad/cfb-it.lock`. /tmp may be wiped by the reboot; if so, recreate it by running any `flock` on that path.
+4. Read `specs/_plans/add-cfbd-vs-foundation/tasks.md`. Resume every `[~]` task with a fresh implementer agent. Point it at its test files and the state report quoted below under "Agent state at stop".
+5. The parallel session `exasol-cfb-demo-a4` (add-engine-spikes) still holds **AWS `default`** until it sends "AWS free". It also holds the shared files `docs/roadmap.md`, `specs/architecture.md` and `CLAUDE.md` until it sends "4.1 done". Check with ListAgents and SendMessage after the restart, because that session may also have restarted.
+6. Then continue with the queue under "Next steps".
+
+## Plan pipeline
+
+| Plan | Roadmap phase | State |
+|---|---|---|
+| add-cfbd-vs-foundation | Phase 0 S1/S2 + Phase 1 | Groups A–G done. Review R.1 done. Fixes F.1–F.3 done, F.4 open. Group H integration tests running on local (see tasks.md). Docs 8.2–8.4 wait for "4.1 done". Live group J waits for "AWS free" |
+| add-engine-spikes | Phase 0 S3/S4 | Owned by the parallel session |
+| add-cfb-persistence-refresh | Phase 2 | Reviewed (approve with changes), revised, validates. Implementation waits for the foundation |
+| add-cfb-analytical-model | Phase 3 | Plan complete and validated: 27 tasks, 10 specs, 18 views plus 5 seeded reference tables. **Next: independent review**, then revise. 12 open questions (Q1–Q12) are answered by zero-call checks in its task 7.2 |
+| Phases 4–8 | | Not started. Phase 4 builds on the add-engine-spikes S3/S4 results |
+
+## Next steps (queue)
+
+1. Finish the foundation integration tests 7.1–7.4 on local, then F.4 (redact the key after JSON parsing too).
+2. Foundation V.1–V.3 (checklist, scenario coverage, verification report), apart from the live rows.
+3. On "AWS free": run foundation group J on AWS with `TARGET=aws`, at most 50 calls (9.0 dns-check gate, then 9.1–9.6). Then docs 8.2–8.4 after "4.1 done". Then `/speq:record add-cfbd-vs-foundation` and commit.
+4. Implement add-cfb-persistence-refresh. Its live backfill costs about 217 calls and must finish by 2026-10-31.
+5. Independent review of the Phase 3 plan, then implement it. Then plan, review and implement Phases 4–8.
+
+## Decisions taken for Nico (please review)
+
+- **Demo beat 3 is `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(2026, N, season_type)`.** Exasol has no CALL.
+- **Demo profile is about 217 calls once, then about 4 per weekly refresh.** Only `RANKINGS_POLLS_RANKS` is loaded, and it carries its own keys.
+- **`PROMOTE()` is deferred until after Phase 6.**
+- **Phase 3 venues use `GEOMETRY(4326)` points.** Exasol has no GEOGRAPHY type, so the mission wording will change. All model objects are views, and their comments are written inline because Exasol has no COMMENT ON VIEW.
+- **The loader never toggles `READ_THROUGH`.** It filters `REQ_SOURCE <> 'STORED'` instead.
+- **sys owns the real deployment (foundation [20]).** Readers get the `CFB_READER` role.
+- **Fan-out is one SET group plus a thread pool, `MAX_PARALLEL_FETCHES` (foundation [18]).**
+- **The 401/403 message follows the gating spec (foundation [22]).** Body redaction is key-only ([23]). Recordings store attempts ([24]). The catalog hash covers generated content ([25]).
+
+## Blocked on Nico
+
+- **November CFBD budget.** Needed only if the Phase 2 backfill can't finish by 2026-10-31.
+- **The DoH-success network test was never run (foundation 7.4 stays `[~]`).** Auto mode blocked `flock … make test-network` as "Interfere With Workloads". You can run it yourself with `! make test-network`; it needs HTTPS egress to 1.1.1.1 plus a TLS handshake with the CFBD host, and makes no API call. Alternatively, the live gate `make dns-check TARGET=aws` (9.0) covers the same path on AWS.
+- **Stale podman container `exasol-db-49afcb12` (Created).** Auto mode denied `podman rm`, so it is still there.
+- **Phase 7 chat has no Anthropic API key.** It will be built against a stub.

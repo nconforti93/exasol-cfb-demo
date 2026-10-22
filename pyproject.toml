@@ -1,0 +1,52 @@
+[project]
+name = "exasol-cfb-demo"
+version = "0.1.0"
+description = "College football analytics platform on Exasol: OpenAPI-generated CFBD Virtual Schema"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "PyYAML>=6",
+    "types-PyYAML>=6",
+    "pyexasol>=2,<3",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/cli"]
+pythonpath = ["."]
+addopts = "-ra"
+markers = [
+    "it: integration test against Exasol Personal local (replay mode)",
+    "network: needs HTTPS egress to the DoH endpoint (no CFBD call); not part of `make test-it`",
+]
+
+[tool.coverage.run]
+source = ["vs/cfbd_vs", "vs/gen"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["vs/openapi", "cache", "build", "spikes"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["vs", "scripts", "tests"]
+mypy_path = "."
+explicit_package_bases = true

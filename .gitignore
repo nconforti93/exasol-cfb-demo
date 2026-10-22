@@ -1,0 +1,13 @@
+.env
+cache/
+*.cfbd.json
+target/
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+.venv/
+.coverage
+build/
+.mypy_cache/
+.ruff_cache/

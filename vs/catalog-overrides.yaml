@@ -1,0 +1,280 @@
+# Reviewed catalog overrides (spec 5.33.0). Everything the OpenAPI spec states only in prose.
+# Sources: docs/cfbd-api-reference.md and the descriptions in vs/openapi/cfbd-openapi-5.33.0.json.
+# `make generate` fails if a prose rule in the spec is covered by neither a rule here nor an
+# `acknowledged` entry. `verify:` markers name the S1 live checks (vs/live/s1-patterns.yaml).
+#
+# seasonType: the spec does not state its default, and SeasonType has a `both` value, so every
+# endpoint that accepts `both` sends seasonType=both explicitly.
+# classification: made explicit as `fbs` wherever the spec says "Defaults to fbs".
+
+endpoints:
+  /coaches:
+    fields: {seasons: {rename: SEASON_RECORDS}}
+  /coaches/tenures:
+    rules:
+      - {id: coach_id_or_team, type: one_of, params: [coachId, team], why: "the API rejects the request unless coachId or team is given"}
+  /conferences/affiliations:
+    rules:
+      - {id: year_excludes_year_range, type: excludes, if: year, none_of: [minYear, maxYear], why: "year cannot be combined with minYear or maxYear"}
+  /drives:
+    defaults: {seasonType: both}
+    verify: [classification-omission-means-all]
+  /games:
+    defaults: {seasonType: both}
+    verify: [classification-omission-means-all, seasontype-default-when-omitted]
+    rules:
+      - {id: year_or_id, type: one_of, params: [year, id], why: "the API rejects the request unless year or id is given"}
+      - {id: round_needs_competition, type: requires_any, if: round, any_of: [competition], why: "round is only valid together with competition"}
+  /games/media:
+    defaults: {seasonType: both}
+  /games/players:
+    defaults: {seasonType: both}
+    hoist: {array: teams, carry: {id: GAME_ID}}
+    fields: {teams.categories.name: {rename: CATEGORY}}
+    rules:
+      - {id: year_or_id, type: one_of, params: [year, id], why: "the API rejects the request unless year or id is given"}
+      - {id: week_team_or_conference_with_year, type: requires_any, if: year, any_of: [week, team, conference], why: "with year, the API needs one of week, team or conference (a whole season is too large for one call)"}
+  /games/schedule:
+    defaults: {classification: fbs}
+    read_through: false
+    rules:
+      - {id: year_needs_week, type: requires_any, if: year, any_of: [week], why: "an explicit window needs year, seasonType and week together"}
+      - {id: week_needs_seasontype, type: requires_any, if: week, any_of: [seasonType], why: "an explicit window needs year, seasonType and week together"}
+      - {id: seasontype_needs_year, type: requires_any, if: seasonType, any_of: [year], why: "an explicit window needs year, seasonType and week together"}
+  /games/teams:
+    defaults: {seasonType: both}
+    hoist: {array: teams, carry: {id: GAME_ID}}
+    rules:
+      - {id: year_or_id, type: one_of, params: [year, id], why: "the API rejects the request unless year or id is given"}
+      - {id: week_team_or_conference_with_year, type: requires_any, if: year, any_of: [week, team, conference], why: "with year, the API needs one of week, team or conference (a whole season is too large for one call)"}
+  /games/weather:
+    defaults: {seasonType: both}
+    gated_by: weather
+    rules:
+      - {id: year_or_game_id, type: one_of, params: [year, gameId], why: "the API rejects the request unless year or gameId is given"}
+  /games/{gameId}/preview:
+    curated: [assembledAt, game, availability, reason, analysis.odds.data, analysis.home.record.data, analysis.home.ratings.data, analysis.away.record.data, analysis.away.ratings.data]
+    raw_json: true
+  /games/{gameId}/preview/adjusted:
+    gated_by: adjustedMetrics
+    verify: [feature-adjustedmetrics-mapping]
+  /info:
+    read_through: false
+  /info/usage:
+    defaults: {days: 7, limit: 10}
+    read_through: false
+    rules:
+      - {id: days_bounds, type: bounds, param: days, min: 1, max: 31, why: "the API returns at most 31 for days"}
+      - {id: limit_bounds, type: bounds, param: limit, min: 1, max: 50, why: "the API returns at most 50 for limit"}
+  /lines:
+    defaults: {seasonType: both}
+    rules:
+      - {id: year_or_game_id, type: one_of, params: [year, gameId], why: "the API rejects the request unless year or gameId is given"}
+  /live/plays:
+    gated_by: livePlayByPlay
+    read_through: false
+    fields: {drives.id: {rename: DRIVE_ID}}
+  /metrics/wp/pregame:
+    defaults: {seasonType: both}
+  /passing/players/games:
+    defaults: {seasonType: both, classification: fbs}
+    rules:
+      - {id: player_team_or_week, type: one_of, params: [passerId, team, week], why: "the API rejects the request unless passerId, team or week is given"}
+  /passing/players/season:
+    defaults: {seasonType: both, classification: fbs}
+    rules:
+      - {id: year_or_passerid, type: one_of, params: [year, passerId], why: "the API rejects the request unless year or passerId is given"}
+  /passing/plays:
+    defaults: {seasonType: both, classification: fbs}
+    rules:
+      - {id: team_or_week, type: one_of, params: [team, week], why: "the API rejects the request unless team or week is given"}
+  /passing/teams/games:
+    defaults: {seasonType: both, classification: fbs}
+    rules:
+      - {id: team_or_week, type: one_of, params: [team, week], why: "the API rejects the request unless team or week is given"}
+  /passing/teams/season:
+    defaults: {seasonType: both, classification: fbs}
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /player/returning:
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /player/usage:
+    defaults: {excludeGarbageTime: false}
+  /playoffs/cfp:
+    fields: {participants: {rename: ENTRIES}}
+  /plays:
+    defaults: {seasonType: both}
+    verify: [classification-omission-means-all]
+  /plays/stats:
+    defaults: {seasonType: both}
+    row_cap: {rows: 2000, complete_with: [gameId], why: "the API silently truncates at 2,000 records, so a complete result needs a single game"}
+    verify: [row-cap-applies-per-game]
+  /ppa/games:
+    defaults: {seasonType: both, classification: fbs}
+  /ppa/players/games:
+    defaults: {seasonType: both}
+    rules:
+      - {id: week_or_team, type: one_of, params: [week, team], why: "the API rejects the request unless week or team is given"}
+  /ppa/players/season:
+    rules:
+      - {id: year_or_playerid, type: one_of, params: [year, playerId], why: "the API rejects the request unless year or playerId is given"}
+  /ppa/teams:
+    defaults: {classification: fbs}
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /punting/players/games:
+    defaults: {seasonType: both, classification: fbs}
+  /punting/players/season:
+    defaults: {seasonType: both, classification: fbs}
+  /punting/plays:
+    defaults: {seasonType: both, classification: fbs}
+    verify: [team-filter-meaning]
+    rules:
+      - {id: year_or_game_id, type: one_of, params: [year, gameId], why: "the API rejects the request unless year or gameId is given"}
+      - {id: filter_with_year, type: requires_any, if: year, any_of: [week, team, puntingTeam, receivingTeam, punterId, returnerId], why: "with year, the API needs week, a team filter, punterId or returnerId"}
+  /punting/teams/games:
+    defaults: {seasonType: both, classification: fbs}
+  /punting/teams/season:
+    defaults: {seasonType: both, classification: fbs}
+  /rankings:
+    defaults: {seasonType: both}
+    params: {week: {type: integer}}
+    rules:
+      - {id: latest_needs_cfp, type: requires_value, if: latest, if_value: true, then: poll, then_value: cfp, why: "latest applies to the CFP poll only"}
+      - {id: final_needs_cfp, type: requires_value, if: final, if_value: true, then: poll, then_value: cfp, why: "final applies to the CFP poll only"}
+      - {id: latest_excludes_final, type: excludes, if: latest, if_value: true, none_of: [final], why: "latest cannot be combined with final"}
+  /ratings/core:
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /ratings/elo:
+    defaults: {seasonType: both}
+    verify: [elo-week-omitted-returns-latest-only]
+    rules:
+      - {id: week_or_preseason, type: one_of, params: [week, preseason], why: "without week the API silently returns only the latest available week; give week, or preseason for the opening ratings"}
+      - {id: preseason_excludes_week, type: excludes, if: preseason, if_value: true, none_of: [week], why: "preseason cannot be combined with week"}
+  /ratings/fpi:
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /ratings/sp:
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /ratings/sp/conferences:
+    defaults: {classification: fbs}
+  /ratings/srs:
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /ratings/srs/expanded:
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /records:
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /recruiting/groups:
+    defaults: {recruitType: HighSchool}
+    verify: [span-defaults]
+    rules:
+      - {id: span_required, type: required, params: [startYear, endYear], why: "the API silently defaults the span to 2000 through the current year"}
+  /recruiting/players:
+    defaults: {classification: HighSchool}
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless the class year or team is given"}
+  /roster:
+    rules:
+      - {id: year_required, type: required, params: [year], why: "the API silently defaults year to 2025"}
+  /rushing/players/games:
+    defaults: {seasonType: both, classification: fbs}
+    verify: [year-with-rusher-id-needs-team-or-week]
+    rules:
+      - {id: year_needs_team_week_or_rusher, type: requires_any, if: year, any_of: [team, week, rusherId], why: "with year, the API needs team or week (rusherId alone is accepted without year)"}
+      - {id: week_needs_year, type: requires_any, if: week, any_of: [year], why: "week is only valid together with year"}
+      - {id: year_or_rusher_id, type: one_of, params: [year, rusherId], why: "the API rejects the request unless year or rusherId is given"}
+  /rushing/players/season:
+    defaults: {seasonType: both, classification: fbs}
+    rules:
+      - {id: year_or_rusherid, type: one_of, params: [year, rusherId], why: "the API rejects the request unless year or rusherId is given"}
+  /rushing/plays:
+    defaults: {seasonType: both, classification: fbs}
+    verify: [year-with-game-id-needs-team-or-week]
+    rules:
+      - {id: year_needs_team_or_week, type: requires_any, if: year, any_of: [team, week], why: "with year, the API needs team or week"}
+      - {id: week_needs_year, type: requires_any, if: week, any_of: [year], why: "week is only valid together with year"}
+  /rushing/teams/games:
+    defaults: {seasonType: both, classification: fbs}
+    rules:
+      - {id: team_or_week, type: one_of, params: [team, week], why: "the API rejects the request unless team or week is given"}
+  /rushing/teams/season:
+    defaults: {seasonType: both, classification: fbs}
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /scoreboard:
+    defaults: {classification: fbs}
+    gated_by: scoreboard
+    read_through: false
+  /stats/game/advanced:
+    defaults: {seasonType: both, excludeGarbageTime: false}
+    params: {week: {type: integer}}
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /stats/game/havoc:
+    defaults: {seasonType: both}
+    params: {week: {type: integer}}
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /stats/player/season:
+    defaults: {seasonType: both}
+  /stats/player/success:
+    defaults: {seasonType: both}
+    rules:
+      - {id: year_or_playerid, type: one_of, params: [year, playerId], why: "the API rejects the request unless year or playerId is given"}
+  /stats/player/success/game:
+    defaults: {seasonType: both}
+    rules:
+      - {id: week_team_or_player, type: one_of, params: [week, team, playerId], why: "the API rejects the request unless week, team or playerId is given"}
+  /stats/season:
+    defaults: {classification: fbs}
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /stats/season/advanced:
+    defaults: {classification: fbs, excludeGarbageTime: false}
+    rules:
+      - {id: year_or_team, type: one_of, params: [year, team], why: "the API rejects the request unless year or team is given"}
+  /teams/season/overview:
+    curated: [season, teamId, team, record, ratings, statRankings.division, statRankings.divisionTeamCount]
+    raw_json: true
+  /wepa/players/kicking:
+    gated_by: adjustedMetrics
+    verify: [feature-adjustedmetrics-mapping]
+  /wepa/players/passing:
+    gated_by: adjustedMetrics
+    verify: [feature-adjustedmetrics-mapping]
+  /wepa/players/rushing:
+    gated_by: adjustedMetrics
+    verify: [feature-adjustedmetrics-mapping]
+  /wepa/team/season:
+    gated_by: adjustedMetrics
+    verify: [feature-adjustedmetrics-mapping]
+
+children:
+  COACHES_SEASON_RECORDS: {parent_keys: [id, firstName, lastName]}
+  GAMES_PLAYERS_CATEGORIES: {parent_keys: [id, teams.team]}
+  GAMES_PLAYERS_CATEGORIES_TYPES: {parent_keys: [id, teams.team, teams.categories.name]}
+  GAMES_TEAMS_STATS: {parent_keys: [id, teams.teamId, teams.team]}
+  LINES_LINES: {parent_keys: [id]}
+  LIVE_PLAYS_DRIVES: {parent_keys: [id]}
+  LIVE_PLAYS_DRIVES_PLAYS: {parent_keys: [drives.id]}
+  LIVE_PLAYS_TEAMS: {parent_keys: [id]}
+  PLAYER_SEARCH_TEAM_STINTS: {parent_keys: [id]}
+  PLAYOFFS_CFP_ENTRIES: {parent_keys: [season]}
+  PLAYOFFS_CFP_GAMES_SLOTS: {parent_keys: [id]}
+  PLAYOFFS_CFP_ROUNDS: {parent_keys: [season]}
+  PLAYOFFS_CFP_ROUNDS_MATCHUPS: {parent_keys: [rounds.code]}
+  PLAYOFFS_CFP_ROUNDS_MATCHUPS_SLOTS: {parent_keys: [rounds.matchups.id]}
+  RANKINGS_POLLS: {parent_keys: [season, seasonType, week]}
+  RANKINGS_POLLS_RANKS: {parent_keys: [season, seasonType, week, polls.poll]}
+  TEAMS_MATCHUP_GAMES: {parent_keys: [team1, team2]}
+
+
+acknowledged: []
+
+exclude: []

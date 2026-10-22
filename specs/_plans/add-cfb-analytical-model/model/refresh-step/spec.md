@@ -1,0 +1,86 @@
+# Feature: Model step of the weekly refresh
+
+The weekly refresh is one call: fetch, merge, model, predictions, simulations. The model's views always reflect the stored data, so the model step rebuilds nothing. It checks that the freshly fetched season is fit for the steps that follow, records what it found, and stops the chain before predictions or simulations run on broken inputs. The same checks run on demand for any week.
+
+## Background
+
+- `MODEL_CHECKS`: a view with one row per check and season, and per week for week-scoped checks. Its columns are the check name, `SEVERITY`, season, week sequence, the number of offending rows (`OBSERVED`), `CHECK_STATUS` (`PASS` or `FAIL`), and a `DETAIL` that names up to 10 offending rows. The checks:
+
+  | Check | Severity | Fails when, in the season |
+  |---|---|---|
+  | `DUPLICATE_GAME` | ERROR | a game id is stored more than once |
+  | `GAME_WITHOUT_WEEK` | ERROR | a game has no week, or a season type other than `regular` or `postseason` |
+  | `FBS_TEAM_WITHOUT_CONFERENCE` | ERROR | an FBS team-season has no conference |
+  | `POWER_CONFERENCE_MISSING` | ERROR | a power conference of `CONFERENCE_TIER` for the season has no team-season (the CFBD name changed) |
+  | `WEEK_NOT_COMPLETE` (per week) | WARNING | a game of the week is not completed |
+  | `MEMBERSHIP_CONFLICT` | WARNING | a team-season has conflicting memberships |
+  | `SP_TEAM_UNMATCHED` | WARNING | an SP+ row has no team |
+  | `POLL_UNKNOWN` | WARNING | a poll name is not in `POLL` |
+  | `CONFERENCE_NAME_UNMATCHED` | WARNING | a conference recorded on a game is not in `CONFERENCE` |
+  | `GAME_TEAM_NOT_IN_TEAM_LIST` | INFO | a team of a game is not in the stored team list |
+  | `VENUE_WITHOUT_LOCATION` | INFO | a game's venue has no coordinates |
+
+- **Step script:** `EXECUTE SCRIPT CFB_INFRA.REFRESH_MODEL(run_id, season, week, season_type)`, the contract of registered refresh steps (`loader/refresh-week`).
+  - `loader/load-plan.yaml` registers it as step 100 `MODEL`.
+  - The script resolves the point from `AS_OF_POINT` and evaluates the season's checks plus the week's checks.
+  - It writes one row per evaluated check to `CFB_META.MODEL_CHECK_LOG` with the run id and commits.
+  - It then raises an error that names every failed ERROR check, if there is one.
+  - It never reads the virtual schema, so it costs zero API calls.
+  - A NULL `run_id` runs the checks outside a refresh; the log rows then have no run id.
+- `make model-check SEASON=… WEEK=… [SEASON_TYPE=postseason] [TARGET=…]` prints the checks of that point from `MODEL_CHECKS`, without the step script and without writing a log.
+- The examples run in the integration-test namespace in replay mode. The load plan registers `MODEL` as step 100 and a recording test step as step 200. The recordings of the 2026 weekly slices come from the synthetic league.
+
+## Scenarios
+
+### Scenario: The refresh runs the model step after the fetch
+
+* *GIVEN* replay recordings of the league's 2026 weekly slices
+* *WHEN* the presenter runs `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(2026, 9, 'regular')`
+* *THEN* the timeline MUST list `CHECK`, the `FETCH` steps, `MODEL` and step 200 in that order, each `DONE`
+* *AND* `MODEL` MUST report 0 calls
+* *AND* `CFB_META.MODEL_CHECK_LOG` MUST hold one row per evaluated check with the run's id, season 2026 and, for week checks, week sequence 9
+
+### Scenario: A failed error check stops the chain
+
+* *GIVEN* replay recordings of the 2026 weekly slices in which the FBS team Quarry plays without any conference
+* *WHEN* the presenter runs `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(2026, 9, 'regular')`
+* *THEN* the call MUST fail with an error that names the step `MODEL`, the run and the check `FBS_TEAM_WITHOUT_CONFERENCE`
+* *AND* step 200 MUST NOT run
+* *AND* the 2026 slices fetched by the `FETCH` steps MUST stay stored
+* *AND* `CFB_META.MODEL_CHECK_LOG` MUST keep the run's check rows, including the failed check
+
+### Scenario: Warnings do not stop the chain
+
+* *GIVEN* replay recordings of the 2026 weekly slices in which one week-9 game is not completed
+* *WHEN* the presenter runs `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(2026, 9, 'regular')`
+* *THEN* `MODEL` and step 200 MUST be `DONE`
+* *AND* `CFB_META.MODEL_CHECK_LOG` MUST show `WEEK_NOT_COMPLETE` as failed with severity `WARNING` and 1 game
+
+### Scenario: The checks run for any point outside a refresh
+
+* *GIVEN* the stored synthetic league and no loader run
+* *WHEN* the owner runs `EXECUTE SCRIPT CFB_INFRA.REFRESH_MODEL(NULL, 2024, 9, 'regular')`
+* *THEN* the call MUST succeed
+* *AND* `CFB_META.MODEL_CHECK_LOG` MUST gain the 2024 checks and the week-9 checks without a run id
+* *AND* the mock API and the replay store MUST NOT receive any request
+
+### Scenario: A renamed power conference is an error for its season
+
+* *GIVEN* the league's 2024 SEC team-seasons are stored under the conference name "Southeastern"
+* *WHEN* `CFB_MODEL.MODEL_CHECKS` is queried for 2024
+* *THEN* `POWER_CONFERENCE_MISSING` MUST fail with severity `ERROR`, naming the SEC
+* *AND* `EXECUTE SCRIPT CFB_INFRA.REFRESH_MODEL(NULL, 2024, 9, 'regular')` MUST fail and name that check
+
+### Scenario: An unknown point is rejected
+
+* *GIVEN* the stored 2024 weeks end with regular week 15 and postseason week 1
+* *WHEN* the owner runs `EXECUTE SCRIPT CFB_INFRA.REFRESH_MODEL(NULL, 2024, 23, 'regular')`
+* *THEN* the call MUST fail with a message that names season 2024 and regular week 23 as unknown
+* *AND* `CFB_META.MODEL_CHECK_LOG` MUST NOT gain any row
+
+### Scenario: The checks can be printed without the step
+
+* *GIVEN* the stored synthetic league
+* *WHEN* the owner runs `make model-check SEASON=2024 WEEK=9 ARGS="--prefix TEST_"`
+* *THEN* the output MUST list every 2024 check and every week-9 check with severity, status and the observed count
+* *AND* `CFB_META.MODEL_CHECK_LOG` MUST NOT gain any row
