@@ -51,6 +51,14 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 - **Deployment:** `CFBD_VS` is deployed on AWS (137 tables) together with `CFB_READER`. Read-through and aggregates work on 2026.1.1, with no UNION ALL crash.
 - **AWS BucketFS:** there is no host directory or exapump profile for it, so replay recordings live in `cache/replay/` and on local BucketFS only.
 
+## STOP POINT (usage limit, 2026-10-22 evening)
+
+- **Phase 2 (worktree p2):** groups A–E are done and committed. Task 4.2 (Lua `loadlib.lua`/`backfill.lua`, plus H1 lock kinds) was STOPPED mid-work. Its files are on disk in p2, uncommitted. On resume: inspect `git status` in p2, then start a fresh 4.2 expert agent pointed at the existing files and the 4.2 brief, and run the integration tests under the lock. After that: 4.3, then 5.2, then group H, then group I docs, then live group J (217 calls, must finish by 2026-10-31).
+- **Phase 3 (worktree p3):** group A is done. Group B waits for Phase 2 tasks 4.2/4.3.
+- **Phase 4 (main):** the plan is reviewed and revised. Implementation follows Phase 3.
+- **Phase 5 (main):** plan `add-cfb-analyses` is written (69 scenarios, 31 tasks) and validates. **Next: independent review.** U3/Q13 needs Nico: head-to-head drops `/teams/matchup` and uses stored games plus a 1-call game preview. Q2 is a security probe; escalate to Nico if it fails.
+- **Phases 6–8:** not planned yet.
+
 ## Next steps (queue)
 
 1. Finish the foundation integration tests 7.1–7.4 on local, then F.4 (redact the key after JSON parsing too).
