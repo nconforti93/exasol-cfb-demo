@@ -30,6 +30,26 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 | add-cfb-analytical-model | Phase 3 | Plan complete and validated: 27 tasks, 10 specs, 18 views plus 5 seeded reference tables. **Next: independent review**, then revise. 12 open questions (Q1–Q12) are answered by zero-call checks in its task 7.2 |
 | Phases 4–8 | | Not started. Phase 4 builds on the add-engine-spikes S3/S4 results |
 
+## Inputs for Phase 4 (from add-engine-spikes, 2026-10-22)
+
+- **Write-ups.** `docs/spikes/s3-python-engine-throughput.md` (D19) and `docs/spikes/s4-sim-storage.md` (D20). Raw results are in `spikes/s3/results/*.csv` and `spikes/s4/results/*.csv`; `*_aws` files are the AWS runs.
+- **S3 engine.** The Python engine is a GO.
+  - **Compute only, 100k sims:** about 7 s local (8 cores) and about 1.5 s on AWS (3×4 cores).
+  - **Full mode, 100k sims:** about 55 s local and 12.4 s on AWS. About 75 % of that time is emitting SIM_TEAM rows.
+  - **Settings to use:** sims_per_batch between 1k and 10k, at least 2 batches per core slot, one DataFrame per batch, and explicit EMITS.
+- **S4 storage.** Layout C wins: one BOOLEAN column per game for outcomes.
+  - **SIM_TEAM:** keep it sparse, with in-CFP rows only (run_id, sim_id, team, seed, bye, reached_round, champion). Add a per-run LEVERAGE table and a TEAMS roster. Don't store per-sim margins.
+  - **What-if p95 at 1M on AWS:** 0.52 s at k=1 and 0.21 s at k=3.
+  - **Conditional rooting guide at k=3:** about 2.2 s, which misses the target. This is deferred to Phase 5.
+  - **Sparse SIM_TEAM effect:** it cuts local full mode to about 20 s (estimated, not re-measured).
+
+## Facts learned on AWS (2026-10-22)
+
+- **AWS `default`:** Exasol **2026.1.1**, 3 nodes, PYTHON3 3.12.3. UDF DNS works (system resolver).
+- **CFBD key:** Academic tier, 3000/month, sharedPool true. remainingCalls was 3000 at 15:26Z and resets on 2026-11-01. All feature flags are false, so `API_FEATURES` is empty. The owner cap of 400 for October still applies.
+- **Deployment:** `CFBD_VS` is deployed on AWS (137 tables) together with `CFB_READER`. Read-through and aggregates work on 2026.1.1, with no UNION ALL crash.
+- **AWS BucketFS:** there is no host directory or exapump profile for it, so replay recordings live in `cache/replay/` and on local BucketFS only.
+
 ## Next steps (queue)
 
 1. Finish the foundation integration tests 7.1–7.4 on local, then F.4 (redact the key after JSON parsing too).
@@ -52,6 +72,8 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 ## Blocked on Nico
 
 - **November CFBD budget.** Needed only if the Phase 2 backfill can't finish by 2026-10-31.
-- **The DoH-success network test was never run (foundation 7.4 stays `[~]`).** Auto mode blocked `flock … make test-network` as "Interfere With Workloads". You can run it yourself with `! make test-network`; it needs HTTPS egress to 1.1.1.1 plus a TLS handshake with the CFBD host, and makes no API call. Alternatively, the live gate `make dns-check TARGET=aws` (9.0) covers the same path on AWS.
+- **The DoH-success network test was never run (foundation 7.4 stays `[~]`).** Auto mode blocked `flock … make test-network` as "Interfere With Workloads". You can run it yourself with `! make test-network`; it needs HTTPS egress to 1.1.1.1 plus a TLS handshake with the CFBD host, and makes no API call. The AWS dns-check (9.0) resolved via the **system** resolver, so the DoH fallback is still unverified.
+- **Two V.3 manual steps were blocked by auto mode.** Staging a stored slice on local was blocked, so the read-through manual row wasn't run; integration tests and the live 9.5b result cover it. `ALTER VIRTUAL SCHEMA` on AWS was blocked as "Modify Shared Resources", so the properties row ran on local instead.
+- **Local Personal has the real namespace deployed** (`CFB_INFRA`, `CFB_META`, `CFB_CORE`, `CFBD_VS`). It is in `FETCH_MODE='replay'` from V.3. `make grants` was not run there.
 - **Stale podman container `exasol-db-49afcb12` (Created).** Auto mode denied `podman rm`, so it is still there.
 - **Phase 7 chat has no Anthropic API key.** It will be built against a stub.

@@ -86,9 +86,17 @@ class Target:
         return password
 
     def connect_options(
-        self, user: str | None = None, password: str | None = None
+        self,
+        user: str | None = None,
+        password: str | None = None,
+        *,
+        socket_timeout: float | None = None,
     ) -> dict[str, Any]:
-        """Keyword arguments for `pyexasol.connect`; reads the sys password if none is given."""
+        """Keyword arguments for `pyexasol.connect`; reads the sys password if none is given.
+
+        `socket_timeout` (seconds) replaces pyexasol's 30 s wait for each server response; a
+        statement that runs longer than it fails on the client with "Connection timed out".
+        """
         options: dict[str, Any] = {
             "dsn": self.dsn,
             "user": user or self.user,
@@ -96,13 +104,21 @@ class Target:
         }
         if self.tls == TLS_UNVERIFIED_LOCAL:
             options["websocket_sslopt"] = {"cert_reqs": ssl.CERT_NONE}
+        if socket_timeout is not None:
+            options["socket_timeout"] = socket_timeout
         return options
 
-    def connect(self, user: str | None = None, password: str | None = None) -> Any:
+    def connect(
+        self,
+        user: str | None = None,
+        password: str | None = None,
+        *,
+        socket_timeout: float | None = None,
+    ) -> Any:
         """A pyexasol connection (sys by default). Failures carry no driver text."""
         import pyexasol
 
-        options = self.connect_options(user, password)
+        options = self.connect_options(user, password, socket_timeout=socket_timeout)
         try:
             return pyexasol.connect(**options)
         except Exception as error:

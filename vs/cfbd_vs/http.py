@@ -9,6 +9,7 @@ The module is named `http` inside the `cfbd_vs` package. A bundler must never re
 the bare name `http`, which would shadow the standard library module of the same name.
 """
 
+import functools
 import gzip
 import http.client
 import json
@@ -131,12 +132,42 @@ class FetchResult:
 def redact_key(text: str, key: str) -> str:
     """Replace the key in its raw, JSON-escaped and percent-encoded forms, and nothing else.
 
-    For response bodies: they are data, so a phrase such as "standard bearer Smith" stays.
+    Percent-encoded forms match in either hex case. For response bodies: they are data, so a
+    phrase such as "standard bearer Smith" stays.
     """
-    if key:
-        for form in _key_forms(key):
-            text = text.replace(form, REDACTED)
-    return text
+    if not key:
+        return text
+    return _key_pattern(key).sub(REDACTED, text)
+
+
+def redact_tree(value: Any, key: str) -> Any:
+    """`redact_key` applied to every string value and every object key of a parsed JSON tree."""
+    if not key:
+        return value
+    return _redact_tree(value, _key_pattern(key))
+
+
+def redact_body(text: str, key: str) -> str:
+    """Redact the key from a JSON body, also in forms that only parsing reveals.
+
+    Text redaction runs first. A body with no backslash cannot hide the key from it: every
+    decoded string and object key is then a substring of the text. Only a body with a
+    backslash is parsed, so `\\/`, `\\u002b` and other escapes are caught on the decoded tree.
+    The original text is returned when the tree held no key, which keeps `@RAW` byte-faithful.
+    A tree that did hold it is re-serialized, so the escaped text is gone, and it flattens to
+    the rows the redacted tree gives.
+    """
+    text = redact_key(text, key)
+    if not key or "\\" not in text:
+        return text
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return text
+    scrubbed = redact_tree(parsed, key)
+    if scrubbed == parsed:
+        return text
+    return json.dumps(scrubbed, ensure_ascii=False)
 
 
 def redact(text: str, key: str) -> str:
@@ -371,11 +402,31 @@ def _decode(body: bytes) -> str:
     return body.decode("utf-8", errors="replace")
 
 
-def _key_forms(key: str) -> list[str]:
-    forms = [
-        key,
-        json.dumps(key)[1:-1],
-        json.dumps(key, ensure_ascii=False)[1:-1],
-        urllib.parse.quote(key, safe=""),
-    ]
-    return sorted(set(forms), key=len, reverse=True)
+def _redact_tree(value: Any, pattern: re.Pattern[str]) -> Any:
+    if isinstance(value, str):
+        return pattern.sub(REDACTED, value)
+    if isinstance(value, dict):
+        return {
+            pattern.sub(REDACTED, name): _redact_tree(item, pattern) for name, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_tree(item, pattern) for item in value]
+    return value
+
+
+@functools.lru_cache(maxsize=8)
+def _key_pattern(key: str) -> re.Pattern[str]:
+    literals = {key, json.dumps(key)[1:-1], json.dumps(key, ensure_ascii=False)[1:-1]}
+    percent = {urllib.parse.quote(key, safe=""), urllib.parse.quote_plus(key, safe="")}
+    forms = sorted(literals | percent, key=len, reverse=True)
+    return re.compile(
+        "|".join(_percent_alternative(f) if f in percent else re.escape(f) for f in forms)
+    )
+
+
+def _percent_alternative(form: str) -> str:
+    pieces = re.split(r"(%[0-9A-F]{2})", form)
+    return "".join(
+        f"(?i:{re.escape(piece)})" if re.fullmatch(r"%[0-9A-F]{2}", piece) else re.escape(piece)
+        for piece in pieces
+    )

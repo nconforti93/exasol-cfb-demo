@@ -4,17 +4,21 @@ The weekly refresh is one call: fetch, merge, model, predictions, simulations. T
 
 ## Background
 
-- `MODEL_CHECKS`: a view with one row per check and season, and per week for week-scoped checks. Its columns are the check name, `SEVERITY`, season, week sequence, the number of offending rows (`OBSERVED`), `CHECK_STATUS` (`PASS` or `FAIL`), and a `DETAIL` that names up to 10 offending rows. The checks:
+- `MODEL_CHECKS`: a view with one row per check and season, and per week for week-scoped checks. Its columns are the check name, `SEVERITY`, season, week sequence, the number of offending rows (`OBSERVED`), `CHECK_STATUS` (`PASS` or `FAIL`), and a `DETAIL` that names up to 10 offending rows. Each check filters by season before it aggregates, so a filter on one season stays cheap. The checks:
 
   | Check | Severity | Fails when, in the season |
   |---|---|---|
-  | `DUPLICATE_GAME` | ERROR | a game id is stored more than once |
   | `GAME_WITHOUT_WEEK` | ERROR | a game has no week, or a season type other than `regular` or `postseason` |
-  | `FBS_TEAM_WITHOUT_CONFERENCE` | ERROR | an FBS team-season has no conference |
+  | `FBS_TEAM_WITHOUT_CONFERENCE` | ERROR | a team-season classified `fbs`, with a classification that is not retroactive (from 1978), has no conference |
   | `POWER_CONFERENCE_MISSING` | ERROR | a power conference of `CONFERENCE_TIER` for the season has no team-season (the CFBD name changed) |
+  | `DUPLICATE_SOURCE_ROW` | WARNING | a key of a season-scoped source (games, pregame lines, SP+, rankings, calendar) is stored in more than one fetched row; the model keeps the newest. `DETAIL` names the sources |
+  | `CONF_CHAMPIONSHIP_MISSING` | WARNING | the season is not the current one, and a conference of `CONFERENCE_CHAMPIONSHIP` for the season has no detected championship game |
+  | `CONF_CHAMPIONSHIP_NOTES_MISMATCH` | WARNING | an undetected regular-season game between two teams of one conference has notes that mention a championship, or a detected game has notes that do not |
+  | `CONFERENCE_GAME_MISMATCH` | WARNING | a game flagged as a conference game is between teams whose team-seasons have different conferences |
   | `WEEK_NOT_COMPLETE` (per week) | WARNING | a game of the week is not completed |
   | `MEMBERSHIP_CONFLICT` | WARNING | a team-season has conflicting memberships |
   | `SP_TEAM_UNMATCHED` | WARNING | an SP+ row has no team |
+  | `SP_PRIOR_NOT_FINAL` | WARNING | the season's SP+ priors come from a previous-season slice that is not final |
   | `POLL_UNKNOWN` | WARNING | a poll name is not in `POLL` |
   | `CONFERENCE_NAME_UNMATCHED` | WARNING | a conference recorded on a game is not in `CONFERENCE` |
   | `GAME_TEAM_NOT_IN_TEAM_LIST` | INFO | a team of a game is not in the stored team list |
@@ -23,12 +27,12 @@ The weekly refresh is one call: fetch, merge, model, predictions, simulations. T
 - **Step script:** `EXECUTE SCRIPT CFB_INFRA.REFRESH_MODEL(run_id, season, week, season_type)`, the contract of registered refresh steps (`loader/refresh-week`).
   - `loader/load-plan.yaml` registers it as step 100 `MODEL`.
   - The script resolves the point from `AS_OF_POINT` and evaluates the season's checks plus the week's checks.
-  - It writes one row per evaluated check to `CFB_META.MODEL_CHECK_LOG` with the run id and commits.
+  - It writes one row per evaluated check to `CFB_META.MODEL_CHECK_LOG` with the run id and commits. The refresh commits its own step row before a step starts (`loader/refresh-week`), so this commit ends no uncommitted refresh state.
   - It then raises an error that names every failed ERROR check, if there is one.
   - It never reads the virtual schema, so it costs zero API calls.
   - A NULL `run_id` runs the checks outside a refresh; the log rows then have no run id.
 - `make model-check SEASON=… WEEK=… [SEASON_TYPE=postseason] [TARGET=…]` prints the checks of that point from `MODEL_CHECKS`, without the step script and without writing a log.
-- The examples run in the integration-test namespace in replay mode. The load plan registers `MODEL` as step 100 and a recording test step as step 200. The recordings of the 2026 weekly slices come from the synthetic league.
+- The examples run in the integration-test namespace in replay mode. The load plan registers `MODEL` as step 100 and a recording test step as step 200. The recordings of the 2026 weekly slices come from the synthetic league, in which no ERROR check fails for any season.
 
 ## Scenarios
 

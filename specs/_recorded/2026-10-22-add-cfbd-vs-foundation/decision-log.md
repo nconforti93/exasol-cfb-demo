@@ -384,6 +384,21 @@ No git commit is made before implementation.
 - **Consequences:** A restore sees a different hash after any regeneration (see the persistence plan). `sqlrender.json_comment` (209 fuzz tests) and `rules.check_request` were removed as unused; the fuzz moved onto `plan.manifest_comment`. `Param.default` and `Param.description` left the catalog (the `default` rule and the `P_` column comment carry them). `Table.row_cap` stays until `tests/it/test_read_through_it.py` filters on the `row_cap` rule instead.
 - **Promotes to ADR:** no
 
+### [26] S1 keeps the generated VARCHAR(2000) sizes
+- **Decision:** Task 9.4 does not shrink response `VARCHAR` sizes to the S1 maxima. Response strings stay `VARCHAR(2000) UTF8` and `RAW_JSON` stays `VARCHAR(2000000) UTF8`. The observed maxima are recorded in `docs/cfbd-api-measurements.md`.
+- **Evidence:**
+  - The S1 recordings exercised 134 of the 1,131 `VARCHAR(2000)` columns. The longest value was 416 characters (`PLAYS.PLAY_TEXT`), the next 89 (`GAMES.NOTES`).
+  - The largest `RAW_JSON` was 48 KB (a game preview).
+  - Every real payload flattened with zero errors and no uncovered fields.
+- **Alternatives:** Size every observed column to its maximum plus headroom, as task 9.4 is worded.
+- **Rationale:**
+  - Exasol stores actual string lengths, so a smaller declared size saves nothing.
+  - Strict flattening ([9]) would turn any longer value from an unseen season into a failed, already paid slice of the Phase 2 backfill (157 seasons of `/games` from 1869).
+  - Changing column types would also force dropping and recreating the mirror tables on both deployments for no benefit.
+- **Revisit:** Revisit if a consumer, such as a BI tool or the Phase 7 chat schema prompt, needs narrower types.
+- **Chosen by:** the implementer on 2026-10-22; the orchestrator to confirm.
+- **Promotes to ADR:** no
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. -->
@@ -396,3 +411,7 @@ No git commit is made before implementation.
   - Unit tests at width 2 use a barrier and a gated transport, with no sleeps. They pin that later slices are never requested, that an in-flight 503 is not retried, that the first failure wins over a later one in input order, and that a failing emit stops the pool. They pass 2,400 stress iterations and fail against both mutants: no stop signal, and the pool joined before the signal is set.
 - **m2, redaction scope:** see [23]. A body containing "standard bearer Smith" now reaches rows and `@RAW` unchanged. The key and `Bearer <key>` are still redacted in bodies, and any `Bearer <token>` is still redacted in errors.
 - **m9, replay attempts:** see [24]. `tests/it/fetch_helpers.py` no longer counts `REQ_ATTEMPTS` among the ignored columns, so the "replays identically" integration assertion now compares it. The fetch-modes and fetch-log spec deltas name the recorded attempts.
+
+### F.4 Key redaction after JSON parsing
+
+- **Exotic-escape gap closed:** `fetch.py` now calls `http.redact_body` on the live body before flattening or `@RAW`. It runs text redaction (percent forms now match in either hex case), then, only for a body containing a backslash, parses it and redacts the key from every string value and object key. A tree that held the key is re-serialized, so `@RAW` carries no escaped form. A body without the key keeps its original bytes, and the recording replays into the same rows. "standard bearer Smith" is unchanged.

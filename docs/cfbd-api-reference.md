@@ -10,17 +10,19 @@ Source: `vs/openapi/cfbd-openapi-5.33.0.json`, identical to https://api.collegef
    - `/games/{gameId}/preview/adjusted` says "Requires Patreon Tier 1".
    - `/scoreboard` and `/live/plays` map to the `scoreboard` and `livePlayByPlay` flags.
    - `/wepa/*` (tag `adjustedMetrics`) presumably maps to the `adjustedMetrics` flag.
-   - **On the free tier these are expected to be unavailable.** Verify with `/info` once the key exists. Gated endpoints stay in the VS but are marked `gated` and excluded from the load profiles unless `/info` reports access.
+   - **On the free tier these are expected to be unavailable.** Gated endpoints stay in the VS but are marked `gated` and excluded from the load profiles unless `/info` reports access.
+   - **Verified (S1, 2026-10-22):** every `/info` feature of the project key is false. `/wepa/team/season` answers HTTP 401 "This endpoint requires a Patreon subscription at Tier 1 or higher", the tier `/games/{gameId}/preview/adjusted` names too. The refusal is not charged.
 3. **Hidden defaults:**
    - `classification` defaults to `fbs` on most stats, rushing, passing, punting and PPA endpoints and on `/scoreboard` and `/games/schedule`, so FCS data needs explicit extra calls.
    - `/roster` `year` defaults to 2025.
    - `/ratings/elo` `week` defaults to the latest week.
    - Recruiting defaults to `HighSchool`.
    - `/recruiting/groups` defaults to 2000 through the current year.
-   - The `seasonType` default is not stated. `SeasonType` has a `both` value, so loads pass `seasonType=both` where accepted. S1 verifies the default.
+   - The `seasonType` default is not stated. `SeasonType` has a `both` value, so loads pass `seasonType=both` where accepted. **S1:** on `/games`, omitting it returns regular and postseason games, the same set as `both`.
+   - Where `classification` has no stated default (`/games`, `/plays`, `/drives`), omitting it means no division filter. **S1:** `/games` returns FBS, FCS, D-II, D-III and unclassified opponents in one call. `/plays` returns every FBS and FCS game; D-II and D-III games have no play-by-play.
    - **Rule:** the loader always sets classification, season type and year explicitly; it never relies on defaults.
 4. **Row caps:**
-   - `/plays/stats` is "limited to 2,000 records", so it is only complete per `gameId`. That's infeasible to backfill on the free tier (about 800 games per season), so it stays on-demand only.
+   - `/plays/stats` is "limited to 2,000 records", so it is only complete per `gameId`. That's infeasible to backfill on the free tier (about 800 games per season), so it stays on-demand only. **S1:** one game returned 208 records.
    - `/player/search` returns up to 100 rows.
    - `/info/usage` returns at most 31 days and 50 rows.
 5. **`/games` carries Elo and win probability per game:** `homePregameElo`, `homePostgameElo`, `homePostgameWinProbability` (and the away equivalents), plus line scores, excitement index and playoff metadata. Elo history back to 1890 and Elo-based upset probability come from `/games` alone; `/ratings/elo` is not needed for the v1 pages.
@@ -43,17 +45,32 @@ Source: `vs/openapi/cfbd-openapi-5.33.0.json`, identical to https://api.collegef
 - **`/info` does not consume a call:** `remainingCalls` stayed 3000 after the request. The loader and inspector can read the budget freely.
 - The design target stays the free tier (1k/month, D13); the academic quota is headroom.
 
+## Verified in S1 and S2 (2026-10-22)
+
+17 calls on the AWS deployment, recorded through the ledger. Every number is in [`docs/cfbd-api-measurements.md`](cfbd-api-measurements.md).
+- **`/games`:** one call returns a whole season of every division. 2024 has 3,801 games in 2.9 MB; the 2026 season in progress has 3,678 games in 2.8 MB. The order of the games is not stable between requests, so key rows by `id`, not by position.
+- **`seasonType` and `classification`:** as in finding 3. The explicit defaults stay in the overrides, so slice keys say what they hold.
+- **On-demand sizes:**
+  - Preview: 48 KB
+  - Team season overview: 19 KB
+  - Advanced box score: 12 KB
+  - One game's play stats: 75 KB (208 records)
+  - One week of `/plays`: 12 MB (19,520 plays)
+- **Not charged:** `/info` calls and refused calls (HTTP 401). No retries or 429s were seen at up to 6 parallel requests.
+- **Read-through:** a stored slice costs 0 calls, and a missing one exactly 1.
+- **Real payloads:** every recorded response flattens strictly without errors or uncovered fields.
+
 ## Revised demo profile (free tier)
 
 | Data | Endpoint | Calls |
 |---|---|---|
-| Games + scores + per-game Elo/WP, **1869–2026** (all-time upsets via Elo, history) | `/games?year=Y&seasonType=both` | ~157 (1 per season, pending S1: classification behavior, response size) |
+| Games + scores + per-game Elo/WP, **1869–2026** (all-time upsets via Elo, history) | `/games?year=Y&seasonType=both` | ~157 (1 per season; S1: one call returns every division, about 2.9 MB) |
 | Pregame win probability + spread, 2013– | `/metrics/wp/pregame?year=Y` | 14 |
 | SP+ (offense/defense/special teams), 2013– | `/ratings/sp?year=Y` | 14 |
 | Polls incl. CFP, 2014– | `/rankings?year=Y` | 13 |
 | Conference membership, all years | `/conferences/affiliations?minYear&maxYear` | 1 |
 | Teams, venues, calendar | `/teams`, `/venues`, `/calendar?year=2026` | 3 |
-| **Backfill total** | | **~200** |
+| **Backfill total** | | **~200** (the Phase 2 plan counts 217 with conferences and the calendar 2013–2026) |
 | Weekly refresh | `/games` (week), `/metrics/wp/pregame` (next week), `/rankings`, `/ratings/sp`, `/games/schedule` | ~5 |
 | Head-to-head | `/teams/matchup` on demand | 1 per click |
 | Game preview | `/games/{id}/preview` on demand | 1 per click |

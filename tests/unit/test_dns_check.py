@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -136,6 +137,16 @@ def test_udf_ddl_names_schema_script_and_parameters() -> None:
     assert ddl.startswith("CREATE OR REPLACE PYTHON3 SCALAR SCRIPT CFB_TOOLS.DNS_CHECK(")
     assert "RETURNS VARCHAR(2000000) UTF8" in ddl
     assert "def run(ctx)" in ddl
+
+
+def test_udf_parameters_are_declared_in_the_case_the_udf_reads_them() -> None:
+    """Exasol 2026.1.1 keeps the case of unquoted UDF parameter names (`host` stays `host`), so
+    `ctx.HOST` only works when the parameter is declared upper case."""
+    declared = re.findall(r"\b([A-Za-z_]+) (?:VARCHAR|DECIMAL)\(", dns.UDF_SIGNATURE)
+    read = set(re.findall(r"\bctx\.([A-Za-z_]+)", dns.UDF_TEMPLATE))
+    assert read
+    assert read <= set(declared)
+    assert all(name == name.upper() for name in declared)
 
 
 def test_system_only_resolver_has_the_resolver_interface() -> None:

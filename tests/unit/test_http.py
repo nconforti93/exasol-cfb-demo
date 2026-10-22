@@ -428,6 +428,40 @@ def test_redact_key_replaces_only_the_forms_of_the_key() -> None:
     assert http.redact_key("standard bearer Smith", "") == "standard bearer Smith"
 
 
+def test_percent_encoded_forms_match_in_either_hex_case() -> None:
+    key = "ab+/c=Z"
+    text = "ab%2b%2fc%3dZ | ab%2B%2Fc%3DZ | ab+%2fc%3DZ | AB%2B%2FC%3DZ"
+    assert http.redact_key(text, key) == "[REDACTED] | [REDACTED] | ab+%2fc%3DZ | AB%2B%2FC%3DZ"
+
+
+def test_redact_tree_replaces_the_key_in_every_string_value_and_object_key() -> None:
+    key = "ab+/c"
+    tree = {"ab+/c": [1, None, True, "x ab+/c y", {"deep ab+/c": ["ab+/c"]}], "n": 1.5}
+    assert http.redact_tree(tree, key) == {
+        "[REDACTED]": [1, None, True, "x [REDACTED] y", {"deep [REDACTED]": ["[REDACTED]"]}],
+        "n": 1.5,
+    }
+
+
+def test_redact_tree_leaves_bearer_words_and_empty_keys_alone() -> None:
+    tree = {"text": "standard bearer Smith"}
+    assert http.redact_tree(tree, "k") == tree
+    assert http.redact_tree({"k": "k"}, "") == {"k": "k"}
+
+
+def test_redact_body_catches_escapes_that_only_json_parsing_reveals() -> None:
+    key = "ab+/cé=Z"
+    text = r'{"a": "x ab\u002b\/c\u00e9=Z y", "ab\u002b\/c\u00e9=Z": 1}'
+    redacted = http.redact_body(text, key)
+    assert json.loads(redacted) == {"a": "x [REDACTED] y", "[REDACTED]": 1}
+
+
+def test_redact_body_returns_a_body_without_the_key_unchanged() -> None:
+    text = '[ {"a":  "standard bearer Smith \\/ caf\\u00e9"} ]'
+    assert http.redact_body(text, "ab+/c") == text
+    assert http.redact_body("not json ab+/c", "ab+/c") == "not json [REDACTED]"
+
+
 def test_redact_for_error_text_also_replaces_any_bearer_token() -> None:
     text = f"Authorization: Bearer abc.def-123 and {KEY}"
     assert http.redact(text, KEY) == "Authorization: Bearer [REDACTED] and [REDACTED]"

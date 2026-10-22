@@ -5,7 +5,7 @@
 ## Background
 
 - **Source of truth:** one SQL file per model object in `sql/model/`, deployed in file-name order:
-  - reference tables (curated knowledge that CFBD does not provide: eras, division labels, conference tiers, polls, datasets);
+  - reference tables (curated knowledge that CFBD does not provide: eras, division labels, conference tiers, conference championship seasons, polls, datasets, classification transitions);
   - one SQL function (`GREAT_CIRCLE_KM`);
   - views for every dimension, fact, coverage and as-of object.
 
@@ -16,16 +16,17 @@
 - **Lint** (before any statement reaches the database). A file is rejected when:
   - an object, or one of its columns, has no comment;
   - an object comment does not start with its grain ("One row per …");
-  - a column name is an Exasol reserved word;
+  - an object or column name in a DDL statement is quoted, is not upper case (`A–Z`, digits, `_`), or is an Exasol reserved word, so that every name works unquoted;
   - it references a schema other than `CFB_MODEL`, `CFB_CORE` or the allowed `CFB_META` objects (`LOAD_PLAN`, `LOAD_PLAN_GAPS`, `LOAD_SLICES`), in particular the virtual schema `CFBD_VS`;
   - its object name differs from its file name, or two files define the same object;
   - it uses an unknown placeholder.
-- **Deploy** runs in one transaction:
-  1. create the schema if needed;
-  2. replace the reference tables and their rows;
-  3. replace the function and the views in file order;
-  4. drop model objects that no file defines any more;
-  5. read the comments back from the database and require one on every object and column.
+- **Deploy** runs in one transaction, holding the loader's run lock (`loader/run-logs`):
+  1. refuse to start while a loader run, snapshot or restore holds the lock;
+  2. create the schema if needed;
+  3. replace the reference tables and their rows;
+  4. replace the function, and the views with `CREATE OR REPLACE FORCE VIEW` in file order, so a view may reference a view of a later file;
+  5. drop model objects that no file defines any more;
+  6. compile every view (a query that returns no rows) and read the comments back from the database; an invalid view or a missing comment fails the deploy.
 
   Any failure rolls the whole deploy back, so the previously deployed model stays as it was.
 - The deploy reports one line per step: objects created or replaced, objects dropped, and the comment coverage.
@@ -59,15 +60,23 @@
 ### Scenario: A file that breaks a lint rule stops the deploy before any statement
 
 * *GIVEN* a deployed model
-* *AND* a changed model directory with four problems:
+* *AND* a changed model directory with five problems:
   - a view column without a comment;
   - a view whose comment starts with "Games" instead of "One row per";
   - a column named `RESULT`, which is a reserved word;
+  - a view created as `"game_list"`, a quoted name that is not upper case;
   - a view that selects from `CFBD_VS.GAMES`
 * *WHEN* the owner runs `make model`
 * *THEN* the command MUST fail with one message per problem, each naming the file, the object and the rule
 * *AND* no statement MUST be sent to the database
 * *AND* the previously deployed model MUST stay unchanged
+
+### Scenario: A view may reference a view of a later file
+
+* *GIVEN* a model directory in which the view of `100_a.sql` selects from the view of `200_b.sql`
+* *WHEN* the owner runs `make model`
+* *THEN* the deploy MUST succeed
+* *AND* both views MUST return rows and carry their column comments
 
 ### Scenario: A failing statement rolls the whole deploy back
 
@@ -85,9 +94,17 @@
 * *THEN* `OLD_VIEW` MUST NOT exist afterwards
 * *AND* the report MUST name it as dropped
 
+### Scenario: A deploy is refused while a loader run holds the lock
+
+* *GIVEN* a deployed model
+* *AND* a loader run of the test namespace that is `RUNNING` in a live session
+* *WHEN* the owner runs `make model ARGS="--prefix TEST_"`
+* *THEN* the command MUST fail and name the running loader run
+* *AND* the deployed model MUST stay unchanged
+
 ### Scenario: The model accepts any data the virtual schema can store
 
-* *GIVEN* every table of the `demo` load profile staged through the virtual schema from the synthetic response generator (`tests/synthetic/fake.py`), not from the league
+* *GIVEN* every table of the `demo` load profile staged through the virtual schema from the synthetic response generator (`tests/synthetic/fake.py`) for the seasons 1890, 1985, 2014 and 2026, not from the league
 * *WHEN* every model view is queried in full
 * *THEN* no query MUST fail
 * *AND* `MODEL_CHECKS` MUST return a status for every check of every stored season

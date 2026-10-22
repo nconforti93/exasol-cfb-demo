@@ -229,6 +229,13 @@ def test_aws_pins_the_fingerprint_of_the_connection_hosts_certificate(tmp_path: 
     assert options["dsn"] == resolved.dsn
 
 
+def test_a_socket_timeout_is_passed_only_when_asked_for(tmp_path: Path) -> None:
+    make_local(tmp_path)
+    resolved = resolve(tmp_path, "local")
+    assert "socket_timeout" not in resolved.connect_options("sys", "pw")
+    assert resolved.connect_options("sys", "pw", socket_timeout=600)["socket_timeout"] == 600
+
+
 def test_the_fingerprint_is_the_sha256_of_the_der_certificate() -> None:
     der = ssl.PEM_cert_to_DER_cert(NODE_CERT)
     assert (

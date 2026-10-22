@@ -1,0 +1,34 @@
+# S1 live measurement (foundation task 9.3): one canonical slice key per question the plan asks.
+# Recorded with `make record TARGET=aws PATTERNS=vs/live/s1-patterns.yaml CONFIRM=yes`
+# (scripts/record.py: ledger cache/live-calls.jsonl, /info before and after every call).
+# Slices already in cache/replay/ are skipped, so re-running after adding a pass costs only the
+# new slices. Every slice except the defaults check is the key the adapter itself sends (checked
+# with EXPLAIN VIRTUAL), so the recordings replay for real virtual-table queries.
+# Left out on purpose (no plan question, or answered without a call): the draft patterns 3, 4,
+# 6, 7, 9-14, 16, 17, 19, 21-24, 26 and /drives (classification behavior inferred from /games
+# and /plays). Real ids for pass 2 come from the pass 1 recordings.
+patterns:
+  # pass 1
+  - slice: /games?seasonType=both&year=2024
+    note: full season in one call? divisions without a classification filter (Phase 2 A4, Phase 3 Q9)
+  - slice: /games?year=2024
+    note: defaults check, nothing but year; seasonType and classification defaults by comparison with the slice above
+  - slice: /games?seasonType=both&year=2026
+    note: current season in progress (Phase 2 weekly refresh slice); ids of upcoming games for the preview
+  - slice: /rankings?seasonType=both&year=2024
+    note: nested polls/ranks on real data (RANKINGS_POLLS_RANKS, Phase 2); manual-test replay row
+  - slice: /plays?seasonType=both&week=8&year=2024
+    note: plays payload size for one week; classification omission on /plays
+  - slice: /teams/season/overview?team=Michigan&year=2024
+    note: overview payload size (curated subset + RAW_JSON)
+  # pass 2: ids from the pass 1 recordings (401628518: a 2024 week 8 FBS game that is also in
+  # the plays recording; 401858271: a 2026 week 8 FBS game not yet played when recorded)
+  - slice: /game/box/advanced?id=401628518
+    note: box score payload size for one game
+  - slice: /plays/stats?gameId=401628518&seasonType=both
+    note: verify row-cap-applies-per-game (one game far below the 2,000-record cap)
+  - slice: /games/401858271/preview
+    note: preview payload size for an upcoming game (curated subset + RAW_JSON)
+  # pass 3: last, because a refusal stops the run
+  - slice: /wepa/team/season?year=2024
+    note: verify feature-adjustedmetrics-mapping (all /info features are false; expect 401/403)
