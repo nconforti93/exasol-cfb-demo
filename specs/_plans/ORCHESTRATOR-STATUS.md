@@ -11,11 +11,13 @@ Limits:
 
 ## RESUME AFTER RESTART (planned machine restart ~14:33 CEST, 2026-10-22)
 
+State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` (7da9901). Integration tests 7.1–7.3 are `[x]`. 7.4 is `[~]` only because of the blocked network test. No DB sessions or locks are open.
+
 1. Bring local Exasol back with `exasol start -d local` (via the launcher, never exakit). Check it with a trivial PYTHON3 UDF.
 2. The mock sidecar container is gone after the reboot. The IT harness restarts it on its own (`tests/mock_cfbd/sidecar.py`).
 3. The IT lock file is `/tmp/claude-1002/-mnt-c-Users-nc-OneDrive---EXASOL-AG-Documents-Notes/d157cdb7-6061-4526-8ef3-8d5d6fabb341/scratchpad/cfb-it.lock`. /tmp may be wiped by the reboot; if so, recreate it by running any `flock` on that path.
 4. Read `specs/_plans/add-cfbd-vs-foundation/tasks.md`. Resume every `[~]` task with a fresh implementer agent. Point it at its test files and the state report quoted below under "Agent state at stop".
-5. The parallel session `exasol-cfb-demo-a4` (add-engine-spikes) still holds **AWS `default`** until it sends "AWS free". It also holds the shared files `docs/roadmap.md`, `specs/architecture.md` and `CLAUDE.md` until it sends "4.1 done". Check with ListAgents and SendMessage after the restart, because that session may also have restarted.
+5. **AWS `default` is FREE** (exasol-cfb-demo-a4 confirmed at 14:06; add-engine-spikes is finished with both DBs). The AWS DB has no schemas; the `CFBD_API` connection should still exist, and 9.2 verifies it via `EXA_DBA_CONNECTIONS`. Never stop the instance (mandate). It also holds the shared files `docs/roadmap.md`, `specs/architecture.md` and `CLAUDE.md` until it sends "4.1 done". Check with ListAgents and SendMessage after the restart, because that session may also have restarted.
 6. Then continue with the queue under "Next steps".
 
 ## Plan pipeline
