@@ -78,6 +78,14 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 - **Fan-out is one SET group plus a thread pool, `MAX_PARALLEL_FETCHES` (foundation [18]).**
 - **The 401/403 message follows the gating spec (foundation [22]).** Body redaction is key-only ([23]). Recordings store attempts ([24]). The catalog hash covers generated content ([25]).
 
+## Owner answers (2026-10-22 evening)
+
+- **November CFBD budget:** 1000 calls, recorded in `vs/live/ledger.yaml` on the Phase 2 branch. October stays at 400.
+- **Head-to-head without `/teams/matchup`:** confirmed (Phase 5 U3).
+- **Network DoH test and stale podman container:** Nico will handle both himself.
+- **Anthropic key:** Nico will provide it later.
+- **Demo date and replay week:** the demo is around mid-November 2026. The replay/rehearsal snapshot uses the latest completed week at the time of the Phase 2/8 live runs (Phase 8 input).
+
 ## Blocked on Nico
 
 - **November CFBD budget.** Needed only if the Phase 2 backfill can't finish by 2026-10-31.

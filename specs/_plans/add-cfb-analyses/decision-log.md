@@ -525,3 +525,8 @@ The owner (Nico) was away and delegated these decisions on the independent revie
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. -->
+
+
+### Owner confirmation (2026-10-22)
+
+- U3/Q13 confirmed by Nico: head-to-head uses the stored-games series (0 calls) plus a one-call `GAME_PREVIEW`. `/teams/matchup` is dropped.
