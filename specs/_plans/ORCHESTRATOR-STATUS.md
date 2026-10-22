@@ -22,13 +22,14 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 
 ## Plan pipeline
 
-| Plan | Roadmap phase | State |
-|---|---|---|
-| add-cfbd-vs-foundation | Phase 0 S1/S2 + Phase 1 | Groups A–G done. Review R.1 done. Fixes F.1–F.3 done, F.4 open. Group H integration tests running on local (see tasks.md). Docs 8.2–8.4 wait for "4.1 done". Live group J waits for "AWS free" |
-| add-engine-spikes | Phase 0 S3/S4 | Owned by the parallel session |
-| add-cfb-persistence-refresh | Phase 2 | Reviewed (approve with changes), revised, validates. Implementation waits for the foundation |
-| add-cfb-analytical-model | Phase 3 | Plan complete and validated: 27 tasks, 10 specs, 18 views plus 5 seeded reference tables. **Next: independent review**, then revise. 12 open questions (Q1–Q12) are answered by zero-call checks in its task 7.2 |
-| Phases 4–8 | | Not started. Phase 4 builds on the add-engine-spikes S3/S4 results |
+| Plan | Phase | Where | State |
+|---|---|---|---|
+| add-cfbd-vs-foundation | 0 S1/S2 + 1 | main | **Recorded** (06498a3), live on AWS, 21/50 ledger. 7.4 network test is pending Nico |
+| add-engine-spikes | 0 S3/S4 | parallel session | Done (D19/D20); its files are untracked for it to commit |
+| add-cfb-persistence-refresh | 2 | worktree `../exasol-cfb-demo-p2` | Groups A–B done, 2.3 and 3.2 done; 3.3 deploy running |
+| add-cfb-analytical-model | 3 | worktree `../exasol-cfb-demo-p3` (from p2) | Reviewed and revised; Group A running |
+| add-cfb-score-engine | 4 | main (plan only) | Reviewed (approve with changes); revision running |
+| Phases 5–8 | | | Not planned yet |
 
 ## Inputs for Phase 4 (from add-engine-spikes, 2026-10-22)
 
