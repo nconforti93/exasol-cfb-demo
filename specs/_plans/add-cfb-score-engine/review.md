@@ -372,3 +372,7 @@ Kept as read: G6 bid = best-ranked G6 team; Notre Dame top-12 guarantee as an au
   - The undetected real title game would enter 2026 runs from the week-13 point (late November) as a regular conference game and can stop them with `CONFERENCE_PAIR_REPEATED`.
   - Suggested Phase 3 fix: restrict the detection to weeks up to the season's power-conference championship week.
 - **X2 (Phase 3, information).** The 2024 selection ranking is labeled regular week 16 (`isFinal`), so with the committee's label lead of 0 it becomes visible one point after selection. This plan reads final rankings only as labels and is unaffected. Phase 3's Q2 may want the observation.
+
+## Cross-plan items from the Phase 5 review (2026-10-22)
+
+- **P5-M3 (apostrophes in generated DDL):** generated column comments in the per-run `SIM_PATH_R<n>` tables embed school names without escaping. CFBD's FBS school "Hawai'i" would make the DDL invalid. The per-run DDL generator must escape `'` as `''`. Add an apostrophe team to the sim league and a unit test. Fold this into the task that generates the per-run DDL (1.4 or 3.1).
