@@ -9,3 +9,4 @@ plans:
   add-cfb-persistence-refresh: 300
 months:
   "2026-10": 400
+  "2026-11": 1000  # owner authorized 2026-10-22
