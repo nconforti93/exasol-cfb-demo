@@ -13,6 +13,12 @@
 #   record             live CFBD calls through the fetch UDF, capped by the ledger cache/live-calls.jsonl
 #                      (scripts/record.py). Without CONFIRM=yes it only prints the plan. ARGS="--ledger"
 #                      prints the totals, ARGS="--info" logs one free /info reading.
+#   backfill           PROFILE=demo|full [FROM=year] [MAX_CALLS=n] [CONFIRM=yes]: prints the estimate and
+#                      the quota, then (live mode, CONFIRM=yes, ledger check) runs CFB_INFRA.BACKFILL.
+#   refresh            SEASON=y WEEK=w [SEASON_TYPE=postseason] [CONFIRM=yes]: the same for REFRESH_WEEK.
+#   quota              prints CFB_META.QUOTA (reads /info, 0 calls) and the ledger room.
+#                      All three are scripts/loader_cli.py. LEDGER=off turns the ledger off;
+#                      MAX_CALLS defaults to the ledger room. MAX_CALLS=0 is a dry run.
 
 TARGET ?= local
 export TARGET
@@ -26,6 +32,7 @@ CONFIRM  ?=
 ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
+.PHONY: backfill refresh quota
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -74,3 +81,12 @@ dns-check: db-check
 
 record: db-check
 	$(PY) -m scripts.record --patterns "$(PATTERNS)" --confirm "$(CONFIRM)" $(ARGS)
+
+backfill: db-check
+	$(PY) -m scripts.loader_cli --confirm "$(CONFIRM)" backfill --profile "$(or $(PROFILE),demo)" $(if $(FROM),--from-season "$(FROM)") $(if $(MAX_CALLS),--max-calls "$(MAX_CALLS)")
+
+refresh: db-check
+	$(PY) -m scripts.loader_cli --confirm "$(CONFIRM)" refresh $(if $(SEASON),--season "$(SEASON)") $(if $(WEEK),--week "$(WEEK)") $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)")
+
+quota: db-check
+	$(PY) -m scripts.loader_cli quota

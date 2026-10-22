@@ -1,0 +1,17 @@
+# Integration-test load plan variant (deployed into the TEST_ namespace by tests/it/harness.py).
+# Default settings; the tests set the date with Harness.set_now. Entry order is the ENTRY_ID.
+version: 1
+# The base GAMES entry after an edit that starts it in 2019: stored 2017 and 2018 slices become orphans.
+entries:
+  - table: GAMES
+    profile: demo
+    priority: 1
+    slicing: season
+    seasons: {from: 2019}
+    refresh_class: weekly
+  - table: RATINGS_SP
+    profile: demo
+    priority: 2
+    slicing: season
+    seasons: {from: 2019}
+    refresh_class: weekly
