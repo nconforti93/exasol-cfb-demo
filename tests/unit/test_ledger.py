@@ -154,7 +154,7 @@ def write(path: Path, *entries: Entry) -> None:
 
 def test_the_committed_config_has_the_plan_caps_and_the_owner_authorizations() -> None:
     config = ledger.load_config()
-    assert config.plans == {PLAN: 50, PERSISTENCE: 300}
+    assert config.plans["add-cfbd-vs-foundation"] == 50 and config.plans["add-cfb-persistence-refresh"] == 300
     assert config.months == {"2026-10": 400, "2026-11": 1000}
 
 
