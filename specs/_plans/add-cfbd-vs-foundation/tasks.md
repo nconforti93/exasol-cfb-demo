@@ -38,7 +38,7 @@
 ## Group F
 - [x] 5.1 Bundler `vs/bundle.py`
 - [x] 5.2 Meta DDL `sql/meta/load_log.sql` and `sql/meta/fetch_log.sql` per Key Interfaces.
-- [x] 5.3 Deploy `scripts/deploy.py` plus `vs/host/deploy.py`, run as `CFB_OWNER`
+- [x] 5.3 Deploy `scripts/deploy.py` plus `vs/host/deploy.py`, run as sys ([20])
 - [x] 5.4 Grants `scripts/grants.py`, run as DBA (sys password from the starter-kit file at run time)
 - [x] 5.5 Fetch-log capture helper `vs/host/fetchlog.py`
 - [x] 5.6 Apply decision [20]: sys owns the real deployment (grants.py, namespace.py, key-protection spec, plan, .env.example)
@@ -56,17 +56,17 @@
 - [x] 7.5 Quality gate
 - [x] 8.1 `docs/user-guide.md`
 - [x] 8.2 `specs/architecture.md`
-- [ ] 8.3 `docs/roadmap.md`
+- [x] 8.3 `docs/roadmap.md`
 - [x] 8.4 `CLAUDE.md` dense bullets
 
 ## Group J (sequential, gated)
 - [x] 9.0 Gate
-- [x] 9.1 Recorder `scripts/record.py` (`make record PATTERNS=… CONFIRM=yes`), run as `CFB_OWNER`
+- [x] 9.1 Recorder `scripts/record.py` (`make record PATTERNS=… CONFIRM=yes`), run as sys ([20])
 - [x] 9.2 Real deployment on Personal
-- [ ] 9.3 S1 measurement (≤ 26 calls) with `vs/live/s1-patterns.yaml`
-- [ ] 9.4 Apply the findings
-- [ ] 9.5 S2 live verification (≤ 7 calls; record everything)
-- [ ] 9.6 Live documentation
+- [x] 9.3 S1 measurement (≤ 26 calls) with `vs/live/s1-patterns.yaml`
+- [x] 9.4 Apply the findings
+- [x] 9.5 S2 live verification (≤ 7 calls; record everything)
+- [x] 9.6 Live documentation
 
 ## Review fixes (from code-review.md and the Phase 2 review)
 - [x] F.1 Fail-fast fetch pool (M1), key redaction scoped to the key (m2), replay attempts (m9) [expert]

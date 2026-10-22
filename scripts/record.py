@@ -17,6 +17,8 @@ Guards, in order:
   the readings around it; its cost is its HTTP attempts, or the observed drop of
   `remainingCalls` when that is larger. The run stops at the first failed call, the first
   missing reading, or the first call that cost more than its attempts.
+- The database connection waits up to `SOCKET_TIMEOUT_SECONDS` for a statement (pyexasol's
+  default of 30 s cut off a week of `/plays` after the call had been paid).
 
 Recordings go to `cache/replay/` and, on the `local` target, to the Personal BucketFS host
 directory that the default `REPLAY_PATH` maps to. The `aws` target's BucketFS has no host
@@ -26,7 +28,12 @@ Measurements (status, attempts, ms, body bytes, rows per catalog table) go to
 `cache/measurements/<run>.jsonl`. Everything under `cache/` is git-ignored.
 
 Other modes: `--ledger` prints the totals; `--info` logs one free `/info` reading;
-`--publish-local` copies the cached recordings (no database, no network).
+`--publish-local` copies the cached recordings (no database, no network). `--query "<SQL>"`
+runs one documented virtual-schema query under the same guards: `EXPLAIN VIRTUAL` (free) gives
+the planned slices for the cap check, `/info` is read before and after, and every slice the
+result reports as `LIVE` (its `REQ_*` columns) gets a ledger entry. A query is charged at least
+the observed drop of `remainingCalls`; without `REQ_*` columns, or when it fails, each planned
+slice is charged.
 """
 
 from __future__ import annotations
@@ -36,12 +43,13 @@ import json
 import os
 import re
 import sys
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import yaml
 
@@ -62,7 +70,7 @@ from vs.cfbd_vs.replay import (
 )
 from vs.cfbd_vs.resolver import DEFAULT_DOH_URL
 from vs.cfbd_vs.sqlrender import quote_identifier, string_literal
-from vs.host import ledger, target
+from vs.host import fetchlog, ledger, target
 from vs.host.ledger import Entry, Ledger, LedgerError
 from vs.host.namespace import REAL_CONNECTION, Namespace
 
@@ -71,8 +79,10 @@ DEFAULT_PLAN = "add-cfbd-vs-foundation"
 DEFAULT_PLAN_CAP = 50
 CONFIRM_WORD = "yes"
 INFO_SLICE = "/info"
+SOURCE_LIVE = "LIVE"
 BUCKETS_PREFIX = "/buckets/"
 ERROR_TEXT_LIMIT = 500
+SOCKET_TIMEOUT_SECONDS = 900
 
 EXIT_OK = 0
 EXIT_REFUSED = 1
@@ -142,6 +152,28 @@ class RawSource(Protocol):
     """Raw-output rows of one slice, as dicts keyed by the `RAW_COLUMNS` names."""
 
     def fetch(self, slice_key: str) -> list[dict[str, Any]]: ...
+
+
+@runtime_checkable
+class QuerySource(RawSource, Protocol):
+    """A `RawSource` that also explains and runs virtual-schema queries."""
+
+    def explain(self, sql: str) -> str: ...
+
+    def run(self, sql: str) -> tuple[list[str], list[tuple[Any, ...]]]: ...
+
+
+@dataclass(frozen=True)
+class SliceCall:
+    """What a query did with one planned slice, from its `REQ_*` columns."""
+
+    slice_key: str
+    source: str
+    status: int | None
+    attempts: int | None
+    ms: int | None
+    rows: int | None
+    requested_at: str | None
 
 
 @dataclass(frozen=True)
@@ -305,6 +337,45 @@ def charged(attempts: int | None, before: int | None, after: int | None) -> int:
     return max(counted, before - after)
 
 
+def query_costs(attempts: Sequence[int | None], before: int, after: int | None) -> list[int]:
+    """Charges for a query's live slices: the attempts, 1 for an unknown slice (all four without
+    an `/info` reading afterwards), and the rest of the observed drop on the last slice."""
+    unknown = 1 if after is not None else MAX_ATTEMPTS
+    costs = [unknown if count is None else count for count in attempts]
+    if costs and after is not None:
+        costs[-1] += max(0, before - after - sum(costs))
+    return costs
+
+
+def slice_calls(
+    manifest: fetchlog.Manifest, names: Sequence[str], rows: Sequence[tuple[Any, ...]]
+) -> list[SliceCall] | None:
+    """Per planned slice what the query read, or None when the result has no `REQ_*` columns."""
+    if not all(column in names for column in fetchlog.REQUEST_COLUMNS):
+        return None
+    positions = [list(names).index(column) for column in fetchlog.REQUEST_COLUMNS]
+    distinct = {tuple(row[position] for position in positions) for row in rows}
+    metadata = [dict(zip(fetchlog.REQUEST_COLUMNS, values, strict=True)) for values in distinct]
+    logged = fetchlog.build_fetch_log_rows(manifest, metadata, logged_at=datetime.now(UTC))
+    return [
+        SliceCall(
+            row.slice_key,
+            row.source,
+            _optional_int(row.http_status),
+            _optional_int(row.attempts),
+            _optional_int(row.ms),
+            _optional_int(row.rows_returned),
+            None if row.requested_at is None else str(row.requested_at),
+        )
+        for row in logged
+    ]
+
+
+def planned_live(manifest: fetchlog.Manifest) -> list[str]:
+    """The slices a query may fetch live (the budget counts them all, [4])."""
+    return list(manifest.slice_keys) if manifest.fetch_source == SOURCE_LIVE else []
+
+
 def replay_sinks(target_name: str, paths: Paths) -> tuple[list[Path], str]:
     """The directories recordings are written to on this target, and a note about them."""
     if target_name == "local":
@@ -373,6 +444,21 @@ class DatabaseRawSource:
             raise RawFetchFailed(cause_line(error)) from None
         names = [name for name, _ in RAW_COLUMNS]
         return [_typed_raw_row(dict(zip(names, row, strict=True))) for row in rows]
+
+    def explain(self, sql: str) -> str:
+        try:
+            return fetchlog.explain_pushdown_sql(self._connection, sql)
+        except fetchlog.FetchLogError as error:
+            raise RecordError(f"cannot explain the query: {error}") from None
+        except Exception as error:
+            raise RecordError(f"cannot explain the query: {cause_line(error)}") from None
+
+    def run(self, sql: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        try:
+            statement = self._connection.execute(sql)
+            return list(statement.column_names()), [tuple(row) for row in statement.fetchall()]
+        except Exception as error:
+            raise RawFetchFailed(cause_line(error)) from None
 
 
 def cause_line(error: Exception) -> str:
@@ -460,6 +546,77 @@ class Recorder:
         self._out = out
         self._run = clock().astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
 
+    def describe_query(self, sql: str) -> list[str]:
+        """The plan of a query from `EXPLAIN VIRTUAL` (free): table, mode and planned slices."""
+        manifest = self._manifest(self._runner(), sql)
+        planned = planned_live(manifest)
+        lines = [
+            f"query: table {manifest.table}, fetch_mode {manifest.fetch_mode}, sources "
+            f"{list(manifest.sources)}, {len(planned)} slice(s) that may be fetched live"
+        ]
+        lines += [f"  slice {key}" for key in manifest.slice_keys]
+        lines.append(f"ledger: {self._budget.describe(self._book.entries(), self._month())}")
+        return lines
+
+    def query(self, sql: str) -> int:
+        """Run one virtual-schema query and log every live slice it fetched; see the module doc."""
+        runner = self._runner()
+        with self._book.exclusive():
+            entries = self._book.entries()
+            month = self._month()
+            manifest = self._manifest(runner, sql)
+            planned = planned_live(manifest)
+            check_budget(self._budget, entries, month, len(planned))
+            before = read_quota(self._source)
+            entries.append(self._log_quota(before))
+            self._out(before.describe())
+            if before.remaining < len(planned):
+                raise Refused(
+                    f"the key has remainingCalls {before.remaining}, fewer than the "
+                    f"{len(planned)} planned slice(s)"
+                )
+            names: list[str] = []
+            rows: list[tuple[Any, ...]] = []
+            failure: str | None = None
+            started = time.monotonic()
+            try:
+                names, rows = runner.run(sql)
+            except RawFetchFailed as error:
+                failure = str(error)[:ERROR_TEXT_LIMIT] or type(error).__name__
+            wall_ms = round((time.monotonic() - started) * 1000)
+            after = self._try_quota()
+            calls = self._calls(manifest, names, rows, planned, failure)
+            live = [call for call in calls if call.source == SOURCE_LIVE]
+            remaining_after = after.remaining if after else None
+            costs = query_costs([call.attempts for call in live], before.remaining, remaining_after)
+            for call, cost in zip(live, costs, strict=True):
+                entry = self._entry(
+                    call.slice_key,
+                    cost=cost,
+                    status=call.status,
+                    attempts=call.attempts,
+                    ms=call.ms,
+                    remaining_before=before.remaining,
+                    remaining_after=remaining_after,
+                    error=failure,
+                )
+                self._book.append(entry)
+                entries.append(entry)
+                self._out(_entry_line(entry))
+            if after is not None:
+                self._log_quota(after)
+            self._measure_query(sql, wall_ms, len(rows), before, after, calls)
+        drop = "unknown" if after is None else str(before.remaining - after.remaining)
+        self._out(
+            f"query: {len(rows)} row(s) in {wall_ms} ms, {len(live)} live call(s), "
+            f"remainingCalls {before.remaining} -> {remaining_after} (drop {drop}); "
+            f"ledger: {self._budget.describe(entries, month)}"
+        )
+        if failure is not None or after is None:
+            self._out(f"stopped: {failure or 'no /info reading after the query'}")
+            return EXIT_STOPPED
+        return EXIT_OK
+
     def info(self) -> int:
         """Log one free `/info` reading."""
         with self._book.exclusive():
@@ -484,6 +641,7 @@ class Recorder:
                 )
             done = 0
             stop: str | None = None
+            closing: Quota | None = None
             for pattern in patterns:
                 if self._budget.headroom(entries, month) < MAX_ATTEMPTS:
                     stop = (
@@ -493,13 +651,14 @@ class Recorder:
                     break
                 entry, after, stop = self._call(pattern, reading)
                 entries.append(entry)
+                closing = after
                 if entry.error is None:
                     done += 1
                 if stop is not None or after is None:
                     break
                 reading = after
-            if done:
-                self._log_quota(reading)
+            if closing is not None:
+                self._log_quota(closing)
         self._out(
             f"recorded {done} of {len(patterns)}; ledger: {self._budget.describe(entries, month)}"
         )
@@ -507,6 +666,67 @@ class Recorder:
             self._out(f"stopped: {stop}")
             return EXIT_STOPPED
         return EXIT_OK
+
+    def _runner(self) -> QuerySource:
+        if not isinstance(self._source, QuerySource):
+            raise RecordError("this source cannot run virtual-schema queries")
+        return self._source
+
+    def _month(self) -> str:
+        return ledger.month_of(self._clock())
+
+    def _manifest(self, runner: QuerySource, sql: str) -> fetchlog.Manifest:
+        try:
+            return fetchlog.parse_manifest(runner.explain(sql))
+        except fetchlog.FetchLogError as error:
+            raise RecordError(f"the query has no CFBD manifest: {error}") from None
+
+    def _calls(
+        self,
+        manifest: fetchlog.Manifest,
+        names: Sequence[str],
+        rows: Sequence[tuple[Any, ...]],
+        planned: Sequence[str],
+        failure: str | None,
+    ) -> list[SliceCall]:
+        unknown = [SliceCall(key, SOURCE_LIVE, None, None, None, None, None) for key in planned]
+        if failure is not None:
+            return unknown
+        try:
+            calls = slice_calls(manifest, names, rows)
+        except fetchlog.FetchLogError as error:
+            self._out(f"warning: the request columns do not match the manifest: {error}")
+            return unknown
+        if calls is None:
+            self._out("warning: the result has no REQ_* columns; every planned slice is charged")
+            return unknown
+        return calls
+
+    def _measure_query(
+        self,
+        sql: str,
+        wall_ms: int,
+        rows: int,
+        before: Quota,
+        after: Quota | None,
+        calls: Sequence[SliceCall],
+    ) -> None:
+        self._write_measurement(
+            {
+                "query": sql,
+                "wall_ms": wall_ms,
+                "rows": rows,
+                "remaining_before": before.remaining,
+                "remaining_after": after.remaining if after else None,
+                "slices": [call.__dict__ for call in calls],
+            }
+        )
+
+    def _write_measurement(self, record: Mapping[str, Any]) -> None:
+        self._measurements.mkdir(parents=True, exist_ok=True)
+        path = self._measurements / f"{self._run}.jsonl"
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
 
     def _call(self, pattern: Pattern, before: Quota) -> tuple[Entry, Quota | None, str | None]:
         slice_key = pattern.slice_key
@@ -540,10 +760,7 @@ class Recorder:
     def _save(self, pattern: Pattern, recording: Recording) -> None:
         for store in self._sinks:
             store.save(recording)
-        self._measurements.mkdir(parents=True, exist_ok=True)
-        path = self._measurements / f"{self._run}.jsonl"
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(measure(self._catalog, pattern, recording)) + "\n")
+        self._write_measurement(measure(self._catalog, pattern, recording))
 
     def _try_quota(self) -> Quota | None:
         try:
@@ -648,7 +865,7 @@ def open_database_source(
 ) -> Iterator[RawSource]:
     """A sys connection to the target, wrapped as a `RawSource`, closed afterwards."""
     try:
-        connection = deployment.connect()
+        connection = deployment.connect(socket_timeout=SOCKET_TIMEOUT_SECONDS)
     except target.TargetError as error:
         raise RecordError(str(error)) from None
     try:
@@ -695,6 +912,16 @@ def main(
                 return _recorder(
                     source, args, catalog, book, budget, deployment, paths, clock
                 ).info()
+        if args.query:
+            with open_source(deployment, args, catalog) as source:
+                recorder = _recorder(source, args, catalog, book, budget, deployment, paths, clock)
+                print("\n".join(recorder.describe_query(args.query)))
+                if args.confirm != CONFIRM_WORD:
+                    print(
+                        "refused: the query was not run; rerun with --confirm yes", file=sys.stderr
+                    )
+                    return EXIT_REFUSED
+                return recorder.query(args.query)
         if not args.patterns:
             raise RecordError("PATTERNS is required: make record PATTERNS=<file> CONFIRM=yes")
         patterns = load_patterns(Path(args.patterns).read_text(encoding="utf-8"), catalog)
@@ -767,6 +994,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rerecord", action="store_true", help="fetch already recorded slices")
     parser.add_argument("--ledger", action="store_true", help="print the ledger totals")
     parser.add_argument("--info", action="store_true", help="log one free /info reading")
+    parser.add_argument(
+        "--query",
+        default="",
+        help="run one virtual-schema query and log its live calls (needs --confirm yes)",
+    )
     parser.add_argument(
         "--publish-local",
         action="store_true",
@@ -871,6 +1103,10 @@ def _typed_raw_row(row: dict[str, Any]) -> dict[str, Any]:
         if row[name] is not None:
             row[name] = int(row[name])
     return row
+
+
+def _optional_int(value: Any) -> int | None:
+    return None if value is None else int(value)
 
 
 def _as_count(value: Any) -> int | None:

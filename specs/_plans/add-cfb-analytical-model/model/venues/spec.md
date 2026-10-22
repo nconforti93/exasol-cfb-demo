@@ -1,17 +1,13 @@
 # Feature: Venue geography
 
-Venues carry their location as a spatial point, so analyses and the chat can ask how far a team travels or which games were played in a region. Exasol has no `GEOGRAPHY` type: the point is a `GEOMETRY` with SRID 4326 (WGS 84, longitude and latitude in degrees). Distances in kilometres come from a great-circle function, because Exasol's spatial functions compute in the plane of the coordinates.
+Venues carry their location as a spatial point, so analyses and the chat can ask which games were played in a region or how far apart two venues are. Exasol has no `GEOGRAPHY` type: the point is a `GEOMETRY` with SRID 4326 (WGS 84, longitude and latitude in degrees). Distances in kilometres come from a great-circle function, because Exasol's spatial functions compute in the plane of the coordinates.
 
 ## Background
 
-- `VENUE`: one row per venue in `CFB_CORE.VENUES`.
+- `VENUE`: one row per venue in `CFB_CORE.VENUES` (deduplicated by venue id, newest fetch wins).
   - Columns: name, city, `STATE_CODE`, zip, country code, time zone, latitude, longitude, elevation as reported, capacity, construction year, `IS_GRASS`, `IS_DOME`.
   - `GEO_POINT` is a `GEOMETRY(4326)` point with x = longitude and y = latitude. It is NULL when either coordinate is missing; `HAS_LOCATION` says which.
-- `GREAT_CIRCLE_KM(LAT1, LON1, LAT2, LON2)`: an SQL function that returns the great-circle (haversine) distance in kilometres on a sphere with the mean Earth radius of 6,371.0088 km. It returns NULL if any argument is NULL.
-- `TEAM_GAME.TRAVEL_KM` is the great-circle distance from the team's current home venue (`TEAM.HOME_VENUE_ID`) to the game's venue.
-  - It is 0 for a home game at the home venue.
-  - It is NULL when either venue has no location.
-  - Its comment says that historic stadium moves are not modeled: the current home venue stands in for every season.
+- `GREAT_CIRCLE_KM(LAT1, LON1, LAT2, LON2)`: an SQL function that returns the great-circle (haversine) distance in kilometres on a sphere with the mean Earth radius of 6,371.0088 km. It returns NULL if any argument is NULL. No model view uses it; it serves ad-hoc distance questions from analyses and the chat. A travel distance per team and game is not modeled, because no v1 page or engine input uses it (the engine has a constant home-field edge).
 - The examples run over the synthetic test league in the integration-test namespace:
   - Ashford Field: 33.0° N, 87.0° W;
   - Brookvale Bowl: 34.0° N, 87.0° W;
@@ -41,14 +37,6 @@ Venues carry their location as a spatial point, so analyses and the chat can ask
 * *THEN* the first result MUST be between 111.1 and 111.3
 * *AND* the second MUST be 0
 * *AND* the third MUST be NULL
-
-### Scenario: Travel distance per team and game
-
-* *GIVEN* the 2024 week-14 game Ashford against Brookvale at Ashford Field, where Brookvale's home venue is Brookvale Bowl
-* *AND* the 1885 game Ashford against Marston at Old Grounds
-* *WHEN* `CFB_MODEL.TEAM_GAME` is queried for both games
-* *THEN* Ashford's `TRAVEL_KM` MUST be 0 and Brookvale's between 111.1 and 111.3 in the 2024 game
-* *AND* `TRAVEL_KM` MUST be NULL for both teams in the 1885 game
 
 ### Scenario: Venue points work with Exasol's spatial functions
 

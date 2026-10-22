@@ -1,12 +1,13 @@
-# RESUME: add-cfb-analytical-model (planner state, 2026-10-22, stopped before the 14:33 CEST restart)
+# RESUME: add-cfb-analytical-model (planner state, 2026-10-22, after the review revision)
 
 ## Done
-- `plan.md`: complete (Summary, Design with Key Interfaces + Exasol claims table, Consequences, Features, Requirements, Dependencies, Migration, 7 task groups, Parallelization, Dead Code Removal, Verification with 71 scenario mappings, Manual Testing, Checklist).
-- 10 spec deltas under `model/`: deploy, documentation, seasons-eras, teams-conferences, games, ratings-rankings, venues, coverage, as-of, refresh-step (71 scenarios).
-- `decision-log.md`: interview, decisions [1]–[20] (ADR flags set), open questions Q1–Q12 as assumption + verify step.
-- `speq plan validate add-cfb-analytical-model`: passed (5 style warnings: scenarios with 4–5 AND steps).
+- Independent review `review.md` (verdict: approve with changes; 1 blocker, 6 major, 19 minor) resolved per the orchestrator's decisions. The mapping of every finding to its fix is `review.md` § Review resolution.
+- `plan.md` revised: one as-of horizon, result-dependent games hidden (`PARTICIPANTS_RULE`), engine contract mapping (D19/D20), fixed-scale `DECIMAL`, championship seed, classification transition seed, deduplication of every slice-scoped source, `FORCE` views and unquoted upper-case DDL names, run lock, materialization fallback with rebuild hooks, scaled-league performance smoke, league fixes, regrouped tasks (35 tasks, 11 groups, 3 `[expert]`), 90 scenario mappings.
+- 10 spec deltas under `model/` rewritten (90 scenarios). `CONFERENCE_SEASON`, `TEAM_GAME.TRAVEL_KM`, the `CONF_CHAMPIONSHIP` era kind and the per-season rows of never-stored datasets are gone.
+- `decision-log.md`: the review-resolution interview entry, decisions [1]–[20] revised where the review changed them, new decisions [21]–[31], open questions Q1–Q13.
+- `speq plan validate add-cfb-analytical-model`: passed with no warnings.
 
-## Left (optional polish, none blocking)
-1. Split the 5 scenarios with >3 AND steps if the reviewer wants the warnings gone (coverage "declared but not stored", games "results"/"championship", seasons-eras "eras", teams-conferences "tiers").
-2. Cross-read pass: plan ↔ specs consistency (league facts table in Key Interfaces vs spec GIVENs; object count in Manual Testing fixed to 18 views + 5 tables + 1 function).
-3. Hand the report (files, validation, key decisions, object list with grain, open questions) back to the orchestrator.
+## Left
+1. Hand the plan to `speq-implement` once the foundation (through group I) and the listed Phase 2 tasks have landed.
+2. Run Q6 as soon as stored 2007 and 2017 games exist on any target (read-only, zero calls); it changes only the seed rows of `CLASSIFICATION_TRANSITION`.
+3. The revision is not committed; the owner commits.

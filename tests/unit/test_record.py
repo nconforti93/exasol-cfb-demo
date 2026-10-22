@@ -327,6 +327,34 @@ def test_a_failed_call_is_charged_and_stops_the_run(tmp_path: Path) -> None:
     assert games.bytes is None
     assert not ReplayStore(str(make_paths(tmp_path).replay_cache)).exists(GAMES)
     assert any("stopped" in line for line in lines)
+    closing = entries(tmp_path)[-1]
+    assert (closing.slice_key, closing.cost, closing.remaining_after) == ("/info", 0, 2996)
+
+
+class RecordingDeployment:
+    def __init__(self) -> None:
+        self.connect_kwargs: dict[str, Any] = {}
+        self.closed = False
+
+    def connect(self, **kwargs: Any) -> Any:
+        self.connect_kwargs = kwargs
+        deployment = self
+
+        class Closable(FakeConnection):
+            def close(self) -> None:
+                deployment.closed = True
+
+        return Closable()
+
+
+def test_the_recorder_connection_waits_long_enough_for_large_responses() -> None:
+    deployment = RecordingDeployment()
+    options = record._parser().parse_args([])
+    with record.open_database_source(deployment, options, fake.catalog()):  # type: ignore[arg-type]
+        pass
+    assert deployment.connect_kwargs == {"socket_timeout": record.SOCKET_TIMEOUT_SECONDS}
+    assert record.SOCKET_TIMEOUT_SECONDS >= 600
+    assert deployment.closed
 
 
 @pytest.mark.parametrize(
@@ -420,6 +448,7 @@ def test_a_missing_quota_reading_after_a_call_is_logged_and_stops_the_run(tmp_pa
     assert api.data_requests == [GAMES]
     games = next(e for e in entries(tmp_path) if e.slice_key == GAMES)
     assert (games.remaining_before, games.remaining_after, games.cost) == (3000, None, 1)
+    assert [e.slice_key for e in entries(tmp_path)] == ["/info", GAMES]
 
 
 def test_a_run_is_refused_when_the_api_quota_cannot_cover_it(tmp_path: Path) -> None:
@@ -659,3 +688,144 @@ def test_the_local_bucketfs_replay_directory_maps_the_default_replay_path() -> N
 def test_ledger_timestamps_follow_the_clock(tmp_path: Path) -> None:
     make_recorder(tmp_path, FakeApi(), now=NOW + timedelta(days=10)).info()
     assert entries(tmp_path)[0].ts == "2026-11-01T15:00:00.000Z"
+
+
+# --- documented virtual-schema queries (--query) -------------------------------------------
+
+WEEK8 = "/games?seasonType=both&week=8&year=2019"
+WEEK9 = "/games?seasonType=both&week=9&year=2019"
+META = ("REQ_SLICE", "REQ_SOURCE", "REQ_STATUS", "REQ_ATTEMPTS", "REQ_MS", "REQ_ROWS", "REQ_AT")
+
+
+def pushdown(slice_keys: Sequence[str], sources: Sequence[str] = ("LIVE",)) -> str:
+    manifest = {
+        "table": "GAMES",
+        "fetch_mode": "live",
+        "read_through": True,
+        "budget": 10,
+        "planned_requests": len(slice_keys),
+        "slice_keys": list(slice_keys),
+        "sources": list(sources),
+    }
+    return f"/*CFBD {json.dumps(manifest)}*/ SELECT 1"
+
+
+class FakeVs(FakeApi):
+    """FakeApi plus a virtual schema: EXPLAIN gives the manifest, running charges live slices."""
+
+    def __init__(
+        self,
+        slice_keys: Sequence[str],
+        result: tuple[list[str], list[tuple[Any, ...]]],
+        *,
+        sources: Sequence[str] = ("LIVE",),
+        charge: int | None = None,
+        query_error: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.slice_keys = list(slice_keys)
+        self.result = result
+        self.sources = list(sources)
+        self.charge = charge
+        self.query_error = query_error
+        self.ran: list[str] = []
+
+    def explain(self, sql: str) -> str:
+        return pushdown(self.slice_keys, self.sources)
+
+    def run(self, sql: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        self.ran.append(sql)
+        names, rows = self.result
+        live = {
+            row[names.index("REQ_SLICE")]
+            for row in rows
+            if "REQ_SOURCE" in names and row[names.index("REQ_SOURCE")] == "LIVE"
+        }
+        self.remaining -= self.charge if self.charge is not None else len(live)
+        if self.query_error:
+            raise record.RawFetchFailed(self.query_error)
+        return names, rows
+
+
+def games_rows(*specs: tuple[str, str, int]) -> tuple[list[str], list[tuple[Any, ...]]]:
+    names = ["ID", *META]
+    rows = []
+    for number, (slice_key, source, count) in enumerate(specs):
+        for index in range(count):
+            status, attempts, ms = (200, 1, 700 + number) if source == "LIVE" else (None, 0, None)
+            at = f"2026-10-22 15:00:0{number}.000000"
+            rows.append((index, slice_key, source, status, attempts, ms, count, at))
+    return names, rows
+
+
+def test_a_query_logs_each_live_slice_with_its_request_metadata(tmp_path: Path) -> None:
+    vs = FakeVs([WEEK8, WEEK9], games_rows((WEEK8, "LIVE", 3), (WEEK9, "LIVE", 2)))
+    assert make_recorder(tmp_path, vs).query("SELECT * FROM CFBD_VS.GAMES") == record.EXIT_OK
+    logged = entries(tmp_path)
+    assert [e.slice_key for e in logged] == ["/info", WEEK8, WEEK9, "/info"]
+    week8 = logged[1]
+    assert (week8.status, week8.attempts, week8.ms, week8.cost) == (200, 1, 700, 1)
+    assert (week8.remaining_before, week8.remaining_after) == (3000, 2998)
+    assert logged[-1].remaining_after == 2998
+    (line,) = next(make_paths(tmp_path).measurements.glob("*.jsonl")).read_text().splitlines()
+    measured = json.loads(line)
+    assert measured["query"] == "SELECT * FROM CFBD_VS.GAMES"
+    assert measured["wall_ms"] >= 0 and measured["rows"] == 5
+    assert [s["slice_key"] for s in measured["slices"]] == [WEEK8, WEEK9]
+    assert measured["slices"][0]["requested_at"] == "2026-10-22 15:00:00.000000"
+
+
+def test_a_stored_slice_costs_nothing_and_logs_no_call(tmp_path: Path) -> None:
+    vs = FakeVs([WEEK8], games_rows((WEEK8, "STORED", 3)), sources=("STORED", "LIVE"))
+    lines: list[str] = []
+    assert make_recorder(tmp_path, vs, lines=lines).query("SELECT *") == record.EXIT_OK
+    assert [e.slice_key for e in entries(tmp_path)] == ["/info", "/info"]
+    assert entries(tmp_path)[-1].remaining_after == 3000
+    assert any("0 live call" in line for line in lines)
+
+
+def test_a_query_is_charged_at_least_the_observed_drop(tmp_path: Path) -> None:
+    vs = FakeVs([WEEK8, WEEK9], games_rows((WEEK8, "LIVE", 1), (WEEK9, "LIVE", 1)), charge=3)
+    lines: list[str] = []
+    make_recorder(tmp_path, vs, lines=lines).query("SELECT *")
+    costs = [e.cost for e in entries(tmp_path) if e.slice_key != "/info"]
+    assert costs == [1, 2]
+    assert any("remainingCalls" in line and "3" in line for line in lines)
+
+
+def test_a_query_beyond_the_cap_is_refused_before_it_runs(tmp_path: Path) -> None:
+    spend(tmp_path, 46)
+    vs = FakeVs([WEEK8, WEEK9], games_rows((WEEK8, "LIVE", 1), (WEEK9, "LIVE", 1)))
+    with pytest.raises(record.Refused, match="50"):
+        make_recorder(tmp_path, vs, cap=50).query("SELECT *")
+    assert vs.ran == [] and vs.requests == []
+
+
+def test_a_query_without_request_columns_is_charged_per_planned_slice(tmp_path: Path) -> None:
+    vs = FakeVs([WEEK8, WEEK9], (["COUNT(*)"], [(5,)]), charge=2)
+    make_recorder(tmp_path, vs).query("SELECT COUNT(*) FROM CFBD_VS.GAMES")
+    data = [e for e in entries(tmp_path) if e.slice_key != "/info"]
+    assert [(e.slice_key, e.attempts, e.cost) for e in data] == [(WEEK8, None, 1), (WEEK9, None, 1)]
+
+
+def test_a_failed_query_charges_every_planned_slice_and_stops(tmp_path: Path) -> None:
+    vs = FakeVs(
+        [WEEK8, WEEK9], ([], []), charge=1, query_error="CFBD_VS.GAMES: HTTP 429 after 4 attempts"
+    )
+    assert make_recorder(tmp_path, vs).query("SELECT *") == record.EXIT_STOPPED
+    data = [e for e in entries(tmp_path) if e.slice_key != "/info"]
+    assert [e.slice_key for e in data] == [WEEK8, WEEK9]
+    assert all(e.error and "HTTP 429" in e.error for e in data)
+    assert sum(e.cost for e in data) == 2
+
+
+def test_the_query_option_prints_the_plan_and_needs_confirm(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    vs = FakeVs([WEEK8], games_rows((WEEK8, "LIVE", 1)))
+    assert run_main(tmp_path, ["--query", "SELECT * FROM CFBD_VS.GAMES"], vs) == record.EXIT_REFUSED
+    assert WEEK8 in capsys.readouterr().out
+    assert vs.ran == [] and vs.requests == []
+    assert run_main(tmp_path, ["--query", "SELECT *", "--confirm", "yes"], vs) == record.EXIT_OK
+    assert len(vs.ran) == 1

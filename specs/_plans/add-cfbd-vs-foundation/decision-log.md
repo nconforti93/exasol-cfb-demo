@@ -384,6 +384,21 @@ No git commit is made before implementation.
 - **Consequences:** A restore sees a different hash after any regeneration (see the persistence plan). `sqlrender.json_comment` (209 fuzz tests) and `rules.check_request` were removed as unused; the fuzz moved onto `plan.manifest_comment`. `Param.default` and `Param.description` left the catalog (the `default` rule and the `P_` column comment carry them). `Table.row_cap` stays until `tests/it/test_read_through_it.py` filters on the `row_cap` rule instead.
 - **Promotes to ADR:** no
 
+### [26] S1 keeps the generated VARCHAR(2000) sizes
+- **Decision:** Task 9.4 does not shrink response `VARCHAR` sizes to the S1 maxima. Response strings stay `VARCHAR(2000) UTF8` and `RAW_JSON` stays `VARCHAR(2000000) UTF8`. The observed maxima are recorded in `docs/cfbd-api-measurements.md`.
+- **Evidence:**
+  - The S1 recordings exercised 134 of the 1,131 `VARCHAR(2000)` columns. The longest value was 416 characters (`PLAYS.PLAY_TEXT`), the next 89 (`GAMES.NOTES`).
+  - The largest `RAW_JSON` was 48 KB (a game preview).
+  - Every real payload flattened with zero errors and no uncovered fields.
+- **Alternatives:** Size every observed column to its maximum plus headroom, as task 9.4 is worded.
+- **Rationale:**
+  - Exasol stores actual string lengths, so a smaller declared size saves nothing.
+  - Strict flattening ([9]) would turn any longer value from an unseen season into a failed, already paid slice of the Phase 2 backfill (157 seasons of `/games` from 1869).
+  - Changing column types would also force dropping and recreating the mirror tables on both deployments for no benefit.
+- **Revisit:** Revisit if a consumer, such as a BI tool or the Phase 7 chat schema prompt, needs narrower types.
+- **Chosen by:** the implementer on 2026-10-22; the orchestrator to confirm.
+- **Promotes to ADR:** no
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. -->
