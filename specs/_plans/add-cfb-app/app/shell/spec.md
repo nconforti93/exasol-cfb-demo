@@ -12,6 +12,7 @@ The frame around the pages. One process serves the app and its API, so the same 
     - `Content-Security-Policy`: only the app's own origin for scripts, styles and connections; images from the app itself and `data:`; `frame-ancestors 'none'`;
     - `X-Content-Type-Options: nosniff`;
     - `Referrer-Policy: same-origin`.
+  - **Nothing the policy would block.** `index.html` has no inline script: the theme is set before the first paint by a small same-origin script file, so the page does not flash in the wrong theme. The app loads no font, style or script from another host; text uses the system's font stack.
 - **Development: `make app`.** It runs the backend with reload and the Vite dev server, which forwards `/api` to the backend. Cross-origin requests are allowed only from the dev server's origins (`app/access`).
 - **Layout.**
   - A header with the app's name, the page tabs, the as-of picker, the quota badge, the refresh control, the theme switch and the inspector switch.
@@ -45,6 +46,7 @@ The frame around the pages. One process serves the app and its API, so the same 
 * *THEN* `/` and `/head-to-head` MUST return `index.html`, and the asset MUST return its file with a long cache lifetime
 * *AND* `/api/config` MUST return JSON, and `/api/unknown` MUST return 404 with JSON
 * *AND* every response MUST carry the content security policy, `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`
+* *AND* `index.html` MUST contain no inline script, and every script, style and font it names MUST be served by the app itself
 
 ### Scenario: The footer credits CFBD on every page
 

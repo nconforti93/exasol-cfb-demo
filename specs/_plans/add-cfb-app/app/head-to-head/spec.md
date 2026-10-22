@@ -21,8 +21,8 @@ The last part of beat 4. Pick two teams and see every meeting since 1869, who le
 
   When the picker is on another point, the next meeting is labeled "as of <current point>" (`app/as-of`).
 - **The live preview card.**
-  - **The game** is the next meeting (`MATCHUP_NEXT.GAME_ID`) when there is one, otherwise the latest meeting (`MATCHUP_SERIES.LAST_GAME_ID`) (`api/on-demand`).
-  - **When it is fetched:** never on page load, by a poll or in a loop. The card shows the free plan's cost label (`app/live-spend`) and a button; the click is the request.
+  - **The game** is the next meeting (`MATCHUP_NEXT.GAME_ID`) when there is one, otherwise the latest meeting (`MATCHUP_SERIES.LAST_GAME_ID`) (`api/on-demand`). The server picks it: the browser sends only the pair, and the server reads the pair's next or latest meeting at the current point. A client therefore cannot preview an arbitrary game, and each pair has exactly one preview game.
+  - **When it is fetched:** never on page load, by a poll or in a loop. The card shows the free plan's cost label (`app/live-spend`) and a button; the click is the request. The button is disabled while the request runs.
   - **While it loads**, the card shows "fetching from CFBD" until the row arrives.
   - **What it shows:** CFBD's view of the game from `CFB_API_LIVE.GAME_PREVIEW`:
     - each team's record and its SP+, SRS, Elo and FPI ratings;
@@ -31,11 +31,12 @@ The last part of beat 4. Pick two teams and see every meeting since 1869, who le
     - `REQ_SOURCE` and `REQ_MS`.
 
     The preview's `RAW_JSON` is not sent to the browser.
-  - **One game per request.** Each request names one game id, checked to be an integer, and the backend writes it into the query as a literal: `WHERE GAME_ID = <id>`.
-- **Session cache.** A preview is kept for the browser session: keyed by game id, for 15 minutes, at most 20 previews per session.
+  - **One game per request.** The backend writes the game id it picked, an integer from the serving view, into the query as a literal: `WHERE GAME_ID = <id>`.
+- **Session cache.** A preview is kept for the browser session: keyed by the preview's game id, for 15 minutes, at most 20 previews per session.
   - A cached preview reads "cached <time> · 0 calls" and still shows when and how it was fetched.
   - "Fetch again" makes a new request, under its own cost label.
   - A different session never reads another session's cache.
+  - Two requests of one session for the same game share one fetch (`app/live-spend`).
 - **Teams that never met** have no series and no preview, and the page says so.
 - The examples run on the app test stack with the history variant: Ashford and Brookvale met in 1950, 1985, 1987, 1990 and 1995, besides the league's own games, and Ashford hosts Brookvale in 2026 week 12. The mock API answers previews with synthetic bodies. The ledger is temporary, as in `app/live-spend`.
 
@@ -60,8 +61,9 @@ The last part of beat 4. Pick two teams and see every meeting since 1869, who le
 * *GIVEN* the head-to-head page of Ashford and Brookvale in live mode
 * *WHEN* the user clicks the preview button
 * *THEN* the card MUST show "fetching from CFBD" until the row arrives
-* *AND* the mock MUST receive exactly one request, for `/games/<week-12 game id>/preview`
+* *AND* the mock MUST receive exactly one request, for `/games/<week-12 game id>/preview`, although the browser's request named only the two teams
 * *AND* the card MUST show both teams from the mock's body, with `REQ_SOURCE` `LIVE` and the request's milliseconds
+* *AND* the response MUST NOT contain the preview's `RAW_JSON`
 
 ### Scenario: A pair without a meeting left previews its latest meeting
 

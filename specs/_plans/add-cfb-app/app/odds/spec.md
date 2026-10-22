@@ -8,14 +8,14 @@ The demo's hook and the odds part of beat 4. "Your team, its playoff odds": ever
   - Each row shows the school, the conference, `P_IN_CFP`, `P_BYE` and `P_CHAMPION`, with the other rounds on demand, plus `EXPECTED_WINS` and `MEAN_SEED`.
   - Probabilities are shown in percent with one decimal. A value that is above 0 but below 0.05 % reads "< 0.1 %", with the exact value on hover.
   - **Movement** since the previous published point of the season (`PREV_AS_OF_LABEL`):
-    - `UP` and `DOWN` show an arrow icon, the word, and the signed change in points (`DELTA_P_IN_CFP`);
+    - `UP` and `DOWN` show an arrow icon, the word, and the signed change in percentage points (`DELTA_P_IN_CFP` is a fraction, so 0.023 reads "+2.3");
     - `SAME` shows nothing;
     - `NEW` shows a "new" badge.
-  - The threshold comes from `ANALYSIS_SETTINGS.MOVE_THRESHOLD` and is stated under the table ("arrows from 0.7 points").
+  - The threshold comes from `ANALYSIS_SETTINGS.MOVE_THRESHOLD` and is stated under the table ("arrows from 0.7 percentage points").
 - **The run banner** reads `CFB_API.PUBLISHED_RUNS` for the point: `N_SIMS`, `SECONDS_TOTAL`, `SIMS_PER_SECOND`, `NODES`, `INSTANCES`, `RUN_ORIGIN` and `PUBLISHED_AT`. It reads, for example, "100,000 seasons in 18.4 s on 1 node × 8 instances".
 - **A focus team** can be set from the table or from the URL (`?team=<id>`). Its row is highlighted, and its rooting guide opens.
 - **What-if toggles.**
-  - They are offered only at the point of the what-if run (`CURRENT_POINT.WHATIF_AS_OF_WEEK_SEQ`), and only while `CURRENT_POINT.WHATIF_VIEWS_CURRENT` is TRUE. Elsewhere the page says why: either "what-ifs use the run published at <label>", or "the what-if views are being regenerated".
+  - They are offered only at the point of the what-if run, and only while `CURRENT_POINT.WHATIF_VIEWS_CURRENT` is TRUE. The point is compared as season and week sequence: the week sequence from `CURRENT_POINT.WHATIF_AS_OF_WEEK_SEQ` and the season from `CFB_API.WHATIF_RUN`, because `CURRENT_POINT` names no what-if season and a week sequence alone repeats across seasons. Elsewhere the page says why: either "what-ifs use the run published at <label>", or "the what-if views are being regenerated".
   - The games come from `CFB_API.WHATIF_GAMES`: the coming week (`IS_NEXT_WEEK`) first, then the later weeks.
   - Each game can be set to a home win, an away win or not set, and shows its `HOME_WIN_PROB`. At most 16 games can be set.
 - **Conditional odds.** The backend builds them with `what_if_odds_sql(WHATIF_RUN_ID, conditions, games)` from `analyses/whatif.py` and runs them on the read path (`analyses/what-if`). The page shows:
@@ -44,7 +44,7 @@ The demo's hook and the odds part of beat 4. "Your team, its playoff odds": ever
 
 ### Scenario: Movement is shown with an icon and a word, never by color alone
 
-* *GIVEN* odds rows with `MOVE` values `UP` (+2.3 points), `DOWN` (−1.1), `SAME` and `NEW`
+* *GIVEN* odds rows with `MOVE` values `UP` (+2.3 percentage points), `DOWN` (−1.1), `SAME` and `NEW`
 * *WHEN* the odds table is rendered
 * *THEN* the `UP` and `DOWN` rows MUST show an arrow icon, the words "up" or "down" in their accessible names, and "+2.3" or "−1.1"
 * *AND* the `SAME` row MUST show no movement, and the `NEW` row MUST show a "new" badge
