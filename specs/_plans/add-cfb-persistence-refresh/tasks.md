@@ -18,22 +18,22 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 
 ## Group C
 - [x] 2.3 Author `loader/load-plan.yaml`:
-- [ ] 3.3 Loader deploy `loader/deploy.py`, called by `scripts/deploy.py` after the VS deploy and by the IT ha
+- [x] 3.3 Loader deploy `loader/deploy.py`, called by `scripts/deploy.py` after the VS deploy and by the IT ha
 
 ## Group D
-- [ ] 5.1 `scripts/loader_cli.py` with the subcommands `backfill`, `refresh` and `quota`, and the make targets
-- [ ] 6.1 Extend `tests/it/harness.py`:
+- [x] 5.1 `scripts/loader_cli.py` with the subcommands `backfill`, `refresh` and `quota`, and the make targets
+- [x] 6.1 Extend `tests/it/harness.py`:
 
 ## Group E
-- [ ] 7.1 `tests/it/test_load_plan_it.py` and `tests/cli/test_load_plan_cli.py`
-- [ ] 7.2 `tests/it/test_quota_it.py`
+- [x] 7.1 `tests/it/test_load_plan_it.py` and `tests/cli/test_load_plan_cli.py`
+- [x] 7.2 `tests/it/test_quota_it.py`
 
 ## Group F
-- [ ] 4.2 `loader/lua/loadlib.lua` (owned by this task) and `loader/lua/backfill.lua`, test-first with `tests/ [expert]
+- [x] 4.2 `loader/lua/loadlib.lua` (owned by this task) and `loader/lua/backfill.lua`, test-first with `tests/ [expert]
 
 ## Group G
-- [ ] 4.3 `loader/lua/refresh_week.lua`, after 4.2, test-first with `tests/it/test_refresh_week_it.py` [expert]
-- [ ] 5.2 Snapshot and restore `loader/snapshot.py` + `scripts/snapshot.py`, with the make targets `snapshot`, [expert]
+- [x] 4.3 `loader/lua/refresh_week.lua`, after 4.2, test-first with `tests/it/test_refresh_week_it.py` [expert]
+- [x] 5.2 Snapshot and restore `loader/snapshot.py` + `scripts/snapshot.py`, with the make targets `snapshot`, [expert]
 
 ## Group H (sequential)
 - [ ] 7.3 The rest of `tests/it/test_run_logs_it.py`
@@ -53,6 +53,11 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 - [ ] 9.4 Live refresh
 - [ ] 9.5 Snapshot AWS → restore local (0 calls):
 - [ ] 9.6 Live documentation and reset:
+
+## Cross-plan items (from Phase 4 H1, 2026-10-22)
+- [x] H1 In task 4.2, the lock in `loadlib.lua` must support run kinds `SIMULATE` (stale when the session is gone, is the caller's own session, or is idle, the same as BACKFILL and REFRESH_WEEK) and `DEPLOY` (for `make sim`, `make calibrate` and the model deploy; stale only when the session is gone or is the caller's own session). The lock functions must be callable from other bundles: the Phase 4 Lua and the Phase 3 model deploy. The host-side lock goes in task 5.2. See `specs/_plans/add-cfb-score-engine/` (main tree) for decisions [29]–[43] and task 1.10.
+
+- [ ] P6-c (information only) Phase 6 task 1.9 will move the guard logic from `scripts/loader_cli.py` (estimate, quota, ledger check and record) into `loader/guard.py` after this plan merges. Keep that logic cohesive so it extracts cleanly.
 
 ## Review and Verification
 - [ ] R.1 Code review

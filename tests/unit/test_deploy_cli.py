@@ -5,7 +5,7 @@ from typing import Never
 import pytest
 
 from scripts import deploy as deploy_cli
-from tests.unit.test_deploy import FakeDatabase
+from tests.unit.test_loader_deploy import LoaderDatabase
 from vs import bundle
 from vs.host import target
 from vs.host.deploy import DeployError
@@ -13,8 +13,11 @@ from vs.host.deploy import DeployError
 SIZES = bundle.BundleSizes(1_534_511, 1_434_615)
 
 
-class ClosableDatabase(FakeDatabase):
+class ClosableDatabase(LoaderDatabase):
     closed = False
+
+    def __init__(self) -> None:
+        super().__init__(foundation=False)
 
     def close(self) -> None:
         self.closed = True
@@ -60,6 +63,84 @@ def test_main_builds_the_bundle_deploys_and_closes_the_connection(
     assert "virtual schema PROBE_CFBD_VS: created" in out
     assert "next: " in out
     assert ("PROBE_CFB_INFRA", "CFBD_FETCH") in db.scripts
+
+
+def test_main_deploys_the_loader_after_the_virtual_schema(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = ClosableDatabase()
+    code = deploy_cli.main(
+        ["--prefix", "PROBE_", "--dsn", "db:1", "--no-sync-api-features"],
+        connector=lambda _: db,
+        write_bundle=written,
+    )
+    out = capsys.readouterr().out
+    assert code == deploy_cli.EXIT_OK
+    assert out.index("virtual schema PROBE_CFBD_VS") < out.index("stage schema PROBE_CFB_STAGE")
+    assert "load plan in PROBE_CFB_META" in out
+    assert ("PROBE_CFB_META", "LOAD_PLAN") in db.tables
+    assert db.closed
+
+
+def test_loader_config_overrides_reach_the_deployed_settings(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = ClosableDatabase()
+    code = deploy_cli.main(
+        [
+            "--prefix",
+            "PROBE_",
+            "--dsn",
+            "db:1",
+            "--no-sync-api-features",
+            "--loader-config",
+            "monthly_call_budget=400, refresh_reserve=50",
+        ],
+        connector=lambda _: db,
+        write_bundle=written,
+    )
+    assert code == deploy_cli.EXIT_OK
+    config = next(
+        s for s in db.statements if s.startswith("INSERT INTO PROBE_CFB_META.LOADER_CONFIG")
+    )
+    assert "('MONTHLY_CALL_BUDGET', '400')" in config
+    assert "('REFRESH_RESERVE', '50')" in config
+    assert "LOADER_CONFIG overrides applied: monthly_call_budget, refresh_reserve" in (
+        capsys.readouterr().out
+    )
+
+
+@pytest.mark.parametrize("override", ["monthly_call_budget=lots", "nonsense", "budget=1,budget=2"])
+def test_an_invalid_loader_config_is_refused_before_anything_happens(
+    override: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def never_connect(deployment: target.Target) -> ClosableDatabase:
+        raise AssertionError("must not connect")
+
+    code = deploy_cli.main(
+        ["--prefix", "PROBE_", "--dsn", "db:1", "--loader-config", override],
+        connector=never_connect,
+        write_bundle=written,
+    )
+    assert code == deploy_cli.EXIT_ERROR
+    assert "LOADER_CONFIG" in capsys.readouterr().err
+
+
+def test_a_loader_failure_still_prints_what_the_virtual_schema_deploy_did(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = ClosableDatabase()
+    db.fail_on = "CREATE SCHEMA IF NOT EXISTS PROBE_CFB_STAGE"
+    code = deploy_cli.main(
+        ["--prefix", "PROBE_", "--dsn", "db:1", "--no-sync-api-features"],
+        connector=lambda _: db,
+        write_bundle=written,
+    )
+    captured = capsys.readouterr()
+    assert code == deploy_cli.EXIT_ERROR
+    assert "virtual schema PROBE_CFBD_VS: created" in captured.out
+    assert "deploy failed" in captured.err
+    assert db.closed
 
 
 def test_main_reports_a_deploy_error_and_still_closes_the_connection(

@@ -13,12 +13,18 @@ TEST = Namespace("TEST_")
 LOADLIB = "-- library\nfunction helper()\n  return 1\nend\n"
 BACKFILL = "-- backfill entry\nlocal rows = helper()\nexit({{rows}}, 'A DECIMAL(9,0)')\n"
 REFRESH = "-- refresh entry\nlocal rows = helper()\nexit({{rows}}, 'B DECIMAL(9,0)')\n"
+RUN_LOCK = "-- run lock entry\nlocal rows = helper()\nexit({{rows}}, 'C DECIMAL(9,0)')\n"
 LOADER_LUA_DIR = Path(__file__).resolve().parents[2] / "loader" / "lua"
 
 
 def write_sources(directory: Path, **overrides: str) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
-    files = {"loadlib.lua": LOADLIB, "backfill.lua": BACKFILL, "refresh_week.lua": REFRESH}
+    files = {
+        "loadlib.lua": LOADLIB,
+        "backfill.lua": BACKFILL,
+        "refresh_week.lua": REFRESH,
+        "run_lock.lua": RUN_LOCK,
+    }
     for name, text in {**files, **overrides}.items():
         (directory / name).write_text(text, encoding="utf-8")
     return directory
@@ -33,12 +39,15 @@ def script(name: str) -> bundle.LuaScript:
     return next(s for s in bundle.SCRIPTS if s.name == name)
 
 
-def test_the_two_scripts_have_the_planned_signatures_and_files() -> None:
-    assert [s.name for s in bundle.SCRIPTS] == ["BACKFILL", "REFRESH_WEEK"]
+def test_the_three_scripts_have_the_planned_signatures_and_files() -> None:
+    assert [s.name for s in bundle.SCRIPTS] == ["BACKFILL", "REFRESH_WEEK", "RUN_LOCK"]
     assert script("BACKFILL").parameters == ("profile", "from_season", "max_calls")
     assert script("REFRESH_WEEK").parameters == ("season", "week", "season_type")
+    assert script("RUN_LOCK").parameters == ("lock_action", "lock_word", "lock_run", "lock_text")
     assert script("BACKFILL").file_name == "loader_backfill.sql"
     assert script("REFRESH_WEEK").file_name == "loader_refresh_week.sql"
+    assert script("RUN_LOCK").file_name == "loader_run_lock.sql"
+    assert script("RUN_LOCK").entry_file == "run_lock.lua"
 
 
 def test_the_statement_has_the_lua_script_header_and_terminator(lua_dir: Path) -> None:
@@ -248,6 +257,7 @@ def test_write_bundle_writes_one_file_per_available_script(tmp_path: Path, lua_d
     assert sorted(p.name for p in out.iterdir()) == [
         "loader_backfill.sql",
         "loader_refresh_week.sql",
+        "loader_run_lock.sql",
     ]
     for s in bundle.SCRIPTS:
         written = (out / s.file_name).read_bytes().decode("utf-8")
@@ -261,7 +271,7 @@ def test_write_bundle_skips_scripts_whose_sources_do_not_exist_yet(
     (lua_dir / "refresh_week.lua").unlink()
     result = bundle.write_bundle(out_dir=tmp_path / "out", namespace=REAL, lua_dir=lua_dir)
     assert result.skipped == ("REFRESH_WEEK",)
-    assert list(result.sizes) == ["BACKFILL"]
+    assert list(result.sizes) == ["BACKFILL", "RUN_LOCK"]
     assert not (tmp_path / "out" / "loader_refresh_week.sql").exists()
 
 
@@ -269,7 +279,7 @@ def test_write_bundle_skips_everything_while_the_library_is_missing(tmp_path: Pa
     empty = tmp_path / "lua"
     empty.mkdir()
     result = bundle.write_bundle(out_dir=tmp_path / "out", namespace=REAL, lua_dir=empty)
-    assert result.skipped == ("BACKFILL", "REFRESH_WEEK")
+    assert result.skipped == ("BACKFILL", "REFRESH_WEEK", "RUN_LOCK")
     assert result.sizes == {}
 
 

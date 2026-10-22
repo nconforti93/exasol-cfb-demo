@@ -1,0 +1,25 @@
+# Integration-test load plan variant (deployed into the TEST_ namespace by tests/it/harness.py).
+# Default settings; the tests set the date with Harness.set_now. Entry order is the ENTRY_ID.
+version: 1
+# Snapshot and restore (task 5.2): a seasonless static table, a weekly table with a known gap, and a
+# second weekly table. At 2020-10-20: TEAMS, GAMES 2017 + 2019 + 2020 (2018 is a gap), RATINGS_SP
+# 2019-2020; the 2020 slices are not final yet.
+entries:
+  - table: TEAMS
+    profile: demo
+    priority: 1
+    slicing: none
+    refresh_class: static
+  - table: GAMES
+    profile: demo
+    priority: 2
+    slicing: season
+    seasons: {from: 2017}
+    gaps: [2018]
+    refresh_class: weekly
+  - table: RATINGS_SP
+    profile: demo
+    priority: 3
+    slicing: season
+    seasons: {from: 2019}
+    refresh_class: weekly

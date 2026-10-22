@@ -1,0 +1,18 @@
+# Integration-test load plan variant (deployed into the TEST_ namespace by tests/it/harness.py).
+# Default settings; the tests set the date with Harness.set_now. Entry order is the ENTRY_ID.
+version: 1
+# The base plan: GAMES (priority 1) and RATINGS_SP (priority 2), both weekly, open-ended.
+# Backfill order, quota and load-plan scenarios. At 2020-10-20: GAMES 2017-2020, RATINGS_SP 2019-2020.
+entries:
+  - table: GAMES
+    profile: demo
+    priority: 1
+    slicing: season
+    seasons: {from: 2017}
+    refresh_class: weekly
+  - table: RATINGS_SP
+    profile: demo
+    priority: 2
+    slicing: season
+    seasons: {from: 2019}
+    refresh_class: weekly

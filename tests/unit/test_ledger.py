@@ -152,11 +152,13 @@ def write(path: Path, *entries: Entry) -> None:
     path.write_text("".join(e.to_line() + "\n" for e in entries), encoding="utf-8")
 
 
-def test_the_committed_config_has_the_plan_caps_and_the_october_authorization() -> None:
+def test_the_committed_config_has_the_plan_caps_and_the_owner_authorizations() -> None:
     config = ledger.load_config()
-    assert config.plans == {PLAN: 50, PERSISTENCE: 300}
-    assert config.months == {"2026-10": 400}
-    assert "2026-11" not in config.months
+    assert (
+        config.plans["add-cfbd-vs-foundation"] == 50
+        and config.plans["add-cfb-persistence-refresh"] == 300
+    )
+    assert config.months == {"2026-10": 400, "2026-11": 1000}
 
 
 def test_check_passes_inside_both_caps(tmp_path: Path) -> None:

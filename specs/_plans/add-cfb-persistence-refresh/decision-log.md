@@ -558,6 +558,127 @@ No git commit is made before implementation.
   - `SUM(ROUND(x, 8))` over identical data differed by 9.3e-10 between evaluations; the DECIMAL sum never did.
 - **Promotes to ADR:** no (it amends [15], whose ADR states the final format)
 
+### [32] Two helper views, `LOADER_SETTINGS` and `LOAD_ORPHANS`, join the four views of the plan (task 3.2)
+
+- **Decision:**
+  - `LOADER_SETTINGS` is a one-row view: `CLOCK_UTC`, `NOW_UTC` (`NOW_OVERRIDE` or the clock), `CURRENT_SEASON`, the settings of `LOADER_CONFIG` as typed columns, and the virtual schema's `API_FEATURES`. Every other view and the Lua scripts read the date, the season and the gating from it.
+  - `LOAD_ORPHANS` lists the orphan slices (a loader-written `LOAD_LOG` row for a planned table whose key matches no `LOAD_SLICES` row). `LOAD_STATUS`, `BACKFILL_QUEUE` and the deploy warning read it.
+  - `vs/host/metaddl.py` creates the six views in the order `LOADER_SETTINGS`, `LOAD_SLICES`, `LOAD_ORPHANS`, `BACKFILL_QUEUE`, `LOAD_STATUS`, `QUOTA`; each reads only tables and views before it.
+- **Alternatives:** Repeat the clock and the feature test in each view; compute orphans inside `LOAD_STATUS` only.
+- **Rationale:** "Now" is one expression (probe 1.1l), so the test clock cannot drift between views. The orphan rule is needed in three places, and one definition keeps them equal.
+- **Promotes to ADR:** no
+
+### [33] `QUOTA.RESET_AT` is a UTC `TIMESTAMP`
+
+- **Decision:** `QUOTA.RESET_AT` is `/info`'s `resetAt` (ISO text with `T` and `Z`) converted to a `TIMESTAMP` in UTC. `PERIOD_START = ADD_MONTHS(RESET_AT, -1)`. `LOAD_LOG`, `FETCH_LOG` and `LOADER_SETTINGS.CLOCK_UTC` are UTC too, so the period test is a plain timestamp comparison.
+- **Alternatives:** Keep `resetAt` as text; convert it to the session time zone.
+- **Rationale:** The session time zone is `CET` on Personal (probe 1.1l). A local `RESET_AT` would move the month boundary by one or two hours against the `FETCH_LOG` rows it is compared with.
+- **Promotes to ADR:** no
+
+### [34] Spend attribution counts `FETCH_LOG.ATTEMPTS`, not rows
+
+- **Decision:** `QUOTA.BACKFILL_CALLS` and `REFRESH_CALLS` sum `GREATEST(COALESCE(ATTEMPTS, 1), 1)` over the `LIVE` `FETCH_LOG` rows of the current period whose `CONTEXT` is `BACKFILL#<run>` or `REFRESH_WEEK#<run>`. `OTHER_CALLS = GREATEST(0, USED_CALLS − BACKFILL_CALLS − REFRESH_CALLS)`.
+- **Alternatives:** Count rows (one per slice).
+- **Rationale:** A retried request costs the key a call per HTTP attempt. Counting rows would show the loader as cheaper than it is and push the difference into `OTHER_CALLS`. Batches that failed are rolled back, so their calls appear only in `OTHER_CALLS`.
+- **Promotes to ADR:** no
+
+### [35] `CALLS_TO_COMPLETE` includes tables that orphans block
+
+- **Decision:** `LOAD_STATUS.CALLS_TO_COMPLETE` and `QUOTA.DEMO_CALLS_TO_COMPLETE` / `FULL_CALLS_TO_COMPLETE` count every pending slice (not a gap, not quarantined), also those of a table blocked by orphans. `BACKFILL_QUEUE` leaves those tables out.
+- **Alternatives:** Count only what the queue can fetch now.
+- **Rationale:** The calls are still needed once the owner resolves the orphans, and the status must not report "nothing left" for a table that is stuck.
+- **Promotes to ADR:** no
+
+### [36] `LOAD_STATUS.BLOCKED_BY` holds a feature name or `'ORPHANS'`
+
+- **Decision:** `BLOCKED_BY` is the missing API feature of a gated entry (for example `weather`; the entry then has no slices), else `'ORPHANS'` when its table has orphan slices, else NULL. A missing feature wins over orphans.
+- **Alternatives:** Two columns (`BLOCKED_BY_FEATURE`, `HAS_ORPHANS`); a free-text reason.
+- **Rationale:** One column answers "why does this entry not load", and the two reasons are exclusive in practice: a gated table without its feature lists no slices, so it has no orphans (decision [38]). `ORPHAN_SLICES` carries the count.
+- **Promotes to ADR:** no
+
+### [37] The slice of a `season_range` or `none` entry is always planned
+
+- **Decision:** A `none` or `season_range` entry gives exactly one slice with `SEASON` NULL, whatever the current season is. Only `season` entries are limited to the seasons from `SEASON_FROM` to the current season (or `SEASON_TO`). A range's bounds are the entry's own `SEASON_FROM` / `SEASON_TO`.
+- **Alternatives:** Clip or drop a range whose end is beyond the current season.
+- **Rationale:** A range slice is one API call by definition (`CONFERENCES_AFFILIATIONS` 1869–2025). It does not depend on the clock, and `from_season` never skips it (review M4).
+- **Promotes to ADR:** no
+
+### [38] Gated tables never report orphans
+
+- **Decision:** `LOAD_ORPHANS` skips a table whose API feature is missing from `API_FEATURES`. `LOAD_SLICES` lists no slices for it then, so its stored slices would all look orphaned.
+- **Alternatives:** Report them with a note; treat a missing feature as an error.
+- **Rationale:** A missing feature is a normal state (the key's tier), not a catalog or plan change. The orphan rule (decision [23]) is for those. `LOAD_STATUS` shows the entry as blocked by the feature, and the orphans appear once the feature returns and the keys really do not match.
+- **Promotes to ADR:** no
+
+### [39] The demo plan gives each weekly entry its own priority (4, 5, 6)
+
+- **Decision:** In `loader/load-plan.yaml`, `METRICS_WP_PREGAME` has priority 4, `RATINGS_SP` 5 and `RANKINGS_POLLS_RANKS` 6, where the first draft had 4, 4 and 5. A test pins the season-sliced priorities as distinct. The backfill total stays 217 calls.
+- **Alternatives:** Keep equal priorities for `METRICS_WP_PREGAME` and `RATINGS_SP`.
+- **Rationale:** The queue order is priority, then newest season (decision [12]), so entries of equal priority load season by season, and a batch never mixes entries. The two endpoints would give 28 one-slice batches. Distinct priorities give one fan-out of 14 slices each: 2 batches.
+- **Promotes to ADR:** no
+
+### [40] The loader deploy validates first, installs the Lua in memory and keeps the plan file's hash
+
+- **Decision:**
+  - `loader/deploy.py` reads, validates and compiles the plan and the `LOADER_CONFIG` overrides before it sends any statement. An invalid plan or override changes nothing, and the four plan tables are replaced in one transaction (`set_autocommit(False)`, then `COMMIT`; `ROLLBACK` on failure).
+  - The Lua statements are built in memory for the namespace (`loader.bundle.build_script`), not read from `build/sql/loader_*.sql`. A script without sources is skipped with a notice.
+  - `LOAD_PLAN.PLAN_HASH` is the hash of the plan file. A `LOADER_CONFIG` override changes the settings but not the hash.
+  - `NOW_OVERRIDE` is dropped with a warning outside a `TEST_` namespace.
+- **Alternatives:**
+  - Install the files of `build/sql`.
+  - Hash the effective settings.
+- **Rationale:**
+  - The files hold the names of the real namespace, so a prefixed namespace would need its own file.
+  - A snapshot compares plan hashes on restore, and the October budget override on AWS must not make a local snapshot look like a different plan.
+- **Promotes to ADR:** no
+
+### [41] The DOUBLE fingerprint sums the value's exported text form (task 5.2)
+
+- **Decision:** A `DOUBLE` column's aggregate is `SUM(CASE WHEN ABS(t) < 1E27 THEN CAST(ROUND(t, 8) AS DECIMAL(36,8)) END)` with `t = CAST(CAST(x AS VARCHAR(100)) AS DOUBLE)`, on both sides. Values of 1E27 or more are only counted (`ROUND` would overflow). The spec states the exception: a `DOUBLE` with more than 15 significant digits comes back rounded to its text form (relative change at most 4e-12).
+- **Alternatives:**
+  - The spike's `SUM(CAST(ROUND(x, 8) AS DECIMAL(36,8)))` on the raw value: deterministic, but the round trip moves full-precision values, and their 8-decimal rounding then flips. A restore of real data would be refused.
+  - Compare `DOUBLE` sums with a tolerance: needs a magnitude per column and weakens the check.
+  - Short-decimal test data only: hides the problem until the live restore (9.5).
+- **Rationale** (probe 2026-10-22, local nano 2026.2, 10,009 values incl. full-precision, short decimals, 1e-300, 1.7976e308, -0.0):
+  - `EXPORT` writes exactly `CAST(x AS VARCHAR(100))` (also `TO_CHAR(x)`) for every value: 0 differences.
+  - The imported value equals `CAST(CAST(x AS VARCHAR(100)) AS DOUBLE)` for every row, and that normalization is idempotent on the imported value. So the source fingerprint describes the restored value exactly.
+  - `ROUND(x, 8)` differed between source and copy for 284 of 10,009 values; with the text form, 0.
+  - The guarded `CASE` keeps `ROUND` away from 1.7976E308.
+  - The 9.0 smoke and the 9.5 restore check the same on AWS (another version could parse text differently; the check then refuses, it does not pass silently).
+- **Promotes to ADR:** no
+
+### [42] Host processes take the run lock through a deployed `RUN_LOCK` script; `loader.runlock.run_lock` is the host API (hand-off H1b)
+
+- **Decision:**
+  - `<INFRA>.RUN_LOCK(lock_action, lock_word, lock_run, lock_text)` is a third bundled script (constants + `loadlib.lua` + `run_lock.lua`), installed by `make deploy`: `('acquire', kind, NULL, args)` returns `RUN_ID`, `('release', status, run_id, detail)` returns `HELD`. Four parameters instead of three: a release needs the run id and the detail.
+  - `with run_lock(connection, namespace, kind, args) as lock:` (`loader/runlock.py`) for the host kinds `DEPLOY`, `SNAPSHOT`, `RESTORE`. The row ends `DONE` with `lock.detail`; an exception (also Ctrl-C) rolls the session back first, then ends the row `FAILED` with the error's first line and propagates. A refusal raises `RunLockRefused` naming the holder.
+  - Guards: a connection with autocommit off is refused (acquiring commits), a second `run_lock` on the same connection is refused (the own-session rule would abandon the first), and script kinds are refused (a host session is idle between statements, so the idle rule would free their row at once).
+  - Phase 3's model deploy and Phase 4's `make sim` / `make calibrate` use it with `DEPLOY`.
+- **Alternatives:**
+  - Re-implement the stale rules in host SQL: two implementations of one rule.
+  - Three parameters with the run id and detail packed into one text: parsing in Lua for no gain.
+- **Rationale:** one implementation of the lock in `loadlib.lua`, whose own-session and host rules were probed in 4.2. The host keeps its session open while it works, so a crashed process frees the lock with its session.
+- **Promotes to ADR:** no
+
+### [43] Snapshot details: logical names, an exact table set, a full stability check (task 5.2)
+
+- **Decision:**
+  - The manifest and the file names use logical schema names (`CFB_CORE`, `CFB_META`); a restore maps them to its namespace. A file name must equal `<SCHEMA>.<TABLE>.csv.gz` exactly, so a manifest cannot point outside its directory.
+  - The snapshot fingerprints every scope table before and after the export and keeps nothing when one changed (stronger than the planned `LOAD_LOG`-only check: an app may write `FETCH_LOG` outside the lock). An empty table gets no file. Export and import name the columns explicitly; the header line is checked before the import.
+  - The restore refuses a missing or extra `CFB_CORE` table and any column difference also with `FORCE=yes`; `FORCE` only accepts another catalog hash. The deployed catalog hash is read from the adapter script (`catalog_hash` in its embedded catalog); the plan hash is compared and reported, not enforced; orphan slices are reported after the restore.
+  - Order: manifest, deployment checks (columns, catalog), file checks (SHA-256, header), lock, landing (dropped first if a crashed restore left it; the session's schema is reopened after `CREATE SCHEMA`), fingerprints, one-transaction swap, landing dropped also on failure.
+  - pyexasol's file transfer is `EXPORT` / `IMPORT`, which need those system privileges. `sys` has them on the real deployment; the integration harness grants them to the test owner (no connection access comes with them).
+- **Alternatives:** namespaced names in the manifest (a `TEST_` snapshot would not restore into the real namespace); `FORCE` overriding column checks (a positional import into other columns).
+- **Rationale:** the restore stays exact and atomic, and every refusal happens before the first change.
+- **Promotes to ADR:** no
+
+### [44] `loader/exapump.py` is removed (task 5.2)
+
+- **Decision:** With gzip CSV through pyexasol ([31]), no code calls exapump. `loader/exapump.py`, `tests/unit/test_loader_exapump.py`, the harness's `exapump_env()` with its smoke test, and `tests/it/loader_support.owner_target` (only used for it) are deleted. The probe script `docs/spikes/s5_snapshot_probe.py` keeps its own exapump calls as evidence.
+- **Alternatives:** keep the module for a later Parquet path.
+- **Rationale:** YAGNI; it would also need the lower-case fingerprint fix found in probe 1.2.
+- **Promotes to ADR:** no
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. The plan review (pre-implementation) is resolved in review.md § Review resolution. -->

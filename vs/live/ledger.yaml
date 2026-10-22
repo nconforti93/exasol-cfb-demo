@@ -7,5 +7,9 @@
 plans:
   add-cfbd-vs-foundation: 50
   add-cfb-persistence-refresh: 300
+  add-cfb-analyses: 6       # orchestrator sub-allocation within the owner's monthly caps (2026-10-22)
+  add-cfb-app: 12
+  app: 60                   # runtime app/demo spend (previews, console, refresh button)
 months:
   "2026-10": 400
+  "2026-11": 1000  # owner authorized 2026-10-22

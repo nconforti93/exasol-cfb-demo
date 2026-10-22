@@ -68,6 +68,17 @@ def test_the_demo_stores_only_the_rankings_child_table_and_no_volatile_table(
     assert not tables & {"RANKINGS_POLLS", "GAMES_SCHEDULE"}
 
 
+def test_the_season_sliced_entries_have_distinct_priorities(project_plan: Any) -> None:
+    priorities = {(e.table, e.slicing): e.priority for e in project_plan.entries}
+    assert [priorities[(t, "season")] for t in ("CALENDAR", "GAMES")] == [2, 3]
+    assert [
+        priorities[(table, "season")]
+        for table in ("METRICS_WP_PREGAME", "RATINGS_SP", "RANKINGS_POLLS_RANKS")
+    ] == [4, 5, 6]
+    seasonal = [e.priority for e in project_plan.entries if e.slicing == "season"]
+    assert len(set(seasonal)) == len(seasonal)
+
+
 def test_the_project_plan_ships_the_default_settings_and_no_refresh_steps(
     project_plan: Any,
 ) -> None:

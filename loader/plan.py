@@ -99,10 +99,20 @@ class PlanIssue:
 
 
 class PlanError(ValueError):
-    """The plan (or an override) is invalid; `issues` lists every problem."""
+    """The plan (or an override) is invalid; `issues` lists every problem.
 
-    def __init__(self, issues: Sequence[PlanIssue], subject: str = "the load plan") -> None:
+    `entries` are the plan entries that passed their own checks, so a caller can still apply the
+    checks that need the adapter's planner and list those problems in the same message.
+    """
+
+    def __init__(
+        self,
+        issues: Sequence[PlanIssue],
+        subject: str = "the load plan",
+        entries: Sequence[PlanEntry] = (),
+    ) -> None:
         self.issues = tuple(issues)
+        self.entries = tuple(entries)
         noun = "problem" if len(self.issues) == 1 else "problems"
         lines = [f"{subject} has {len(self.issues)} {noun}:"]
         lines += [f"  - {issue}" for issue in self.issues]
@@ -229,9 +239,9 @@ def parse_plan(text: str, catalog: Catalog) -> LoadPlan:
     data = _read_yaml(text, issues)
     if data is None:
         raise PlanError(issues)
-    plan = _build_plan(data, catalog, issues)
+    plan, entries = _build_plan(data, catalog, issues)
     if issues or plan is None:
-        raise PlanError(issues)
+        raise PlanError(issues, entries=entries)
     return plan
 
 
@@ -296,7 +306,9 @@ def _read_yaml(text: str, issues: list[PlanIssue]) -> dict[str, Any] | None:
     return data
 
 
-def _build_plan(data: dict[str, Any], catalog: Catalog, issues: list[PlanIssue]) -> LoadPlan | None:
+def _build_plan(
+    data: dict[str, Any], catalog: Catalog, issues: list[PlanIssue]
+) -> tuple[LoadPlan | None, tuple[PlanEntry, ...]]:
     for key in sorted(set(data) - TOP_LEVEL_KEYS, key=str):
         issues.append(PlanIssue("plan", "plan-format", f"unknown top-level key {key!r}"))
     if data.get("version") != PLAN_VERSION:
@@ -312,10 +324,10 @@ def _build_plan(data: dict[str, Any], catalog: Catalog, issues: list[PlanIssue])
     steps = _build_steps(data.get("refresh_steps") or [], issues)
     entries = _build_entries(data.get("entries"), catalog, issues)
     if issues or config is None or snapshot is None:
-        return None
+        return None, entries
     plan = LoadPlan(PLAN_VERSION, config, snapshot, steps, entries, plan_hash="")
     digest = hashlib.sha256(normalized_json(plan).encode("utf-8")).hexdigest()
-    return replace(plan, plan_hash=digest)
+    return replace(plan, plan_hash=digest), entries
 
 
 # --- config ------------------------------------------------------------------------------------

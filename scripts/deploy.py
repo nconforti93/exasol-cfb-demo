@@ -1,4 +1,4 @@
-"""`make deploy`: build the bundle, then deploy the CFBD virtual schema as sys.
+"""`make deploy`: build the bundle, then deploy the CFBD virtual schema and the loader as sys.
 
 The real deployment is created and owned by `sys` ([20]); the password is read at run time from
 the secrets file of the selected Exasol Personal deployment (`--target local|aws` or `TARGET`, see
@@ -6,9 +6,13 @@ the secrets file of the selected Exasol Personal deployment (`--target local|aws
 a separate namespace beside it, with its own schemas, scripts and virtual schema, by default
 reading the mock connection `CFBD_API_MOCK`; it is refused together with the real connection.
 
-Steps and their rules are documented in `vs/host/deploy.py`. The one thing to remember: the
-fetch UDF is replaced only when its body changed, because `CREATE OR REPLACE` drops its
-script-bound connection grant.
+Steps and their rules are documented in `vs/host/deploy.py` (virtual schema) and
+`loader/deploy.py` (loader: plan tables, views, Lua scripts), which runs second on the same
+connection. The one thing to remember: the fetch UDF is replaced only when its body changed,
+because `CREATE OR REPLACE` drops its script-bound connection grant.
+
+`--loader-config "monthly_call_budget=400,refresh_reserve=50"` (make: `LOADER_CONFIG=...`)
+overrides loader settings of `loader/load-plan.yaml` until the next deploy.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
+from loader import deploy as loader_deploy
 from vs import bundle
 from vs.cfbd_vs.catalog import CatalogError
 from vs.host import deploy, target
@@ -65,13 +70,17 @@ def main(
             force_fetch_replace=args.force_fetch_replace,
         )
         deploy.desired_properties(namespace, options)
+        loader_options = loader_deploy.LoaderOptions(
+            config_overrides=loader_deploy.parse_overrides(args.loader_config)
+        )
+        loader_deploy.validate(namespace, loader_options)
         deployment = target.resolve(args.target, dsn=args.dsn)
         sizes = write_bundle()
         print(
             f"bundle: adapter {sizes.adapter_chars:,} and fetch UDF {sizes.fetch_chars:,} "
             f"characters, written to {bundle.DEFAULT_OUT_DIR}"
         )
-        report = _deploy(connector(deployment), namespace, options)
+        next_steps = _deploy(connector(deployment), namespace, options, loader_options)
     except (
         deploy.DeployError,
         bundle.BundleError,
@@ -81,17 +90,23 @@ def main(
     ) as error:
         print(f"deploy failed: {error}", file=sys.stderr)
         return EXIT_ERROR
-    print("\n".join(report.lines))
-    for step in report.next_steps:
+    for step in next_steps:
         print(f"next: {step}")
     return EXIT_OK
 
 
 def _deploy(
-    connection: Any, namespace: Namespace, options: deploy.DeployOptions
-) -> deploy.DeployReport:
+    connection: Any,
+    namespace: Namespace,
+    options: deploy.DeployOptions,
+    loader_options: loader_deploy.LoaderOptions,
+) -> tuple[str, ...]:
+    """Deploy the virtual schema, then the loader, printing each report as it completes."""
     try:
-        return deploy.deploy(connection, namespace, options)
+        report = deploy.deploy(connection, namespace, options)
+        print("\n".join(report.lines))
+        print("\n".join(loader_deploy.deploy(connection, namespace, loader_options).lines))
+        return report.next_steps
     except deploy.DeployError:
         raise
     except Exception as error:
@@ -126,6 +141,12 @@ def _parser() -> argparse.ArgumentParser:
         "--force-fetch-replace",
         action="store_true",
         help="replace the fetch UDF even if its body is unchanged (drops its connection grant)",
+    )
+    parser.add_argument(
+        "--loader-config",
+        default="",
+        metavar="k=v,...",
+        help="loader settings overriding the plan file, e.g. monthly_call_budget=400",
     )
     parser.add_argument(
         "--target", default=None, help="local or aws (default: $TARGET, else local)"

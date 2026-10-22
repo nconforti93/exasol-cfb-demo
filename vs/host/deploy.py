@@ -50,6 +50,7 @@ _CREATE_TABLE = re.compile(r"CREATE TABLE ([A-Z][A-Z0-9_]*)\.([A-Z][A-Z0-9_]*) \
 _MIRROR_HEADER = re.compile(r"\(catalog ([0-9a-f]+)\)")
 _CAUSE_LINE = re.compile(r"^[\w.]*(?:Error|Exception): ")
 _NOT_NULL = " NOT NULL"
+_IDENTITY = " IDENTITY"
 
 DNS_CHECK_HINT = "run `make dns-check`"
 GRANTS_HINT = "run `make grants`"
@@ -174,7 +175,8 @@ def parse_table_ddl(statement: str) -> TableDdl:
             continue
         name, _, type_text = line.partition(" ")
         nullable = not type_text.endswith(_NOT_NULL)
-        columns.append((name, normalize_sql_type(type_text.removesuffix(_NOT_NULL)), nullable))
+        bare_type = type_text.removesuffix(_NOT_NULL).removesuffix(_IDENTITY)
+        columns.append((name, normalize_sql_type(bare_type), nullable))
     return TableDdl(
         match.group(1), match.group(2), statement.strip().removesuffix(";"), tuple(columns)
     )
@@ -196,6 +198,49 @@ def column_diff(expected: TableDdl, found: Sequence[tuple[str, str, bool]]) -> l
     if not diff and [c[0] for c in expected.columns] != [c[0] for c in found]:
         diff.append(f"{qualified}: the columns are in a different order")
     return diff
+
+
+def columns_by_table(connection: Connection, schema: str) -> dict[str, list[tuple[str, str, bool]]]:
+    """`(name, type, nullable)` columns of every table of `schema`, in column order."""
+    rows = connection.execute(
+        "SELECT COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE, COLUMN_IS_NULLABLE "
+        "FROM EXA_ALL_COLUMNS "
+        f"WHERE COLUMN_SCHEMA = {string_literal(_identifier(schema))} "
+        "AND COLUMN_OBJECT_TYPE = 'TABLE' "
+        "ORDER BY COLUMN_TABLE, COLUMN_ORDINAL_POSITION"
+    ).fetchall()
+    by_table: dict[str, list[tuple[str, str, bool]]] = {}
+    for table, name, type_text, nullable in rows:
+        by_table.setdefault(table, []).append((name, normalize_sql_type(type_text), bool(nullable)))
+    return by_table
+
+
+def ensure_tables(connection: Connection, tables: Sequence[TableDdl], label: str) -> str:
+    """Create the missing tables of one schema; existing ones must match their DDL exactly.
+
+    Raises `DeployError` with the column diff and creates nothing when one does not match.
+    Returns the report line.
+    """
+    existing = columns_by_table(connection, tables[0].schema)
+    problems: list[str] = []
+    missing: list[TableDdl] = []
+    for table in tables:
+        found = existing.get(table.name)
+        if found is None:
+            missing.append(table)
+        else:
+            problems += column_diff(table, found)
+    if problems:
+        raise DeployError(
+            f"existing {label} do not match the catalog; nothing was altered. Differences:\n"
+            + "\n".join(problems)
+        )
+    for table in missing:
+        connection.execute(table.statement)
+    return (
+        f"{label} in {tables[0].schema}: {len(missing)} created, "
+        f"{len(tables) - len(missing)} existing and matching"
+    )
 
 
 def _describe(type_text: str, nullable: bool) -> str:
@@ -261,43 +306,8 @@ class _Deployment:
         )
 
     def _ensure_tables(self, tables: list[TableDdl], label: str) -> None:
-        if not tables:
-            return
-        existing = self._columns_by_table(tables[0].schema)
-        problems: list[str] = []
-        missing: list[TableDdl] = []
-        for table in tables:
-            found = existing.get(table.name)
-            if found is None:
-                missing.append(table)
-            else:
-                problems += column_diff(table, found)
-        if problems:
-            raise DeployError(
-                f"existing {label} do not match the catalog; nothing was altered. Differences:\n"
-                + "\n".join(problems)
-            )
-        for table in missing:
-            self._execute(table.statement)
-        self._lines.append(
-            f"{label} in {tables[0].schema}: {len(missing)} created, "
-            f"{len(tables) - len(missing)} existing and matching"
-        )
-
-    def _columns_by_table(self, schema: str) -> dict[str, list[tuple[str, str, bool]]]:
-        rows = self._query(
-            "SELECT COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE, COLUMN_IS_NULLABLE "
-            "FROM EXA_ALL_COLUMNS "
-            f"WHERE COLUMN_SCHEMA = {string_literal(_identifier(schema))} "
-            "AND COLUMN_OBJECT_TYPE = 'TABLE' "
-            "ORDER BY COLUMN_TABLE, COLUMN_ORDINAL_POSITION"
-        )
-        by_table: dict[str, list[tuple[str, str, bool]]] = {}
-        for table, name, type_text, nullable in rows:
-            by_table.setdefault(table, []).append(
-                (name, normalize_sql_type(type_text), bool(nullable))
-            )
-        return by_table
+        if tables:
+            self._lines.append(ensure_tables(self._connection, tables, label))
 
     def _deploy_adapter(self) -> None:
         infra = self._namespace.infra_schema

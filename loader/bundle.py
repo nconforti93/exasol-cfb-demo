@@ -1,8 +1,9 @@
-"""Bundler: `loader/lua/*.lua` become the two Lua script statements of the loader deployment.
+"""Bundler: `loader/lua/*.lua` become the Lua script statements of the loader deployment.
 
 Each script is `CREATE OR REPLACE LUA SCRIPT <infra>.<NAME>(<parameters>) RETURNS TABLE AS`
 followed by three parts, in this order: the namespace constants, `loader/lua/loadlib.lua` and the
-entry file (`backfill.lua` or `refresh_week.lua`). The bundler holds no Lua logic.
+entry file (`backfill.lua`, `refresh_week.lua`, or `run_lock.lua`, the run lock of host processes
+that `loader/runlock.py` calls). The bundler holds no Lua logic.
 
 Namespace constants (a deploy-time rendering, so one source serves the real and every prefixed
 namespace). Both tables are keyed by `META_SCHEMA`, `CORE_SCHEMA`, `STAGE_SCHEMA`,
@@ -98,6 +99,12 @@ SCRIPTS = (
         "refresh_week.lua",
         "loader_refresh_week.sql",
     ),
+    LuaScript(
+        "RUN_LOCK",
+        ("lock_action", "lock_word", "lock_run", "lock_text"),
+        "run_lock.lua",
+        "loader_run_lock.sql",
+    ),
 )
 
 
@@ -170,7 +177,7 @@ def write_bundle(
     namespace: Namespace | None = None,
     lua_dir: Path = LUA_DIR,
 ) -> BundleResult:
-    """Write `loader_backfill.sql` and `loader_refresh_week.sql` for `namespace` (default real).
+    """Write one `loader_<script>.sql` per script of `SCRIPTS` for `namespace` (default real).
 
     A script whose sources do not exist yet is skipped and named in the result.
     """

@@ -152,6 +152,17 @@ def test_table_ddl_parser_reads_types_nullability_and_skips_constraints() -> Non
     assert table.statement.endswith(")")
 
 
+def test_an_identity_column_is_compared_by_its_type_alone() -> None:
+    table = deploy.parse_table_ddl(
+        "CREATE TABLE S.T (\n  RUN_ID DECIMAL(18,0) IDENTITY NOT NULL,\n  B DOUBLE\n)"
+    )
+    assert table.columns[0] == ("RUN_ID", "DECIMAL(18,0)", False)
+    assert "IDENTITY" in table.statement
+    assert (
+        deploy.column_diff(table, [("RUN_ID", "DECIMAL(18,0)", False), ("B", "DOUBLE", True)]) == []
+    )
+
+
 def test_column_diff_names_missing_extra_and_different_columns() -> None:
     table = deploy.parse_table_ddl("CREATE TABLE S.T (\n  A DECIMAL(18,0),\n  B DOUBLE\n)")
     found = [("A", "VARCHAR(5) UTF8", True), ("C", "DOUBLE", True)]
