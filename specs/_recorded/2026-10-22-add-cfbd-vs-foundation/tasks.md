@@ -50,7 +50,7 @@
 - [x] 7.1 `tests/it/test_catalog_it.py`, `tests/cli/test_generate_cli.py`, `tests/it/test_flattening_it.py` (including t
 - [x] 7.2 `tests/it/test_pushdown_it.py`, `tests/it/test_rules_it.py`, `tests/it/test_gating_it.py`, `tests/it/test_fano
 - [x] 7.3 `tests/it/test_read_through_it.py` [expert]
-- [~] 7.4 `tests/it/test_fetch_log_it.py`, `tests/it/test_fetch_modes_it.py`, `tests/it/test_key_protection_it.py`.
+- [x] 7.4 `tests/it/test_fetch_log_it.py`, `tests/it/test_fetch_modes_it.py`, `tests/it/test_key_protection_it.py`. (network DoH test passed 2026-10-22, run by Nico)
 
 ## Group I
 - [x] 7.5 Quality gate
