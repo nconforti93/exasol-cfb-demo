@@ -492,3 +492,11 @@ Nothing was rejected outright. Where the review offered options, or where its as
 - **On the merge of Phases 2–5:** group B onward, starting with probe 1.10.
 - **Owner items:** U4 now also needs `CFB_CONSOLE_PASSWORD` in `.env`; U3 adds [24] to the decisions for the owner to review. No item blocks a task.
 - **Cut line:** apply it, in the listed order, if Phase 5 lands late; the stretch scenarios then leave this plan's specs before recording and go to Phase 8's interview.
+
+## Cross-plan items from Phase 7 (2026-10-23)
+
+- **P7-a:** The app-state store holds the head-to-head pair, plus an action that sets it.
+- **P7-b:** `GET /api/config` returns `chat` as an object, `{available, enabled, reason, model}`, not `false`.
+- **P7-c:** The read-user effective-privilege check is a reusable function of (user, roles, schemas). The chat user `CFB_CHAT_WEB` reuses it.
+- **P7-d:** The query log accepts entries with principal `chat`.
+- **P7-e:** `create_app` and `app_client` accept a `chat_factory`.
