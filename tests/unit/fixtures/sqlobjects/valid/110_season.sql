@@ -1,0 +1,9 @@
+CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.SEASON (
+  SEASON    COMMENT IS 'Season',
+  GAME_KM   COMMENT IS 'Distance via the function'
+) AS
+SELECT g."SEASON", {MODEL_SCHEMA}.GREAT_CIRCLE_KM(1, 2, 3, 4)
+  FROM {MODEL_SCHEMA}."GAME" g
+-- text in a string must not be parsed: 'FROM CFBD_VS.GAMES'
+ WHERE 'FROM CFBD_VS.GAMES; JOIN x.y' IS NOT NULL
+COMMENT IS 'One row per season.';

@@ -180,7 +180,7 @@ PLACEHOLDER_SQL = """\
 -- a whole-line comment with {META_SCHEMA} and {UNKNOWN} stays out
 CREATE OR REPLACE VIEW {META_SCHEMA}.V AS
 SELECT * FROM {CORE_SCHEMA}.T, {STAGE_SCHEMA}.T, {INFRA_SCHEMA}.S, {VS_NAME}.INFO,
-  {RESTORE_SCHEMA}.R;
+  {RESTORE_SCHEMA}.R, {MODEL_SCHEMA}.M;
 """
 
 
@@ -188,7 +188,8 @@ def test_every_namespace_placeholder_is_rendered_for_the_real_namespace() -> Non
     text = metaddl.render_namespace_sql(PLACEHOLDER_SQL, Namespace(""))
     assert text == (
         "CREATE OR REPLACE VIEW CFB_META.V AS\n"
-        "SELECT * FROM CFB_CORE.T, CFB_STAGE.T, CFB_INFRA.S, CFBD_VS.INFO,\n  CFB_RESTORE.R\n"
+        "SELECT * FROM CFB_CORE.T, CFB_STAGE.T, CFB_INFRA.S, CFBD_VS.INFO,\n"
+        "  CFB_RESTORE.R, CFB_MODEL.M\n"
     )
 
 
@@ -197,6 +198,7 @@ def test_every_namespace_placeholder_is_rendered_for_the_test_namespace() -> Non
     assert "TEST_CFB_META.V" in text
     assert "TEST_CFB_CORE.T, TEST_CFB_STAGE.T, TEST_CFB_INFRA.S, TEST_CFBD_VS.INFO" in text
     assert "TEST_CFB_RESTORE.R" in text
+    assert "TEST_CFB_MODEL.M" in text
     assert "{" not in text
 
 

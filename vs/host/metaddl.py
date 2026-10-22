@@ -4,8 +4,8 @@ Two sets of tables: the foundation's (`meta_ddl_names`: `LOAD_LOG`, `FETCH_LOG`,
 deploy) and the loader's (`loader_meta_ddl_names`, created by the loader deploy). The loader's views
 (`sql/loader/*.sql`, `loader_view_names` in creation order) read those tables and each other. Any
 SQL file may use the placeholders `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`,
-`{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}` and `{VS_NAME}`; `render_namespace_sql` fills them from a
-`Namespace`.
+`{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}`, `{MODEL_SCHEMA}` and `{VS_NAME}`; `render_namespace_sql`
+fills them from a `Namespace`.
 """
 
 from __future__ import annotations
@@ -82,28 +82,42 @@ def render_meta_ddl(name: str, meta_schema: str) -> str:
     return statement.replace(META_SCHEMA_PLACEHOLDER, meta_schema) + "\n"
 
 
-def render_namespace_sql(text: str, namespace: Namespace) -> str:
-    """`text` without whole-line comments and the trailing semicolon, placeholders filled.
-
-    Fills `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`, `{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}`
-    and `{VS_NAME}` with the names of `namespace`. An upper-case placeholder that is not one of
-    them is an error; lower-case braces (slice-key templates) are left alone.
-    """
-    names = {
+def placeholder_values(namespace: Namespace) -> dict[str, str]:
+    """Every placeholder (with braces) and the name it takes in `namespace`."""
+    return {
         "{META_SCHEMA}": namespace.meta_schema,
         "{CORE_SCHEMA}": namespace.core_schema,
         "{STAGE_SCHEMA}": namespace.stage_schema,
         "{RESTORE_SCHEMA}": namespace.restore_schema,
         "{INFRA_SCHEMA}": namespace.infra_schema,
+        "{MODEL_SCHEMA}": namespace.model_schema,
         "{VS_NAME}": namespace.vs_name,
     }
-    statement = _SQL_COMMENT.sub("", text).strip().removesuffix(";")
-    for placeholder, value in names.items():
-        statement = statement.replace(placeholder, value)
-    open_ones = sorted(set(_OPEN_PLACEHOLDER.findall(statement)))
+
+
+def fill_placeholders(text: str, namespace: Namespace) -> str:
+    """`text` with every placeholder of `placeholder_values` replaced; comments are kept.
+
+    An upper-case placeholder that is not known is an error; lower-case braces (slice-key
+    templates) are left alone.
+    """
+    for placeholder, value in placeholder_values(namespace).items():
+        text = text.replace(placeholder, value)
+    open_ones = sorted(set(_OPEN_PLACEHOLDER.findall(text)))
     if open_ones:
         raise MetaDdlError(f"unknown placeholder {', '.join(open_ones)} in the SQL text")
-    return statement + "\n"
+    return text
+
+
+def render_namespace_sql(text: str, namespace: Namespace) -> str:
+    """`text` without whole-line comments and the trailing semicolon, placeholders filled.
+
+    Fills `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`, `{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}`,
+    `{MODEL_SCHEMA}` and `{VS_NAME}` with the names of `namespace`. An upper-case placeholder that
+    is not one of them is an error; lower-case braces (slice-key templates) are left alone.
+    """
+    statement = _SQL_COMMENT.sub("", text).strip().removesuffix(";")
+    return fill_placeholders(statement, namespace) + "\n"
 
 
 def render_sql_file(path: Path, namespace: Namespace) -> str:

@@ -65,3 +65,9 @@ def test_stage_and_restore_schemas_follow_the_prefix() -> None:
     assert Namespace("").restore_schema == "CFB_RESTORE"
     assert Namespace("TEST_").stage_schema == "TEST_CFB_STAGE"
     assert Namespace("TEST_").restore_schema == "TEST_CFB_RESTORE"
+
+
+def test_model_schema_follows_the_prefix() -> None:
+    assert Namespace("").model_schema == "CFB_MODEL"
+    assert Namespace("TEST_").model_schema == "TEST_CFB_MODEL"
+    assert Namespace("PERF_").model_schema == "PERF_CFB_MODEL"

@@ -58,6 +58,11 @@ class Namespace:
         return f"{self.prefix}CFB_RESTORE"
 
     @property
+    def model_schema(self) -> str:
+        """The analytical model's schema: views and reference tables over `CFB_CORE`."""
+        return f"{self.prefix}CFB_MODEL"
+
+    @property
     def vs_name(self) -> str:
         return f"{self.prefix}CFBD_VS"
 

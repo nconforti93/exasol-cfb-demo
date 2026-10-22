@@ -6,9 +6,12 @@ import pytest
 from vs.host.metaddl import (
     META_SCHEMA_PLACEHOLDER,
     MetaDdlError,
+    fill_placeholders,
     meta_ddl_names,
+    placeholder_values,
     render_meta_ddl,
 )
+from vs.host.namespace import Namespace
 
 COLUMN_LINE = re.compile(r"^\s+([A-Z_]+) ([A-Z]+(?:\(\d+(?:,\d+)?\))?(?: UTF8)?)( NOT NULL)?,?$")
 
@@ -103,3 +106,13 @@ def test_unknown_ddl_name_is_rejected() -> None:
 def test_unsafe_schema_names_are_rejected(schema: str) -> None:
     with pytest.raises(MetaDdlError, match="schema name"):
         render_meta_ddl("load_log", schema)
+
+
+def test_fill_placeholders_keeps_comments_and_semicolons() -> None:
+    text = "-- header {MODEL_SCHEMA}\nSELECT 1 FROM {MODEL_SCHEMA}.T;\n"
+    assert fill_placeholders(text, Namespace("TEST_")) == (
+        "-- header TEST_CFB_MODEL\nSELECT 1 FROM TEST_CFB_MODEL.T;\n"
+    )
+    assert placeholder_values(Namespace(""))["{MODEL_SCHEMA}"] == "CFB_MODEL"
+    with pytest.raises(MetaDdlError, match=r"\{NOPE\}"):
+        fill_placeholders("SELECT {NOPE}", Namespace(""))
