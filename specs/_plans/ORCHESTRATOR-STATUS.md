@@ -88,7 +88,6 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 
 ## Blocked on Nico
 
-- **November CFBD budget.** Needed only if the Phase 2 backfill can't finish by 2026-10-31.
 - **Two V.3 manual steps were blocked by auto mode.** Staging a stored slice on local was blocked, so the read-through manual row wasn't run; integration tests and the live 9.5b result cover it. `ALTER VIRTUAL SCHEMA` on AWS was blocked as "Modify Shared Resources", so the properties row ran on local instead.
 - **Local Personal has the real namespace deployed** (`CFB_INFRA`, `CFB_META`, `CFB_CORE`, `CFBD_VS`). It is in `FETCH_MODE='replay'` from V.3. `make grants` was not run there.
 - **Phase 7 chat has no Anthropic API key.** It will be built against a stub.
