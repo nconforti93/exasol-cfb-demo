@@ -89,7 +89,18 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 - **Anthropic key:** Nico will provide it later.
 - **Demo date and replay week:** the demo is around mid-November 2026. The replay/rehearsal snapshot uses the latest completed week at the time of the Phase 2/8 live runs (Phase 8 input).
 
-## Blocked on Nico
+## Owner actions collected from the Phase 6–8 plans (for Nico, when convenient)
+
+- **Anthropic API key, and approval of up to about $10 + $20 of Anthropic spend.** The $20 is for Phase 7's live verification and the ~$10 for Phase 8's rehearsals. Until a key exists, the chat runs as a stub.
+- **`.env` passwords.** Set `CFB_APP_PASSWORD`, `CFB_CONSOLE_PASSWORD` and `CFB_CHAT_PASSWORD`, then run `make app-user` and `make chat-user` on both targets. The orchestrator could instead generate random passwords into `.env` (mode 0600); say if you'd rather it did.
+- **Optional `CFBD_API` connection on the laptop**, only if the laptop should refresh live on stage. Otherwise the laptop runs in replay and live proof comes from AWS.
+- **Claude Desktop entry `exasol-cfb`** for the MCP moment: role `CFB_MCP`, local only.
+- **Demo details.** Confirm the date and venue network, and the bubble team and team pairs that `make kit-pick` proposes.
+- **Fallback video and screenshots** of a full rehearsal.
+- **License and data terms.** Confirm Exasol AG as the MIT license holder, and that CFBD's terms allow committing the OpenAPI spec and derived numbers.
+- **What ships publicly and when.** Publishing is out of scope for the orchestrator.
+
+
 
 - **Two V.3 manual steps were blocked by auto mode.** Staging a stored slice on local was blocked, so the read-through manual row wasn't run; integration tests and the live 9.5b result cover it. `ALTER VIRTUAL SCHEMA` on AWS was blocked as "Modify Shared Resources", so the properties row ran on local instead.
 - **Local Personal has the real namespace deployed** (`CFB_INFRA`, `CFB_META`, `CFB_CORE`, `CFBD_VS`). It is in `FETCH_MODE='replay'` from V.3. `make grants` was not run there.
