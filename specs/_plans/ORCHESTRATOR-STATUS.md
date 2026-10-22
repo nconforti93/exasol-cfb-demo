@@ -73,5 +73,7 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 
 - **November CFBD budget.** Needed only if the Phase 2 backfill can't finish by 2026-10-31.
 - **The DoH-success network test was never run (foundation 7.4 stays `[~]`).** Auto mode blocked `flock … make test-network` as "Interfere With Workloads". You can run it yourself with `! make test-network`; it needs HTTPS egress to 1.1.1.1 plus a TLS handshake with the CFBD host, and makes no API call. The AWS dns-check (9.0) resolved via the **system** resolver, so the DoH fallback is still unverified.
+- **Two V.3 manual steps were blocked by auto mode.** Staging a stored slice on local was blocked, so the read-through manual row wasn't run; integration tests and the live 9.5b result cover it. `ALTER VIRTUAL SCHEMA` on AWS was blocked as "Modify Shared Resources", so the properties row ran on local instead.
+- **Local Personal has the real namespace deployed** (`CFB_INFRA`, `CFB_META`, `CFB_CORE`, `CFBD_VS`). It is in `FETCH_MODE='replay'` from V.3. `make grants` was not run there.
 - **Stale podman container `exasol-db-49afcb12` (Created).** Auto mode denied `podman rm`, so it is still there.
 - **Phase 7 chat has no Anthropic API key.** It will be built against a stub.
