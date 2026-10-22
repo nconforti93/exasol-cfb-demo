@@ -8,7 +8,7 @@
 3. Starts the mock CFBD sidecar and creates the replay directory in BucketFS.
 4. As `sys`: creates the connection `CFBD_API_MOCK` (address of the mock, a generated marker key
    as its password) and the users `CFB_TEST_OWNER` and `CFB_TEST_READER` with random passwords
-   that only live in this process.
+   that only live in this process. The owner also gets `IMPORT` and `EXPORT` (snapshot files).
 5. As the owner: deploys the namespace (`vs.host.deploy`), grants the script-bound connection
    access, deploys again (the fetch UDF is unchanged, so the grant stays, and `API_FEATURES` is
    synced from the mock's `/info`), creates the `WAIT_FOR_FILES` helper UDF.
@@ -38,7 +38,6 @@ from typing import Any, NoReturn
 import pyexasol
 
 from loader import deploy as loader_deploy
-from loader import exapump
 from scripts import grants
 from tests.it import guards, loader_support, step_scripts, support
 from tests.it.loader_support import BASE_VARIANT, PlanState
@@ -61,6 +60,10 @@ INFO_STATIC = "static"
 INFO_COUNTING = "counting"
 NOW_SETTING = "NOW_OVERRIDE"
 STAGING_PROPERTIES = {"FETCH_MODE": "replay", "READ_THROUGH": "FALSE"}
+OWNER_TRANSFER_PRIVILEGES = "IMPORT, EXPORT"
+"""The test owner's snapshot and restore run as it, and pyexasol's file transfer is `EXPORT`
+and `IMPORT` (the real deployment runs them as `sys`). Neither reads a connection: the mock key
+stays bound to the fetch script."""
 
 OWNER = "owner"
 READER = "reader"
@@ -677,13 +680,28 @@ class Harness:
         finally:
             _close(connection)
 
-    def exapump_env(self) -> tuple[dict[str, str], list[str]]:
-        """`(env, args)` for an exapump child process as the test owner: the DSN with the owner's
-        password exists only in this returned environment copy, never on disk or in argv."""
-        owner = loader_support.owner_target(
-            self._target, self.namespace.owner_user, self._owner_password
-        )
-        return exapump.exapump_env(owner)
+    def rebuild(self) -> None:
+        """Drop the namespace's deployment and deploy it again, as on a new machine.
+
+        Drops the virtual schema and the infra, meta, core, stage and restore schemas (data, logs,
+        plan, scripts), then deploys again: the fetch UDF is created anew, so the script-bound
+        connection grant is applied again (foundation probe (o)), followed by the module's loader
+        plan, the step scripts and the reader's grant. The users, the mock connection and the
+        harness schema stay. The second deploy reads `/info` from the mock (free).
+        """
+        namespace = self.namespace
+        statements = [
+            f"DROP VIRTUAL SCHEMA IF EXISTS {namespace.vs_name} CASCADE",
+            *(
+                f"DROP SCHEMA IF EXISTS {schema} CASCADE"
+                for schema in _namespace_schemas(namespace)
+                if schema != HARNESS_SCHEMA
+            ),
+        ]
+        for statement in statements:
+            self.query(statement)
+        self._plan = None
+        _deploy_namespace(self, self._owner_password, self._baseline or PlanState(BASE_VARIANT, ()))
 
     def reset_state(self) -> list[str]:
         """Leave the database as the deployment left it; returns problems instead of raising.
@@ -924,15 +942,23 @@ def _create_users(
     for step in (
         grants.create_user_step(READER_USER, reader_password),
         grants.Step(f"let {READER_USER} log in", f"GRANT CREATE SESSION TO {READER_USER}"),
+        grants.Step(
+            f"let {namespace.owner_user} write and read snapshot files (pyexasol EXPORT/IMPORT)",
+            f"GRANT {OWNER_TRANSFER_PRIVILEGES} TO {namespace.owner_user}",
+        ),
     ):
         database.execute(step.sql, step.params)
 
 
 def _deploy(harness: Harness, owner_password: str) -> None:
-    namespace = harness.namespace
-    properties = {"REPLAY_PATH": harness.replay_area.udf_path}
     harness.query(f"CREATE SCHEMA {HARNESS_SCHEMA}")
     harness.query(support.wait_script_sql(HARNESS_SCHEMA))
+    _deploy_namespace(harness, owner_password, PlanState(BASE_VARIANT, ()))
+
+
+def _deploy_namespace(harness: Harness, owner_password: str, plan: PlanState) -> None:
+    namespace = harness.namespace
+    properties = {"REPLAY_PATH": harness.replay_area.udf_path}
     first = deploy.deploy(
         harness.owner,
         namespace,
@@ -956,7 +982,7 @@ def _deploy(harness: Harness, owner_password: str) -> None:
             + "\n".join(first.lines + second.lines)
         )
     harness.deploy_report = second
-    harness.use_plan(BASE_VARIANT)
+    harness.use_plan(plan.variant, plan.config_overrides())
     for statement in step_scripts.step_scripts_sql(namespace.infra_schema):
         harness.query(statement)
     step = grants.select_grant_step(namespace.vs_name, READER_USER)

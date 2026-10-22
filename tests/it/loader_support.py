@@ -4,7 +4,7 @@
   deployment of one variant with its `LOADER_CONFIG` overrides looks like.
 - SQL text: script calls (`EXECUTE SCRIPT`, never `WITH OUTPUT`), `KILL STATEMENT`, the UTC clock.
 - Cleanup scope: which tables a reset truncates (the plan tables keep the deployed plan).
-- The test owner as a `Target` for exapump, and the private snapshot directory.
+- The private snapshot directory.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from pathlib import Path
 from tests.it.support import HarnessError
 from vs.cfbd_vs.sqlrender import sql_literal
 from vs.host.namespace import Namespace
-from vs.host.target import Target
 
 VARIANT_DIR = Path(__file__).parent / "fixtures"
 VARIANT_PATTERN = "load-plan.*.yaml"
@@ -102,31 +101,6 @@ def tables_to_truncate(
     """`(schema, table)` rows without the plan tables of the meta schema, in the given order."""
     kept = {(namespace.meta_schema, name) for name in PLAN_TABLES}
     return [row for row in tables if row not in kept]
-
-
-@dataclass(frozen=True)
-class _OwnerTarget(Target):
-    """A `Target` whose password is held in memory instead of read from the secrets file."""
-
-    owner_password: str = ""
-
-    def password(self) -> str:
-        return self.owner_password
-
-
-def owner_target(base: Target, user: str, password: str) -> Target:
-    """`base` as `user`; the password lives in this object only (for `exapump_env`)."""
-    return _OwnerTarget(
-        name=base.name,
-        host=base.host,
-        port=base.port,
-        user=user,
-        deployment_dir=base.deployment_dir,
-        tls=base.tls,
-        fingerprint=base.fingerprint,
-        dsn_override=base.dsn_override,
-        owner_password=password,
-    )
 
 
 def private_directory(path: Path) -> Path:

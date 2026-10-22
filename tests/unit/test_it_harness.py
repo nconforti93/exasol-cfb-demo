@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 
 from loader import deploy as loader_deploy
-from loader import exapump
 from tests.it import guards, harness, loader_support, support
 from tests.it.support import HarnessError
 from vs.host import target
@@ -531,17 +530,3 @@ def test_the_session_id_is_read_from_the_owner_connection() -> None:
     owner = Session({"CURRENT_SESSION": (["S"], [(1234567890123,)])})
     built, _, _ = make_harness(owner)
     assert built.session_id() == 1234567890123
-
-
-def test_the_exapump_environment_uses_the_owner_not_sys(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[Target] = []
-
-    def fake_env(owner_target: Target, **_: Any) -> tuple[dict[str, str], list[str]]:
-        seen.append(owner_target)
-        return {"EXAPUMP_DSN": "x"}, []
-
-    monkeypatch.setattr(exapump, "exapump_env", fake_env)
-    built, _, _ = make_harness()
-    assert built.exapump_env() == ({"EXAPUMP_DSN": "x"}, [])
-    assert seen[0].user == "CFB_TEST_OWNER"
-    assert seen[0].password() == "owner-pw"

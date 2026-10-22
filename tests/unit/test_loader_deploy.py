@@ -80,7 +80,7 @@ def stub_lua(directory: Path, *names: str) -> Path:
 
 @pytest.fixture
 def lua_dir(tmp_path: Path) -> Path:
-    return stub_lua(tmp_path / "lua", "backfill.lua", "refresh_week.lua")
+    return stub_lua(tmp_path / "lua", "backfill.lua", "refresh_week.lua", "run_lock.lua")
 
 
 @pytest.fixture
@@ -411,25 +411,26 @@ def test_views_of_a_prefixed_namespace_read_only_that_namespace(no_lua: Path) ->
 # --- Lua scripts ------------------------------------------------------------------------------
 
 
-def test_both_scripts_are_installed_from_the_bundle_text(lua_dir: Path) -> None:
+def test_every_script_is_installed_from_the_bundle_text(lua_dir: Path) -> None:
     db = LoaderDatabase(TEST)
     report = run(db, lua_dir, TEST)
-    assert report.installed_scripts == ("BACKFILL", "REFRESH_WEEK")
+    assert report.installed_scripts == ("BACKFILL", "REFRESH_WEEK", "RUN_LOCK")
     assert report.skipped_scripts == ()
     scripts = [s for s in db.statements if "LUA SCRIPT" in s.split("\n", 1)[0]]
     assert scripts == [
         lua_bundle.build_script(script, TEST, lua_dir) for script in lua_bundle.SCRIPTS
     ]
     assert ("TEST_CFB_INFRA", "BACKFILL") in db.scripts
+    assert ("TEST_CFB_INFRA", "RUN_LOCK") in db.scripts
 
 
 def test_a_script_without_sources_is_skipped_with_a_notice(no_lua: Path) -> None:
     db = LoaderDatabase(TEST)
     report = run(db, no_lua, TEST)
     assert report.installed_scripts == ()
-    assert report.skipped_scripts == ("BACKFILL", "REFRESH_WEEK")
+    assert report.skipped_scripts == ("BACKFILL", "REFRESH_WEEK", "RUN_LOCK")
     notices = [line for line in report.lines if "skipped" in line]
-    assert len(notices) == 2
+    assert len(notices) == 3
     assert "TEST_CFB_INFRA.BACKFILL" in notices[0]
     assert not [s for s in db.statements if "LUA SCRIPT" in s.split("\n", 1)[0]]
 
@@ -438,7 +439,10 @@ def test_only_the_script_with_sources_is_installed(tmp_path: Path) -> None:
     lua = stub_lua(tmp_path / "lua", "backfill.lua")
     db = LoaderDatabase(TEST)
     report = run(db, lua, TEST)
-    assert (report.installed_scripts, report.skipped_scripts) == (("BACKFILL",), ("REFRESH_WEEK",))
+    assert (report.installed_scripts, report.skipped_scripts) == (
+        ("BACKFILL",),
+        ("REFRESH_WEEK", "RUN_LOCK"),
+    )
 
 
 def test_a_script_that_breaks_the_source_checks_stops_the_deploy(tmp_path: Path) -> None:

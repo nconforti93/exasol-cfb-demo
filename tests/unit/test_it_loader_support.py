@@ -9,7 +9,6 @@ import pytest
 from loader import deploy as loader_deploy
 from tests.it import loader_support as ls
 from tests.it.support import HarnessError
-from vs.host import target
 from vs.host.namespace import Namespace
 
 TEST = Namespace("TEST_")
@@ -122,39 +121,6 @@ def test_cleanup_covers_core_meta_stage_and_infra_schemas() -> None:
         "TEST_CFB_STAGE",
         "TEST_CFB_INFRA",
     ]
-
-
-FINGERPRINT = "ab" * 32
-
-
-def _local_target(tmp_path: Path) -> target.Target:
-    return target.Target(
-        name="local",
-        host="127.0.0.1",
-        port=8563,
-        user="sys",
-        deployment_dir=tmp_path,
-        tls=target.TLS_PINNED,
-        fingerprint=FINGERPRINT,
-    )
-
-
-def test_the_owner_target_carries_the_owner_credentials_in_memory(tmp_path: Path) -> None:
-    owner = ls.owner_target(_local_target(tmp_path), "CFB_TEST_OWNER", "s3cret-pw")
-    assert owner.user == "CFB_TEST_OWNER"
-    assert owner.password() == "s3cret-pw"
-    assert owner.host == "127.0.0.1"
-    assert owner.port == 8563
-    assert not list(tmp_path.iterdir())
-
-
-def test_the_owner_target_builds_an_exapump_dsn_without_the_sys_secrets(tmp_path: Path) -> None:
-    from loader import exapump
-
-    owner = ls.owner_target(_local_target(tmp_path), "CFB_TEST_OWNER", "s3cret-pw")
-    env, args = exapump.exapump_env(owner, environ={})
-    assert env == {exapump.DSN_VARIABLE: "exasol://CFB_TEST_OWNER:s3cret-pw@127.0.0.1:8563"}
-    assert args == [exapump.FINGERPRINT_FLAG, FINGERPRINT]
 
 
 def test_a_private_directory_is_created_with_owner_only_access(tmp_path: Path) -> None:

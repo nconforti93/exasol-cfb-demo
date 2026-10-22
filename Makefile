@@ -19,6 +19,14 @@
 #   quota              prints CFB_META.QUOTA (reads /info, 0 calls) and the ledger room.
 #                      All three are scripts/loader_cli.py. LEDGER=off turns the ledger off;
 #                      MAX_CALLS defaults to the ledger room. MAX_CALLS=0 is a dry run.
+#   snapshot           NAME=n: copies CFB_CORE, CFB_META.LOAD_LOG and FETCH_LOG of the target to the
+#                      private ~/.cfb-demo/snapshots/<NAME>/ (CFB_SNAPSHOT_DIR overrides; never inside
+#                      the repo or a OneDrive folder; an existing NAME is refused). 0 CFBD calls.
+#   restore            NAME=n [CONFIRM=yes] [FORCE=yes]: without CONFIRM it checks the snapshot against
+#                      the target and stops; with it, replaces those tables in one transaction (also
+#                      the rehearsal reset). FORCE=yes accepts a snapshot of another catalog. 0 CFBD calls.
+#   snapshots          lists the snapshots. All three are scripts/snapshot.py; snapshot and restore
+#                      take the loader's run lock.
 
 TARGET ?= local
 export TARGET
@@ -29,10 +37,12 @@ PY   := $(RUN) python
 
 PATTERNS ?=
 CONFIRM  ?=
+FORCE    ?=
+NAME     ?=
 ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
-.PHONY: backfill refresh quota
+.PHONY: backfill refresh quota snapshot restore snapshots
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -90,3 +100,12 @@ refresh: db-check
 
 quota: db-check
 	$(PY) -m scripts.loader_cli quota
+
+snapshot: db-check
+	$(PY) -m scripts.snapshot snapshot --name "$(NAME)"
+
+restore: db-check
+	$(PY) -m scripts.snapshot restore --name "$(NAME)" --confirm "$(CONFIRM)" --force "$(FORCE)"
+
+snapshots:
+	$(PY) -m scripts.snapshot list

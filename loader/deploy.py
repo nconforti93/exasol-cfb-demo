@@ -15,8 +15,8 @@ so an invalid plan or `LOADER_CONFIG` override changes nothing. Then the steps, 
    plan file, so an override does not change it.
 4. `SEASON_NUMBERS` holds 1869 to 2100; it is rewritten only when it does not.
 5. The views, in `metaddl.loader_view_names()` order, as `CREATE OR REPLACE VIEW`.
-6. The Lua scripts `BACKFILL` and `REFRESH_WEEK`, bundled in memory for the namespace. A script
-   whose sources do not exist yet is skipped with a notice.
+6. The Lua scripts `BACKFILL`, `REFRESH_WEEK` and `RUN_LOCK` (`loader.bundle.SCRIPTS`), bundled
+   in memory for the namespace. A script whose sources do not exist yet is skipped with a notice.
 7. The orphan slices per table, as a warning.
 
 Existing tables must match their DDL exactly, as for the mirrors. The deploy never changes the
