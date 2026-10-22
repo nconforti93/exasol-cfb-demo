@@ -76,6 +76,6 @@
 
 ## Review and Verification
 - [x] R.1 Code review
-- [ ] V.1 Checklist commands (generate, build, test, test-it, lint, format, coverage, deploy, secrets)
-- [ ] V.2 Scenario coverage audit
-- [ ] V.3 Manual testing and verification-report.md
+- [x] V.1 Checklist commands (generate, build, test, test-it, lint, format, coverage, deploy, secrets)
+- [x] V.2 Scenario coverage audit
+- [x] V.3 Manual testing and verification-report.md
