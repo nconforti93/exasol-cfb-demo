@@ -7,12 +7,12 @@ The score model, the engine and the run tables are installed with one command, t
 - **Command:** `make sim [TARGET=local|aws] [ARGS="…"]`, also run by `make deploy` after the model (`model/deploy`). It renders and deploys:
   - **reference tables**, replaced with their seed rows on every deploy: `SCORE_MODEL_PARAMS`, `RESUME_WEIGHTS`, `SELECTION_RULES` and `SIM_CONFIG`;
   - **functions** `NORMAL_CDF` and `MARGIN_WIN_PROB`;
-  - **views**: `TEAM_RATING_AS_OF`, `GAME_SCORE_AS_OF`, `GAME_WIN_PROB`, `SCORE_TRAINING_ROWS`, `SCORE_MODEL_REPORT`, `SCORE_CALIBRATION_BUCKETS`, `ENGINE_TEAM_AS_OF`, `ENGINE_GAME_AS_OF`, `ENGINE_PARAM_AS_OF`, `SIM_INPUT_CHECKS`, `SIM_RUN_MODEL_ROWS`, `SIM_TEAM_ODDS`, `BACKTEST_FIELD` and `BACKTEST_REPORT`;
+  - **views**: `SELECTION_WEEK`, `TEAM_RATING_AS_OF`, `GAME_SCORE_AS_OF`, `GAME_WIN_PROB`, `SCORE_TRAINING_ROWS`, `SCORE_MODEL_REPORT`, `SCORE_CALIBRATION_BUCKETS`, `SCORE_SOURCE_REPORT`, `ENGINE_TEAM_AS_OF`, `ENGINE_GAME_AS_OF`, `ENGINE_PARAM_AS_OF`, `SIM_INPUT_CHECKS`, `SIM_RUN_MODEL_ROWS`, `SIM_TEAM_ODDS`, `BACKTEST_FIELD`, `BACKTEST_REPORT` and `BACKTEST_CALIBRATION`;
   - **data tables**, created when missing and never replaced: `SIM_RUN`, `SIM_RUN_STEP`, `SIM_RUN_BATCH`, `SIM_RUN_TEAM`, `SIM_RUN_GAME`, `SIM_RUN_PARAM`, `SIM_STAGE`, `SIM_TEAM`, `LEVERAGE`, `TEAM_WINS`, `CONF_CHAMP` and `CALIBRATION_ROWS`;
-  - **scripts in `CFB_INFRA`**: the engine `SIM_ENGINE` (Python 3 `SET`, explicit `EMITS`, with its `ENGINE_VERSION` embedded), and `SIMULATE`, `REFRESH_SIMULATE` and `DROP_SIM_RUN` (Lua).
+  - **scripts in `CFB_INFRA`**: the engine `SIM_ENGINE` (Python 3 `SET`, explicit `EMITS`, with its `ENGINE_VERSION` embedded), and `SIMULATE`, `SIMULATE_FROM`, `REFRESH_SIMULATE` and `DROP_SIM_RUN` (Lua).
   - It also adds the `SIMULATE` step to `REFRESH_STEPS`, through the load plan.
 - **Rules**, shared with the model deploy (`model/deploy`, `model/documentation`):
-  - one transaction under the loader's run lock;
+  - one transaction under the loader's run lock, taken as run kind `DEPLOY` (stale only when its session ends, `sim-engine/sim-runs`);
   - SQL files in `sql/sim/`, one object per file;
   - every object and column commented, the grain first;
   - DDL names unquoted upper case and not reserved;
@@ -21,7 +21,11 @@ The score model, the engine and the run tables are installed with one command, t
 - **Data is kept:**
   - Objects that no file defines are dropped, except the data tables and the run outcome tables `SIM_PATH_R<run id>`.
   - A data table whose columns differ from its file stops the deploy, with a message that names the table and the difference. Nothing is migrated silently.
-- **Configuration:** `CFB_SIM.SIM_CONFIG` holds `N_SIMS` and `SIMS_PER_BATCH` from the target's block of `engine/sim-config.yaml`: `local` 100,000 and 10,000 (D19's laptop pick), `aws` 1,000,000 and 10,000 (the scale dial). `ARGS="--config-block aws"` picks another block (for tests); `ARGS="--config NAME=value,…"` overrides single values for one deployment, validated like the file: positive integers, `N_SIMS` a multiple of `SIMS_PER_BATCH`, and `SIMS_PER_BATCH` from 100 to 20,000. The integration-test namespace may also set `TEST_FAIL_BATCH`; a deploy elsewhere removes it.
+- **Configuration:** `CFB_SIM.SIM_CONFIG` holds `N_SIMS` and `SIMS_PER_BATCH` from the target's block of `engine/sim-config.yaml`:
+  - `local` 100,000 and 5,000: 20 batches, 2.5 per slot on an 8-core start, so every core stays busy to the end (D19 measured 5,000 and 10,000 as equal);
+  - `aws` 1,000,000 and 10,000: the scale dial, 100 batches over 12 slots.
+
+  `ARGS="--config-block aws"` picks another block (for tests); `ARGS="--config NAME=value,…"` overrides single values for one deployment, validated like the file: positive integers, `N_SIMS` a multiple of `SIMS_PER_BATCH`, and `SIMS_PER_BATCH` from 100 to 20,000. The integration-test namespace may also set the test hooks `TEST_FAIL_BATCH`, `TEST_SLEEP_BEFORE_STEP` and `TEST_SLEEP_SECONDS`; a deploy elsewhere removes them.
 - **Script size:** the engine body must stay below 1,990,000 characters, the foundation's bundle limit.
 - The deploy costs zero CFBD calls. The examples run in the integration-test namespace.
 
@@ -31,7 +35,7 @@ The score model, the engine and the run tables are installed with one command, t
 
 * *GIVEN* a deployed model and no simulation schema
 * *WHEN* the owner runs `make sim ARGS="--prefix TEST_"`
-* *THEN* the report MUST list 4 reference tables, 2 functions, 14 views, 12 data tables and 4 scripts, with 100 % comments
+* *THEN* the report MUST list 4 reference tables, 2 functions, 17 views, 12 data tables and 5 scripts, with 100 % comments
 * *AND* `CFB_META.REFRESH_STEPS` MUST hold step 300 `SIMULATE`
 * *AND* the engine script MUST carry the `ENGINE_VERSION` that the bundler computed
 
@@ -75,4 +79,4 @@ The score model, the engine and the run tables are installed with one command, t
 * *WHEN* the owner deploys it with `ARGS="--prefix TEST_ --config-block aws"`, then with `ARGS="--prefix TEST_ --config N_SIMS=4000,SIMS_PER_BATCH=500"`, then with `ARGS="--prefix TEST_ --config N_SIMS=1234"`
 * *THEN* after the first deploy, `SIM_CONFIG` MUST hold `N_SIMS` 1,000,000 and `SIMS_PER_BATCH` 10,000
 * *AND* after the second, it MUST hold 4,000 and 500
-* *AND* the third MUST fail, because 1,234 is not a multiple of 10,000, and leave the configuration of the second unchanged
+* *AND* the third MUST fail, because 1,234 is not a multiple of the `local` block's 5,000, and leave the configuration of the second unchanged

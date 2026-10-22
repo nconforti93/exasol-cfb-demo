@@ -304,3 +304,71 @@ Gaps:
 - **Reproducibility as a feature.** The input snapshot, an engine without defaults, the model digest plus engine version, the pinned numpy stream digest and `make sim-verify` make the mission's "reproducible from inputs + seed" provable after any refresh.
 - **Correct, cheap-to-flip CFP rules.** The 2024, 2025 and 2026 rule sets are right. The G6 wording is a single seed value, and web research confirms the plan's pick.
 - **The specs are precise enough to test.** Every number in the scenarios re-derives exactly, 68 scenarios map one to one, and validation passes.
+
+---
+
+## Review resolution
+
+Resolved on 2026-10-22 by the planner, under the orchestrator's decisions for the absent owner (logged verbatim in `decision-log.md` § Revision interview).
+- **Ground rules:** no DB session, zero CFBD calls, no edit outside this plan directory.
+- **Skills loaded first:** `exasol:exasol-udfs`, `exasol:exasol-database` and `exasol:exasol-distributed-ml`.
+- **Evidence:**
+  - the Phase 2 loader probe (`../exasol-cfb-demo-p2/docs/spikes/s5-loader-probe.md`);
+  - the Phase 3 specs;
+  - the S3/S4 write-ups;
+  - the stored replay recordings `cache/replay/games/*.cfbd.json` (2024 and 2026 `/games`, keyed on `ID`) and `cache/replay/rankings/*.cfbd.json` (2024);
+  - seeded host simulations for the gate tolerances and the M1 scenario.
+
+`speq plan validate add-cfb-score-engine` passes with no warnings: 9 delta specs, 81 scenarios (68 before), each mapped to one named test in plan.md.
+
+### Majors
+
+| # | Decision | What changed | Where |
+|---|---|---|---|
+| M1 | Accepted | Per-sim team offsets: a `standard_normal((S, T))` block after `z` and `u` in the season stream. Margin = `rint(MU + TEAM_SIGMA·(d_home − d_away) + game_sigma·z)` with `TEAM_SIGMA` = `TAU`·√(h − 1)/√2 and `game_sigma` = `SIGMA_1`; postseason games use `post_team_sigma`, which replaces `post_sigma`. The engine validates √(`game_sigma`² + 2·`TEAM_SIGMA`²) ≈ `SIGMA`, so single-game probabilities, `MARGIN_WIN_PROB` and the 0.8289 check are unchanged. New scenario "Shared team strength widens the spread of season win totals": simulated 3.37–3.42 vs 1.99–2.01. The old 0.05-tail reversal trigger is replaced by `BACKTEST_CALIBRATION`: Brier and Spiegelhalter Z of `P_IN_CFP` over every eligible team × point, plus the win-total dispersion with a clustered SE (reported, review trigger at 3 SE). | `engine-contract`, `backtest`, `sim-runs` (`TEAM_SIGMA` 2.00 on Ashford–Brookvale); plan Key Interfaces, tasks 1.3–1.5, 4.2, 6.3; decisions [29], [30], [3] superseded in part |
+| M2 | Accepted, with a stricter multiplier | Bucket tolerance max(0.05, k·SE) plus an aggregate Spiegelhalter gate per phase, as decided, but with k = 3 rather than 2. A seeded simulation of the gate population fails a perfectly calibrated model in 28.5 % of samples with 2·SE (about 8 qualifying buckets), which would recreate M2. With 3·SE the whole gate family fails 4.3 %. The unit test asserts ≥ 94 % pass for a perfect model and ≥ 50 % fail for one with σ 20 % too small (simulated 69 %). | `calibration` (targets, new scenario "A well-calibrated model passes the gate…"); task 1.7; decision [31] |
+| M3 | Accepted | `WEEK_PHASE` (`EARLY` 0–4, `MID` 5–9, `LATE` 10+). `SCORE_MODEL_PARAMS` has one row per version × phase. Report, buckets and gate are split by phase. Fallback order `SP_ELO` → `SP_ELO_PHASED` (3 × 2 coefficients) → F2. `ELO_CENTER` is fitted as the mean FBS Elo, and the new `SCORE_SOURCE_REPORT` gives bias by rating-source pair. Gating per phase also exposed a second noise trap: a fixed \|bias\| ≤ 1.0 per phase fails a perfect model 47.5 % of the time. It is now max(1.0, 3 SE). | `score-model` (new phase scenario), `calibration` (new phased-fit scenario), `win-probability` (one line); tasks 1.7, 2.4, 4.1, 6.2; decisions [32], [33] |
+| M4 | Accepted | Budget completed: input snapshot, checks, DDL and 14 commits, the wider stage row, the second `SIM_TEAM` write, the stage `TRUNCATE`. One correction beyond the review: the old local budget added S3's 3.2 s fixed cost on top of a compute figure that already contains it. The sums without C are about 22 s local and 38 s AWS, so the C gates become ≤ 5 s (100k local) and ≤ 10 s (1M AWS), leaving 3 s and 12 s of reserve. Probe 1.1 now runs (b, c, e, f) on AWS in group A on synthetic data (AWS free: deploy and run only). C or A is decided once for both targets. Targets are judged on the median of 3, with min and max reported. | plan Performance budget, Requirements, task 1.1, 6.1; decisions [34], [35], [16] amended |
+| M5 | Accepted | Lock kinds `SIMULATE` (script rule: gone, own, or idle) and `DEPLOY` (host rule: gone or own, like snapshots). The next lock holder, and the refresh step at its start, marks other `RUNNING` runs `ABANDONED`, deletes their outputs, drops their path tables and truncates the stage. New scenarios "A killed run is cleaned up by the next run" (`KILL STATEMENT` during a test-hook sleep; probe 1.1j checks the premise) and "An idle deploy keeps the lock until its session ends". | `sim-runs`, `refresh-step`, `deploy`, `calibration`; tasks 1.1(j), 3.1, 3.2; decision [36] |
+| M6 | Accepted, the rule refined | Verified at zero calls on the stored 2024 recordings: CCGs in regular week 15, Army–Navy alone in week 16, and the selection ranking labeled week 16. `CFB_SIM.SELECTION_WEEK` = the week of the season's last *power-conference* championship game, with a December rule while none is stored (the 2026 schedule has no week-14 rows yet). "Last championship game of any conference" would fail on the stored 2026 schedule: Army–Navy is flagged as an American Athletic conference game alone in week 15, and Phase 3's detection would call it a championship game (X1). Points after the selection week are refused or skipped. Later games are left out of the engine with warnings, and the backtest's points are `SELECTION_WEEK_SEQ − k`. 2025 is not on disk and is checked in 6.1 (Q14). New scenarios for the week, for left-out games and for the week-16 skip. | `sim-runs`, `refresh-step`, `backtest`, `calibration` (resume fit at the selection point), `engine-contract`; tasks 1.8, 2.5, 6.1; decision [37] |
+
+### Minors
+
+| # | Resolution |
+|---|---|
+| m1 | Two scenarios: a Pac-12 team takes the 2026 G6 bid (unit), and `ENGINE_TEAM_AS_OF` gives every Pac-12 team tier `G6` in 2025 and 2026 (integration) |
+| m2 | The straight-seeding scenario now names the champions' conferences, the G6 team and Notre Dame's absence, and asserts the same field under all three rule sets |
+| m3 | C counts every conference; inverse-CDF clamp [1e−12, 1 − 1e−12]; a known unplayed CCG uses its own `MU`/`SIGMA`/`TEAM_SIGMA`; empty outcome string = NULL ([41]) |
+| m4 | `ELO_CENTER` fitted; `SCORE_SOURCE_REPORT` ([33]) |
+| m5 | Committee input named: `CFB_MODEL.RANKING`, `POLL_CODE` `CFP` (reference `POLL`), `IS_FINAL_POLL`. It is read as a label rather than `RANKING_AS_OF` (X2). Pre-2024 tiers mapped `AQ`/`P5` → `P4`, `NON_AQ`/`G5` → `G6` ([40]) |
+| m6 | Hand-off H1 is a named cross-plan prerequisite, task 1.10. Owners: Phase 2 task 4.2 (`loadlib.lua`, kind `SIMULATE`, callable lock functions) and 5.2 (host `DEPLOY` helper), relayed by the orchestrator. Tasks 2.2 and 3.1 wait for it. Phase 3's deploy is advised to use `DEPLOY` |
+| m7 | Local default 5,000 per batch (20 batches, 2.5 per slot) ([39]) |
+| m8 | `CFB_INFRA.SIMULATE_FROM(base_run_id, fixed_results, run_label)` and `make simulate BASE= FIX=`. New scenario proves every other outcome column equals the base run's ([38]) |
+| m9 | `TOTAL_SIGMA` dropped; probe 1.1h checks that the version filter prunes ([42]) |
+| m10 | Missing scenarios added: killed run, unplayed known CCG pairing, Pac-12, post-selection games, win-total dispersion |
+| m11 | `SIM_RUN.PATH_TABLE` added; Phase 5's generated SQL recorded in Non-Goals, [16] and task 5.3 |
+| m12 | Retention documented in task 5.1 (weekly refresh runs kept for the season, others dropped with `make sim-drop`); automatic pruning to the backlog |
+| m13 | `--resume-only` fits over the generator's own ratings; the IT asserts overlap 12 and Spearman 1.0 ([43]) |
+| m14 | Probe 1.1e stores 30 runs of 100k locally and 20 runs of 1M on AWS |
+| m15 | `CROSS JOIN (VALUES BETWEEN 0 AND :last_batch) AS b("BATCH_ID")` per the grammar's `from_item`; bound vs verbatim limit in probe 1.1d |
+| m16 | Probe 1.1h times `NORMAL_CDF` over 300k rows against the inlined polynomial and adopts the inlined form if the function is more than 2× slower |
+
+### Q1 / Q2
+
+Kept as read: G6 bid = best-ranked G6 team; Notre Dame top-12 guarantee as an automatic bid. The cfp.org check is now an explicit task (1.11) due before the first committee ranking, about 2026-11-03.
+
+### Not adopted, with reasons
+
+- **2·SE bucket multiplier (M2):** replaced by 3·SE on the simulation evidence above. The structure the orchestrator decided (per-bucket SE tolerance plus an aggregate gate) is kept.
+- **"Last conference championship game" of any conference (M6):** replaced by the last power-conference championship game, with a December fallback, on the stored 2026 evidence above. The intent (selection week from the championship weekend) is kept.
+- **Unit-test bar of 95 % (review M2 text):** 94 % of 1,000 seeds. The gate's expected pass rate is 95.7 %, so a 95 % bar would fail by sampling error about one time in eight.
+- **A hard gate on the M1 calibration check:** reported with a 3-SE review trigger instead. Two correlated seasons are too few to fail a build on, and the other probability metrics of [25] are reported too.
+- Nothing else was rejected.
+
+### Cross-plan findings for the orchestrator
+
+- **X1 (Phase 3, time-bound).** The stored 2026 schedule flags Army–Navy (12 December, week 15) as an American Athletic conference game, alone in its week. Phase 3's `CONFERENCE_CHAMPIONSHIP_GAME` rule ("C's only conference game in its week, in C's last week with such a game") will therefore take it for the American Athletic's 2026 championship game. Once the real title game is stored in week 14, the rule will miss that one.
+  - This plan is protected for the selection week and leaves the flagged game out.
+  - The undetected real title game would enter 2026 runs from the week-13 point (late November) as a regular conference game and can stop them with `CONFERENCE_PAIR_REPEATED`.
+  - Suggested Phase 3 fix: restrict the detection to weeks up to the season's power-conference championship week.
+- **X2 (Phase 3, information).** The 2024 selection ranking is labeled regular week 16 (`isFinal`), so with the committee's label lead of 0 it becomes visible one point after selection. This plan reads final rankings only as labels and is unaffected. Phase 3's Q2 may want the observation.

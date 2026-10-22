@@ -7,7 +7,7 @@ An upset is a win that few expected. To rank this week's upsets against all of h
 - `CFB_SIM.GAME_WIN_PROB`: one row per completed game of `CFB_MODEL.GAME` with both teams, in every stored season. It uses only pregame facts of the game itself: the line and the pregame Elo values, which were known before kickoff. Columns:
   - the game keys, the season, both teams, `IS_NEUTRAL_SITE` and the result;
   - `HOME_WIN_PROB_LINE` (`DECIMAL(5,4)`): CFBD's pregame home win probability from the stored line (`GAME.HOME_PREGAME_WIN_PROB`, stored from 2013);
-  - `HOME_WIN_PROB_ELO` (`DECIMAL(5,4)`) = 1 / (1 + 10^(−(home pregame Elo − away pregame Elo + `ELO_PROB_HFA` × not neutral) / `ELO_PROB_SCALE`)), with the `CURRENT` parameters. NULL unless both pregame Elo values exist;
+  - `HOME_WIN_PROB_ELO` (`DECIMAL(5,4)`) = 1 / (1 + 10^(−(home pregame Elo − away pregame Elo + `ELO_PROB_HFA` × not neutral) / `ELO_PROB_SCALE`)), with the `CURRENT` parameters, which are equal in every week phase. NULL unless both pregame Elo values exist;
   - `HOME_WIN_PROB` and `PROB_SOURCE`: the line's probability (`LINE`) if there is one, else the Elo probability (`ELO`), else NULL and NULL;
   - `WINNER_TEAM_ID` and `WINNER_PREGAME_WIN_PROB`: the winner's pregame probability (`HOME_WIN_PROB` for a home win, 1 − it for an away win);
   - `UPSET_MAGNITUDE` (`DECIMAL(5,4)`) = 1 − `WINNER_PREGAME_WIN_PROB`, the mission's definition. NULL for ties and for games without a probability.

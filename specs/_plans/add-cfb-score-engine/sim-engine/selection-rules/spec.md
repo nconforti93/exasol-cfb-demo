@@ -13,11 +13,12 @@ Each simulated season ends the way the real one does. Conferences crown champion
   | `CFP12_2026` | from 2026 | the champions of the SEC, Big Ten, Big 12 and ACC (every `P4` conference), plus the best-ranked team of a `G6` conference, champion or not (`POWER_CHAMPIONS_PLUS_G6`, `G6_BID` `TEAM`); `GUARANTEE_SCHOOL` 'Notre Dame' is selected if it is ranked within `GUARANTEE_RANK` 12 | `STRAIGHT` |
 
   - Every rule set has `CFP_SIZE` 12, `N_BYES` 4 and `MIN_CONFERENCE_TEAMS` 6. The remaining places go at-large to the best-ranked teams not yet selected.
+  - A conference's tier comes from `CFB_MODEL.CONFERENCE_TIER` through the engine's team rows (`sim-engine/sim-runs`). From 2024 every FBS conference outside the power four is `G6`, and that includes the Pac-12.
   - Each row cites its source in a column comment: the CFP announcements of 2024 and 2025, and the January 2026 decision of the CFP management committee.
   - `G6_BID` is a column, so a published correction to `CHAMPION` changes one seed value.
 - **Conference champions:**
   - A conference with at least `MIN_CONFERENCE_TEAMS` FBS teams in the season has a champion. A smaller conference has none, and its teams compete at-large, like independents.
-  - A conference that holds a championship game in the season (`CFB_MODEL.CONFERENCE_CHAMPIONSHIP`) decides its title there. If the game's teams are known at the point, they play it; if it is played, its result stands. Otherwise the top two of the simulated standings meet on a neutral site.
+  - A conference that holds a championship game in the season (`CFB_MODEL.CONFERENCE_CHAMPIONSHIP`) decides its title there. If the game's teams are known at the point, they play it with the game's own predicted margin and uncertainty; if it is played, its result stands. Otherwise the top two of the simulated standings meet on a neutral site (`sim-engine/engine-contract`).
   - A conference without a championship game crowns the top team of its standings.
 - **Standings** (simplified, S3), best first:
   1. conference win percentage, exact;
@@ -88,9 +89,10 @@ Each simulated season ends the way the real one does. Conferences crown champion
 
 ### Scenario: From 2025 on, seeding is straight by rank
 
-* *GIVEN* the crafted season of the previous scenario
+* *GIVEN* the crafted season of the previous scenario, whose champions ranked 1, 2, 9 and 12 lead the SEC, the Big Ten, the Big 12 and the ACC, whose fifth champion, ranked 16, leads the Mountain West and is the best-ranked team of a G6 conference, and in which Notre Dame is not ranked
 * *WHEN* it is simulated under `CFP12_2025`, and then under `CFP12_2026`
-* *THEN* both MUST seed the four best-ranked selected teams 1 to 4, the team ranked 3 included
+* *THEN* both MUST select the same 12 teams as `CFP12_2024`
+* *AND* both MUST seed the four best-ranked selected teams 1 to 4, the team ranked 3 included
 
 ### Scenario: Ties in the standings use the simplified tiebreakers
 
@@ -98,6 +100,28 @@ Each simulated season ends the way the real one does. Conferences crown champion
 * *WHEN* the season is simulated
 * *THEN* A MUST rank above B
 * *AND* D, C and E MUST rank in that order, by point differential, skipping head-to-head
+
+### Scenario: A Pac-12 team can take the 2026 Group of Six bid
+
+* *GIVEN* a crafted 2026 season whose Pac-12 has 6 FBS teams of tier `G6`
+* *AND* Dunmore, second in the Pac-12 standings and not its champion, is ranked 11 as the best-ranked team of a G6 conference, while the Mountain West champion is ranked 14
+* *WHEN* the season is simulated under `CFP12_2026`
+* *THEN* Dunmore MUST be selected as the Group of Six bid
+* *AND* the Mountain West champion MUST NOT be selected
+
+### Scenario: In 2026 the Pac-12 is a Group of Six conference
+
+* *GIVEN* the sim league, whose Pac-12 has 2 FBS teams in 2025 and 6 from 2026
+* *WHEN* `CFB_SIM.ENGINE_TEAM_AS_OF` is queried at 2025 week 9 and at 2026 week 9
+* *THEN* every Pac-12 team MUST have tier `G6` and be eligible in both seasons
+* *AND* no 2026 team of tier `P4` MUST belong to the Pac-12
+
+### Scenario: A known championship pairing that is not played yet is simulated between those teams
+
+* *GIVEN* a crafted 2026 season at the point before championship week, in which the SEC championship game between the second and the third team of the standings is known but not played, with the second team listed first, `MU` 3.0, `SIGMA` 15.00 and `TEAM_SIGMA` 0, and `game_sigma` 15.00
+* *WHEN* 4,000 seasons are simulated
+* *THEN* the SEC champion MUST be one of these two teams in every season, never the leader of the standings
+* *AND* the second team MUST win the title in a share of seasons within 0.03 of 0.5792, the game's `MARGIN_WIN_PROB`
 
 ### Scenario: Championship games use the known pairing, and small conferences crown no champion
 
