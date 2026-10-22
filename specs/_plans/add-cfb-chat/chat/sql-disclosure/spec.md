@@ -8,6 +8,7 @@ The audience should never have to trust the chat. Under every answer the panel l
 - **Each entry** has a `sql_id` (numbered per conversation: `S1`, `S2`, …), the tool, the model's stated purpose for `run_sql`, the SQL text exactly as the driver sent it (pyexasol's formatted statement text, as in Phase 6's query log), the row count (or "more than 200"), the milliseconds, and the error message if any. The text is never reformatted or shortened.
 - **Under the answer.** The `answer` event lists the turn's `sql_id`s. The panel shows "SQL (n)" under the answer; opening it lists the entries in order, each with a "copy SQL" control. An answer that ran no statement shows "No SQL ran for this answer."
 - **In the inspector.** Each entry is also added to the browser session's query log (`app/inspector`) with the principal `chat` and the chat user's name, so "plan on demand" works for it as for a page query. A statement that reads only `CFB_API` shows "no virtual table: 0 calls".
+- **Only the chat's own statements.** The rehearsal grader's reference statements run on a connection of their own and are never disclosed, logged as the chat's or added to the inspector (`chat/rehearsal`).
 - **Numbers come from results.** The system prompt tells the model to state no number that is not in a tool result of the conversation, and to name the method with every what-if number (`chat/data-tools`). The rehearsed question set checks this (`chat/rehearsal`).
 - The examples run on the chat test stack with the scripted model and the statement recorder of `chat/data-tools`.
 

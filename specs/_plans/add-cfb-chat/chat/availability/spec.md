@@ -15,10 +15,10 @@ The chat panel sits beside the pages and answers questions about the data. It ne
   | `CFB_CHAT_PASSWORD` | — | its password |
 
   The caps, the effort and the log path are in `chat/budget`, `chat/conversation` and `chat/turn-log`.
-- **The key.** The backend builds the Anthropic client with the value of `ANTHROPIC_API_KEY` passed explicitly. It never builds a client without an explicit key, so no other credential source is ever used: not `ANTHROPIC_AUTH_TOKEN`, not an `ant auth login` profile, not workload identity federation. The key is never written to a response, a log, a prompt or the built frontend (`chat/safety`).
+- **The key.** The backend builds the Anthropic client with the value of `ANTHROPIC_API_KEY` passed explicitly, and with the API's address pinned (`chat/safety`). It never builds a client without an explicit key, so no other credential source is ever used: not `ANTHROPIC_AUTH_TOKEN`, not an `ant auth login` profile, not workload identity federation. The key is never written to a response, a log, a prompt or the built frontend (`chat/safety`).
 - **The chat user** has `CREATE SESSION` and the role `CFB_MCP`, which holds `SELECT` on the schema `CFB_API` only (`api/roles`, Phase 5). It cannot read `CFB_API_LIVE`, so the chat can never make a CFBD call.
   - `make chat-user [ROTATE=yes]` creates it on the operator path, as `make app-user` creates the app's read user (`app/access`): `CREATE USER … IDENTIFIED BY …` with the password from `CFB_CHAT_PASSWORD`, then `GRANT CREATE SESSION` and `GRANT CFB_MCP`. It is idempotent, never prints the password, and refuses when the role or the password is missing.
-  - **The start check** reads the user's effective privileges with the same check the app uses for its read user (`app/access`) and accepts the user only when: its system privileges are exactly `CREATE SESSION`; its roles are exactly `CFB_MCP` (and `PUBLIC`); its effective object privileges are exactly `SELECT` on the schema `CFB_API`; it owns no object and has no connection access and no impersonation grant.
+  - **The start check** reads the user's effective privileges with the same check the app uses for its read user (`app/access`) and accepts the user only when: its system privileges are exactly `CREATE SESSION`, plus what `PUBLIC` holds on a fresh deployment (`USE ANY SCHEMA`, found by Phase 6's probe 1.1(d); it lets a user open a schema, not read an object); its roles are exactly `CFB_MCP` (and `PUBLIC`); its effective object privileges are exactly `SELECT` on the schema `CFB_API`; it owns no object and has no connection access and no impersonation grant.
 - **States** reported by `GET /api/config` as `chat: {available, enabled, reason, model}`:
 
   | `reason` | When | `available` | `enabled` |
@@ -29,10 +29,16 @@ The chat panel sits beside the pages and answers questions about the data. It ne
   | `chat_user_missing` | `CFB_CHAT_PASSWORD` unset, or the login fails | true | false |
   | `chat_user_not_read_only` | the start check refused the user; the message names the privilege | true | false |
   | `network_bind` | `APP_CHAT=auto` and a non-loopback bind: every chat question spends money, so a network-exposed app does not offer it unless switched `on`; the stub model costs nothing and is not affected | true | false |
+  | `conflicting_credentials` | the client's request guard stopped a request to another host or with an `Authorization` header (`chat/safety`) | true | false |
+  | `spend_log_unwritable` | a spend line could not be written; live calls stop for the process (`chat/budget`); the stub model is not affected | true | false |
   | `off` | `APP_CHAT=off` | false | false |
 
   `model` is the configured model id when enabled, otherwise absent. The panel renders when `available` is true. A disabled panel shows "Chat disabled: no API key" (or the reason's message) and a one-line hint, and has no input field.
-- **Stub mode.** `CHAT_MODEL=stub` runs the scripted model of the rehearsed question set (`chat/rehearsal`) instead of Claude, with no key and no network request. It matches a question to a script by its exact text after binding, with the bindings of `CHAT_STUB_DATASET` (default `demo`; the tests use `sim_league`). It answers the rehearsed questions with their scripts against the live database and answers anything else with "The stub model knows only the rehearsed questions." The panel shows a "stub model" badge on every answer.
+- **Stub mode.** `CHAT_MODEL=stub` runs the scripted model of the rehearsed question set (`chat/rehearsal`) instead of Claude, with no key and no network request.
+  - It matches a question to a script by its exact text after binding, with the bindings of `CHAT_STUB_DATASET` (default `demo`; the tests use `sim_league`). It answers the rehearsed questions with their scripts against the live database and answers anything else with "The stub model knows only the rehearsed questions."
+  - Scripts may read the validated app state, so a question about "the team I'm looking at" follows the team on screen.
+  - **Suggestions.** `GET /api/chat/suggestions` lists the bound rehearsed questions in file order, and the panel shows them above the input as suggestions; clicking one asks it. A typo on stage cannot end the offline fallback. In live mode the list is empty.
+  - The panel shows a "stub model" badge on every answer.
 - **The core app is independent of the chat.** A disabled chat, a refused chat user or an unreachable Anthropic API never changes what a page shows or blocks the server's start.
 - While the chat is not enabled, every `/api/chat/*` request answers 503 with the reason, before any model call or database statement. With `APP_CHAT=off` they answer 404.
 - The examples run on the chat test stack (`plan.md`, Key Interfaces): Phase 6's app test stack plus the chat user `CFB_TEST_CHAT` with the role `TEST_CFB_MCP`, the scripted model, and a marker key that no API accepts.
@@ -72,10 +78,11 @@ The chat panel sits beside the pages and answers questions about the data. It ne
 ### Scenario: The stub model answers the rehearsed questions without a key
 
 * *GIVEN* the chat test stack with `CHAT_MODEL=stub`, `CHAT_STUB_DATASET=sim_league` and no `ANTHROPIC_API_KEY`
-* *WHEN* a client asks the first rehearsed question, and then "What is the weather in Ashford?"
-* *THEN* `chat` MUST report `reason` `stub`, and the first answer MUST follow the question's script against the database and carry the stub badge
-* *AND* the second answer MUST be "The stub model knows only the rehearsed questions."
-* *AND* no request MUST leave the process for an Anthropic endpoint
+* *WHEN* a client reads `GET /api/chat/suggestions`, asks the first rehearsed question, and then "What is the weather in Ashford?"
+* *THEN* `chat` MUST report `reason` `stub`, and the suggestions MUST list the bound texts of the rehearsed questions in file order
+* *AND* the first answer MUST follow the question's script against the database and carry the stub badge
+* *AND* the second answer MUST be "The stub model knows only the rehearsed questions.", and no request MUST leave the process for an Anthropic endpoint
+* *AND* the rendered panel in stub mode MUST show the suggestions, and clicking one MUST post its text as the question
 
 ### Scenario: On a network bind the chat is off unless switched on
 
