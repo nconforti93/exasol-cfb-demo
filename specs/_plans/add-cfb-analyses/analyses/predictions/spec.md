@@ -31,6 +31,11 @@ Every weekly refresh freezes a predicted score and win probability for each game
   | `PICK_TEAM_ID`, `PICK_WIN_PROB` | The home team when `HOME_WIN_PROB` > 0.5, the away team when it is < 0.5, NULL at exactly 0.5; `PICK_WIN_PROB` is the larger of `HOME_WIN_PROB` and 1 − `HOME_WIN_PROB` |
   | `FROZEN_AT`, `FROZEN_BEFORE_KICKOFF`, `FROZEN_BY` | UTC time from the loader's clock (`NOW_OVERRIDE` in the test namespace); TRUE when `FROZEN_AT` < `START_AT`; `REFRESH_WEEK#<run id>` or `PREDICT#<lock run id>` |
 
+- `FROZEN_BEFORE_KICKOFF` is the freeze's own record and is never updated. The scorecard re-judges it against the game's current kickoff, and calls a prediction made in advance only when both say so (`FREEZE_KIND`, `analyses/scorecard`). The loader's clock is the real clock outside the test namespace, so a freeze run after a game's kickoff is always marked.
+- **Rescheduled and added games:**
+  - a game that already has a row is never frozen again, also when CFBD moves it to another week: the first freeze wins, and the scorecard grades it in the week it is played (`analyses/scorecard`);
+  - a game added to the schedule after its freeze point is frozen by the next freeze run at its own freeze point, like any other gap, and is marked by its kickoff like any other row;
+  - a cancelled game is never graded.
 - Frozen predictions are this deployment's history, like its run logs. They are not in the snapshot scope (`loader/snapshot-restore`): a restore leaves them unchanged, and a new deployment reconstructs its predictions, marked `FROZEN_BEFORE_KICKOFF` FALSE for games already kicked off.
 - The examples run over the sim league (`sim-engine/sim-runs`) in the integration-test namespace with the test parameters of `sim-engine/score-model`, in replay mode, with 2026 as the current season and the loader clock at 2026-10-28 12:00 UTC, before the first kickoff of 2026 week 10. `SIM_CONFIG` sets 2,000 seasons in batches of 500.
 

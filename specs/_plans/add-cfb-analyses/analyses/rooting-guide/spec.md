@@ -10,16 +10,26 @@ Which games should a bubble team's fans watch this Saturday, and for whom should
   - `ROOT_FOR_TEAM_ID`: the home team when `LEVERAGE` > 0, the away team when it is < 0, NULL otherwise;
   - `LOW_SAMPLE`: TRUE when the smaller branch has fewer than `MIN_BRANCH_SAMPLE` seasons (100, `CFB_PRED.ANALYSIS_SETTINGS`);
   - `IS_OWN_GAME`: T plays g.
-- **Unconditional guide:** `CFB_PRED.ROOTING_GUIDE` (served as `CFB_API.ROOTING_GUIDE`): one row per `DONE` simulation run, team with at least one playoff season in the run, and remaining game of the run.
+- **Unconditional guide:** `CFB_PRED.ROOTING_GUIDE` (served as `CFB_API.ROOTING_GUIDE`): one row per `DONE` simulation run, team with at least one playoff season in the run, and remaining game of the run whose result the run did not fix.
   - The counts are Phase 4's precomputed `CFB_SIM.LEVERAGE` (`sim-engine/sim-runs`), so a page reads them without scanning the seasons (S4: 0.08 s at 1,000,000 seasons on AWS).
   - It adds the measures, the game's week and teams, `IS_NEXT_WEEK` (the run's smallest remaining week sequence), `GUIDE_RANK` (by |`LEVERAGE`| descending, then kickoff, then game id, within run and team) and `NEXT_WEEK_RANK` (the same order within the next week's games; NULL for later weeks).
+  - It names the run's semantics on every row: `RUN_ORIGIN` and `FIXED_RESULTS` (the run's forced games as `<game id>=H|A`, comma-separated in game-index order; NULL for runs without forced games).
   - It covers every remaining game of the season and every `DONE` run that is kept: published runs, forced re-sims (`analyses/forced-resim`) and the runs of earlier weeks.
+  - A game whose result the run fixed (`SIM_RUN_GAME.FIXED_HOME_WIN` set, a forced re-sim's chosen results) has no row: one of its branches is empty by construction. The conditional guide drops games fixed by a condition for the same reason.
   - A team without any playoff season in the run has no rows: its odds are 0 whatever happens.
-- **Conditional guide:** `rooting_guide_sql(team_id, conditions, games)` of `analyses/whatif.py` (`analyses/what-if`) counts over the seasons of the what-if run that match every condition, from the generated what-if views:
-  - one row per game of `games`, minus the games a condition fixes, with `GAME_ID`, `EFFECTIVE_SAMPLE`, the four counts and the measures above; `N_HOME` + `N_AWAY` = `EFFECTIVE_SAMPLE`;
-  - `games` is the coming week's games: the `WHATIF_GAMES` rows with `IS_NEXT_WEEK`.
-- **Why the coming week only.** S4 measured the conditional guide over all 400 remaining games at 2.2 s p95 (k = 3, 1,000,000 seasons on AWS), against the 1 s target; the cost sits in counting each game's column over the matching seasons. The cost should follow the number of game columns counted, because Exasol stores tables by column (not stated in the Exasol skills; the probe measures it). Restricting the guide to the coming week (about 60 games at the demo's points) should then cut the work about sevenfold. The design target is < 1 s p95 at k ≤ 3 on AWS, measured by probe 1.1(a) before anything is built on it and again on real data in task 7.2. The fallbacks are in `plan.md`.
-- A full-season guide under chosen results is the unconditional guide of a forced re-sim with those results (`analyses/forced-resim`).
+- **Conditional guide:** `rooting_guide_sql(run_id, team_id, conditions, games)` of `analyses/whatif.py` (`analyses/what-if`) counts over the seasons of the what-if run that match every condition, from the generated what-if views:
+  - one row per game of `games`, minus the games a condition fixes, with `RUN_ID`, `GAME_ID`, `EFFECTIVE_SAMPLE`, the four counts and the measures above; `N_HOME` + `N_AWAY` = `EFFECTIVE_SAMPLE`;
+  - `games` is the coming week's games: the `WHATIF_GAMES` rows with `IS_NEXT_WEEK`;
+  - like every what-if query it names its run, and returns no rows for a run that is no longer the what-if run.
+- **Two semantics, both labeled.**
+  - The guide of a published run, and the conditional guide, condition on outcomes: each number is P(T reaches the playoff | g's result) over the seasons that match.
+  - The guide of a forced re-sim is computed in a world whose chosen results were forced (`analyses/forced-resim`): "with these results forced, how each other game swings T". The same game can show a different number in the toggled guide, because conditioning also selects stronger winners and forcing does not (`analyses/what-if`). Pages and the chat label a forced run's guide with its `FIXED_RESULTS`.
+  - Forced runs are owner actions (about 40 s at 1,000,000 seasons), so app users get the season-wide guide only for the published run and for forced runs the owner has made.
+- **Why the coming week only.** S4 measured the conditional guide over all 400 remaining games at 2.2 s p95 (k = 3, 1,000,000 seasons on AWS), against the 1 s target.
+  - S4's raw data place the cost in the aggregated columns, not in the matching seasons: with five times fewer matching seasons the time dropped by 13 %.
+  - S4's query aggregated two `SUM(CASE …)` columns per game (800 for 400 games). The library's single pass over the coming week (about 60 games at the demo's points) aggregates about 120.
+  - Scaled linearly, that is about 0.12 s + 2.0 s × 120/800 ≈ 0.4 s at 1,000,000 seasons on AWS (an estimate; the column-store reason is not stated in the Exasol skills).
+  - The design target is < 1 s p95 at k = 1 and k = 3 on AWS, measured by probe 1.1(a) before anything is built on it and again on real data in task 7.2. The fallbacks are in `plan.md`.
 - The examples run in the integration-test namespace over the sim league with a published run of 4,000 seasons in 8 batches of 500 at 2026 week 9, for team Brookvale. "Brookvale wins at Ashford" is the condition (week-12 game, FALSE). The test computes the expected counts on the host (`tests/analyses/oracle.py`).
 
 ## Scenarios
@@ -30,7 +40,7 @@ Which games should a bubble team's fans watch this Saturday, and for whom should
 * *WHEN* `CFB_API.ROOTING_GUIDE` is queried for the run and Brookvale
 * *THEN* it MUST hold one row per remaining game, with the four counts equal to `CFB_SIM.LEVERAGE` for Brookvale and that game
 * *AND* `P_IF_HOME_WIN`, `P_IF_AWAY_WIN`, `LEVERAGE` and `ROOT_FOR_TEAM_ID` MUST follow from those counts as defined
-* *AND* the row with `GUIDE_RANK` 1 MUST have the largest |`LEVERAGE`|
+* *AND* the row with `GUIDE_RANK` 1 MUST have the largest |`LEVERAGE`|, and every row MUST have `RUN_ORIGIN` `MANUAL` and `FIXED_RESULTS` NULL
 
 ### Scenario: The guide marks the coming week's games and the team's own games
 
@@ -42,7 +52,7 @@ Which games should a bubble team's fans watch this Saturday, and for whom should
 ### Scenario: With what-if conditions the guide counts only the matching seasons
 
 * *GIVEN* the published run
-* *WHEN* the test app role runs the SQL of `rooting_guide_sql` for Brookvale, the condition "Brookvale wins at Ashford" and the week-10 games
+* *WHEN* the test app role runs the SQL of `rooting_guide_sql` for the run, Brookvale, the condition "Brookvale wins at Ashford" and the week-10 games
 * *THEN* it MUST return one row per week-10 game, with `EFFECTIVE_SAMPLE` and the four counts equal to the oracle's over the matching seasons
 * *AND* `N_HOME` + `N_AWAY` MUST equal `EFFECTIVE_SAMPLE` in every row
 * *AND* `LOW_SAMPLE` MUST be TRUE exactly where the smaller branch has fewer than 100 seasons
@@ -50,12 +60,12 @@ Which games should a bubble team's fans watch this Saturday, and for whom should
 ### Scenario: Without conditions the computed guide equals the precomputed one
 
 * *GIVEN* the published run
-* *WHEN* the SQL of `rooting_guide_sql` runs for Brookvale without conditions and for the week-10 games
+* *WHEN* the SQL of `rooting_guide_sql` runs for the run and Brookvale without conditions and for the week-10 games
 * *THEN* every row's counts MUST equal those of `CFB_API.ROOTING_GUIDE` for the run, Brookvale and that game
 
 ### Scenario: A game fixed by a condition leaves the conditional guide
 
 * *GIVEN* the published run and one week-10 game G
-* *WHEN* the SQL of `rooting_guide_sql` runs for Brookvale with the condition "the home team wins G" and the week-10 games
+* *WHEN* the SQL of `rooting_guide_sql` runs for the run and Brookvale with the condition "the home team wins G" and the week-10 games
 * *THEN* it MUST NOT return a row for G
 * *AND* it MUST return a row for every other week-10 game

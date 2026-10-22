@@ -376,3 +376,4 @@ Kept as read: G6 bid = best-ranked G6 team; Notre Dame top-12 guarantee as an au
 ## Cross-plan items from the Phase 5 review (2026-10-22)
 
 - **P5-M3 (apostrophes in generated DDL):** generated column comments in the per-run `SIM_PATH_R<n>` tables embed school names without escaping. CFBD's FBS school "Hawai'i" would make the DDL invalid. The per-run DDL generator must escape `'` as `''`. Add an apostrophe team to the sim league and a unit test. Fold this into the task that generates the per-run DDL (1.4 or 3.1).
+- **P5-m13 (protect the published run):** `make sim-drop` (and any retention cleanup) must refuse to drop the run named by Phase 5's `CFB_PRED.WHATIF_PUBLICATION` unless it is forced. Add a scenario. If the Phase 5 view doesn't exist yet, the check is skipped.

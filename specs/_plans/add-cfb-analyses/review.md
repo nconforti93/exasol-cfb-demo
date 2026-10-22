@@ -321,3 +321,73 @@ The three skills loaded say nothing on most of these semantics. I checked the gr
 - **Head-to-head from stored games** is a better product and a better D15 story than `/teams/matchup`. The live beat moves to data nobody stores.
 - **Quota discipline:** one API-reaching view, a lint plus `EXA_ALL_DEPENDENCIES` allowlist, a ≤ 6 ledgered cap with 4 planned, and replay for the local check.
 - **Process:** every Exasol claim is tabulated with its evidence and fallback, the integration test file comes before the code, the parallel groups touch disjoint files, and the plan is explicit about what it does not change in Phases 2–4.
+
+---
+
+## Review resolution
+
+Planner revision, 2026-10-22. The owner (Nico) was away; the orchestrator decided each finding for him, and the decisions are logged in `decision-log.md` (§ Interview → "Review resolution", design entries [26]–[40], revised [4], [6], [7], [10], [13], [14], [16], [17], [20], [22], [23], and Q1–Q17). No DB session, no CFBD call, no file outside this plan directory changed. Skills loaded first: `exasol:exasol-database`, `exasol:exasol-udfs`, `exasol:exasol-virtual-schema-adapter-development`.
+
+Result: 78 scenarios (69 + 9 new), all mapped; 34 tasks (31 + 3: 1.7, 3.7, 4.6), 2 `[expert]`, 12 parallel groups; `speq plan validate add-cfb-analyses` passes without warnings.
+
+### Major findings
+
+| # | Resolution | Where |
+|---|---|---|
+| M1 | **Accepted.** `CFB_PRED.WHATIF_PUBLICATION` = latest publication of the newest published point **at or before `CURRENT_AS_OF`** whose run is `DONE`. `IS_AFTER_CURRENT` on `POINT_PUBLICATION`, `ODDS_MOVEMENT`, `PLAYOFF_ODDS`, `AS_OF_POINTS`; a run after the current point cannot be published. `make analyses` is the restore recipe's last step and regenerates the views. `CURRENT_POINT.WHATIF_VIEWS_CURRENT` + an empty `WHATIF_GAMES` make a lag visible. New scenario "After a restore the what-if follows the restored point" (weeks 8 and 9 published, restore to week 8, `make analyses`, week-9 republish refused) | [26]; `analyses/what-if`, `analyses/published-odds`, `api/serving-contract`; tasks 3.5, 4.1, 4.3, 6.1; Phase 8 hand-off |
+| M2 | **Accepted.** One view, `WHATIF_PUBLICATION`, read by `WHATIF_VIEWS`, `analib.publish` (inside its own transaction, after its inserts), `WHATIF_GAMES`, `CURRENT_POINT` and `MATCHUP_NEXT`. The deploy creates the empty generated views (where missing) inside its transaction, after `CFB_PRED` and before the file views; existing ones are kept. Deploy scenario asserts every view compiles before the commit | [26], [27]; `analyses/deploy`; tasks 2.2, 3.5 |
+| M3 | **Accepted.** One escaping rule (`'` → `''`) for every string a generator writes into SQL: `analyses/sqltext.py` `sql_str` (host) and `analib.sql_str` (Lua). A pure host reference renderer `analyses/whatif_ddl.py`; unit tests `test_sqltext.py`, `test_whatif_ddl.py`; the integration test compares the deployed columns and comments with the renderer. `Hawai'i` in the sim league via Phase 4 hand-off P5-M3 (already in Phase 4's `review.md`), with a fallback variant in this plan. New scenario "School names with an apostrophe are quoted in the generated views" | [28], [39], Q17; task 1.7 (new), 1.5, 3.5, 4.3 |
+| M4 | **Accepted.** `FREEZE_KIND` (`IN_ADVANCE` / `RECONSTRUCTED` / `ALL`) in all three scorecard views; `IN_ADVANCE` also requires the freeze to precede the game's *current* kickoff. `IS_HEADLINE` (in `CFB_PRED`, passed through by `CFB_API`) marks the `IN_ADVANCE` row when it has graded games, else the labeled `ALL` row. Phase 8 hand-off: the rehearsal headline is the labeled reconstruction unless predictions were frozen live. New scenario "Predictions made in advance and reconstructions are graded apart" | [29]; `analyses/scorecard`, `api/serving-contract`; task 3.2 |
+| M5 | **Accepted.** `ALL_TIME_FROM_SEASON` = **1978** (first Division I-A season: "involves an FBS team" is a retroactive label before it, and early Elo gaps lie far outside the 2014–2025 fit). `RANK_MAGNITUDE` (`DOUBLE`, recomputed from Elo with `CURRENT`'s parameters; line rows keep the stored 4-decimal value) drives every rank, pinned to `UPSET_MAGNITUDE` within 0.00005. History variant gains 1985 and 1987 games for an exact tie and a near-tie. Q8 moved to task 3.3 (restored snapshot, else synthetic for mechanics), repeated in 7.2. New scenarios "Ranks use the magnitude before rounding", "Upsets before the all-time window rank within their season only" | [30], Q8; `analyses/upsets`; tasks 1.5, 3.3, 7.2 |
+| M6 | **Accepted.** `analyses/perf.py` times a fixed catalog over `CFB_API` only; `tests/unit/test_analyses_perf.py` asserts no query names `GAME_PREVIEW`, `QUOTA`, `CFB_API_LIVE` or a virtual schema. The preview's latency comes only from 7.3's 3 ledgered calls; cap ≤ 6, all through the ledger | [31]; `plan.md` budget and protocol; task 5.1 |
+| M7 | **Accepted.** Four pass-through views: `GAMES` (`CFB_MODEL.GAME`), `TEAM_SEASONS` (`TEAM_SEASON`), `RANKINGS` (`RANKING`), `SP_RATINGS` (`RATING_SP`). Source columns unchanged with the source's column comments; grain-first view comments that say "stored history as it is now". New scenario "The chat can answer questions outside the pages from the model views" | [32]; `api/serving-contract`; task 4.1 |
+
+### Orchestrator decisions beyond the major findings
+
+| Topic | Resolution | Where |
+|---|---|---|
+| Roles (m6) | `GAME_PREVIEW` and `QUOTA` (the only views that reach the network) moved to **`CFB_API_LIVE`**. `CFB_APP`: `SELECT` on `CFB_API` and `CFB_API_LIVE`; `CFB_MCP`: `CFB_API` only. Scenario "The chat role has the same access as the app role" replaced by "The chat role reads the serving views but cannot reach CFBD" | [17], [33]; `api/roles`, `api/on-demand`; tasks 2.4, 4.2, 4.6 |
+| Head-to-head (m7, m8) | Preview of the next meeting, else of the latest meeting (`MATCHUP_SERIES.LAST_GAME_ID`). 7.3 plans **3 calls** (2 coming-week games, 1 latest meeting); stored series checked against the previews' `RAW_JSON` recent meetings on the host; `/teams/matchup` optional. New scenario "The latest meeting of a pair can be previewed after it was played"; new Q15 | [14], [22], [34]; `analyses/head-to-head`, `api/on-demand`; task 7.3 |
+| Rooting guide (m4, m5) | Probe 1.1(a) adds S4's two-pass shape cut to 60 columns, confirms the `IN`-subquery flag inside `SUM(CASE)` (accepted, a semi-join; else a `LEFT JOIN` flag, Q16), and gates k = 1 as well as k = 3. `ROOTING_GUIDE` drops games the run fixed and carries `RUN_ORIGIN` and `FIXED_RESULTS`; pages label a forced run's guide "with these results forced" | [6], [37]; `analyses/rooting-guide`, `analyses/forced-resim`; tasks 1.1, 3.5 |
+| Arrow threshold (m1) | **0.0070**, a constant: 3.1 SE of a difference at 100k vs 100k (4.2 at 1M vs 100k, 9.9 at 1M vs 1M). Simpler than a per-team threshold and valid for every run size the demo publishes (≥ 100k); the setting's note says so | [35]; `analyses/published-odds` |
+| Probe 1.1(e) (m3) | Widened: autocommit reader; a reader with autocommit off across the publication; readers of the published odds; a ≈ 2 s guide query across the commit. "Consumers use autocommit" is in the page contract | [23], Q5; task 1.1; `api/serving-contract` |
+| U3 / Q13 | Kept as a non-blocking owner-review item | Q13; Dependencies |
+
+### Minor findings
+
+| # | Resolution |
+|---|---|
+| m1 | Arrow threshold 0.0070 ([35]) |
+| m2 | `what_if_odds_sql(run_id, …)` and `rooting_guide_sql(run_id, …)`: `WHERE "RUN_ID" = <run>` on `WHATIF_OUTCOMES`, a guard on `WHATIF_RUN`, `RUN_ID` on every row; empty result or unknown column → the page reloads. New scenario "A what-if built for an earlier run returns no rows" ([36]) |
+| m3 | Probe 1.1(e) widened; autocommit in the page contract |
+| m4 | Two-pass alternative, `IN`-subquery check, k = 1 gate ([6], Q16) |
+| m5 | Forced guide drops forced games and is labeled; both semantics stated in `analyses/rooting-guide` and the page contract ([37]) |
+| m6 | `CFB_API_LIVE` ([33]) |
+| m7 | Preview of the latest meeting ([34]) |
+| m8 | `RAW_JSON` recent meetings vs `MATCHUP_GAMES`; matchup call optional; 3 planned ([34], [22]) |
+| m9 | Steps 200/400 are written by the loader deploy from the YAML (stated in `plan.md` and `analyses/deploy`); `make analyses` reports them and warns about a missing script or row; tests use `tests/it/fixtures/load-plan.analyses.yaml`; task 1.6 confirms Phase 3/4 tests use plan variants; task 2.2 deploys stub scripts so every registered step exists ([38]) |
+| m10 | New "who starts and who finishes each integration test file" table in `plan.md`. `test_forced_resim_it.py` now reads `CFB_PRED` objects (task 3.7, group F). `test_api_roles_it.py` is started in 2.4 and completed by 3.5, 4.2 and 4.6 (new). Deploy and contract scenarios are added by the tasks that build their last object. `IS_HEADLINE` moved into `CFB_PRED` so the scorecard tests need no `CFB_API` view. On-demand scenarios read `CFB_PRED.MATCHUP_SERIES` and `CFB_MODEL.GAME` instead of later `CFB_API` views. 3.3 moved to group E (its prediction scenario needs 3.1) |
+| m11 | 7.3 runs in a window agreed with the orchestrator with no other session spending calls; 7.5 matches the ledger entries one to one with the `FETCH_LOG` rows of the `make record` runs and the `/info` drop with every ledger entry in the window, each listed with its plan |
+| m12 | No `LISTAGG`: the Lua generator iterates rows `ORDER BY GAME_IDX`; probe 1.1(d) only times the DDL; Q12 resolved ([39]) |
+| m13 | Hand-off **P5-m13** for Phase 4 (in `plan.md` Dependencies): `make sim-drop` refuses the run named by `WHATIF_PUBLICATION` unless `FORCE=yes` (a host-side check, so no `CFB_SIM` object references `CFB_PRED`). The orchestrator should add it to Phase 4's `review.md`; this plan could not edit outside its directory. Without it, [26]'s lag handling limits the damage (Q14) |
+| m14 | Games are graded in the week they are played (`GAME_WEEK*`, `IS_RESCHEDULED`); a frozen game is never frozen again; an added game is frozen at its own freeze point; `FREEZE_KIND` re-judges the freeze against the current kickoff. New scenario "A rescheduled game is graded in the week it is played" ([29]) |
+| m15 | `ALL_TIME_TIED`, `LINE_ERA_TIED`; pages show "T-37" ([30]) |
+| Probe placement | "`spikes/s4/` committed" is an explicit gate of group A / probe 1.1(a) |
+| Small cuts | `SCORECARD_SEASON` per point kept (the as-of picker); `FORCED_RUN_ODDS` kept and scheduled last among the analyses (task 3.7); probe 1.1(d)'s `LISTAGG` length investigation dropped (m12) |
+
+### Rejected or changed from the review's suggestion
+
+- **Nothing was rejected.** Three choices among the review's options, with reasons:
+  - **M2:** both of the review's fixes were possible; the orchestrator chose empty generated views inside the deploy transaction. File views do read the generated `WHATIF_RUN` (for `WHATIF_VIEWS_CURRENT` and `WHATIF_GAMES`'s guard), which "file views read only `CFB_PRED`" would have ruled out.
+  - **M5:** the review offered "compute it in the view or widen to `DECIMAL(9,8)`". The plan computes `RANK_MAGNITUDE` in `CFB_PRED.UPSET`, because widening `GAME_WIN_PROB` is a Phase 4 edit; the duplicated Elo formula is pinned to Phase 4's rounded value by the upsets test.
+  - **m1:** the constant 0.0070, not the per-team threshold; reason in [35].
+- **`WHATIF_GAMES` reads both `WHATIF_PUBLICATION` and the generated `WHATIF_RUN`.** The review listed it among the plain readers of `WHATIF_PUBLICATION`. It also checks that the generated views name the same run, because its rows name the generated columns; when they disagree it returns no rows instead of offering toggles on columns that do not exist.
+- **`CFB_API.WHATIF_SETTINGS` renamed `ANALYSIS_SETTINGS`** ([40]), because it now also holds `MOVE_THRESHOLD` and `ALL_TIME_FROM_SEASON`. Not asked for by the review; free while the contract is unrecorded.
+
+### For the orchestrator
+
+- Add hand-off **P5-m13** to Phase 4's `review.md` (`make sim-drop` refuses the what-if publication's run unless forced).
+- Phase 4 hand-off **P5-M3** is a dependency of this plan's group B (Q17).
+- `spikes/s4/` must be committed before probe 1.1(a).
+- 7.3 needs a window with no other session spending CFBD calls.
+- Owner review U3/Q13 (no `/teams/matchup`) stays open and does not block.
