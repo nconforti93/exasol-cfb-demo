@@ -54,6 +54,7 @@ from vs.cfbd_vs.http import (
     Transport,
     http_transport,
     redact,
+    redact_body,
 )
 from vs.cfbd_vs.replay import (
     DEFAULT_REPLAY_PATH,
@@ -322,7 +323,7 @@ class FetchEntry:
                 result.attempts,
                 result.ms,
                 _naive_utc(result.requested_at),
-                result.body,
+                redact_body(result.body, job.key),
             )
         assert job.store is not None
         recorded = job.store.load(request.slice_key)

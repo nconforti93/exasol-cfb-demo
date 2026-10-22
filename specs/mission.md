@@ -99,18 +99,24 @@ This project shows both on data people care about:
 
 ## Commands
 
-Planned. The first speq plan creates the Makefile; this section is updated once the targets exist.
+Every target runs through `uv run` from the repo root. Database targets check that the deployment is reachable first, and `TARGET=local|aws` (default `local`) selects the Exasol Personal deployment (for example `make deploy TARGET=aws`). `ARGS="…"` passes options to `deploy` and `grants`.
 
 ```bash
-make build        # frontend bundle
-make test         # unit, no DB
-make test-it      # integration against local Exasol (replay mode)
-make lint         # ruff + mypy, cargo clippy + fmt, eslint
-make coverage     # pytest --cov, cargo llvm-cov
-make deploy       # install schemas, scripts; make grants (DBA) re-grants connection access
-make backfill     # one-time full-history load (shows call estimate first)
-make refresh WEEK=n
+make generate     # catalog + mirror DDL from the pinned OpenAPI spec and vs/catalog-overrides.yaml
+make bundle       # adapter + fetch UDF script bodies (build/sql/), size-checked
+make test         # unit + cli, no DB, no network
+make test-it      # integration against local Exasol Personal: mock CFBD + replay, TEST_ namespace, 0 CFBD calls
+make test-network # the one network-marked test: DoH + TLS handshake from the UDF sandbox, 0 CFBD calls
+make lint         # ruff check, ruff format --check, mypy --strict (vs, scripts, tests)
+make coverage     # unit + cli, >= 90 % line coverage for vs/cfbd_vs and vs/gen
+make deploy       # build the bundle; create/refresh schemas, adapter, fetch UDF, CFBD_VS (as sys)
+make grants       # create the reader role CFB_READER with SELECT ON CFBD_VS
+make dns-check    # resolve the API host from a UDF + verified TLS handshake, 0 calls (gate for live steps)
+make record PATTERNS=… CONFIRM=yes   # record live responses for replay (capped by cache/live-calls.jsonl)
+make db-check     # is the selected database reachable
 ```
+
+Planned with later phases (not in the Makefile yet): `make build` (frontend bundle), `make backfill` (one-time full-history load, shows a call estimate first), `make refresh WEEK=n`, `make snapshot` / `make restore`. Frontend lint (eslint) joins `make lint` with the app.
 
 ## Project Structure
 

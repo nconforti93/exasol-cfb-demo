@@ -396,3 +396,7 @@ No git commit is made before implementation.
   - Unit tests at width 2 use a barrier and a gated transport, with no sleeps. They pin that later slices are never requested, that an in-flight 503 is not retried, that the first failure wins over a later one in input order, and that a failing emit stops the pool. They pass 2,400 stress iterations and fail against both mutants: no stop signal, and the pool joined before the signal is set.
 - **m2, redaction scope:** see [23]. A body containing "standard bearer Smith" now reaches rows and `@RAW` unchanged. The key and `Bearer <key>` are still redacted in bodies, and any `Bearer <token>` is still redacted in errors.
 - **m9, replay attempts:** see [24]. `tests/it/fetch_helpers.py` no longer counts `REQ_ATTEMPTS` among the ignored columns, so the "replays identically" integration assertion now compares it. The fetch-modes and fetch-log spec deltas name the recorded attempts.
+
+### F.4 Key redaction after JSON parsing
+
+- **Exotic-escape gap closed:** `fetch.py` now calls `http.redact_body` on the live body before flattening or `@RAW`. It runs text redaction (percent forms now match in either hex case), then, only for a body containing a backslash, parses it and redacts the key from every string value and object key. A tree that held the key is re-serialized, so `@RAW` carries no escaped form. A body without the key keeps its original bytes, and the recording replays into the same rows. "standard bearer Smith" is unchanged.

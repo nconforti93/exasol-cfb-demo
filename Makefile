@@ -10,6 +10,9 @@
 #   test-network       only the `network`-marked test: DoH end to end from the UDF sandbox to the real
 #                      DoH endpoint and a TLS handshake with api.collegefootballdata.com (no HTTP
 #                      request, 0 CFBD calls). Needs HTTPS egress; never skips.
+#   record             live CFBD calls through the fetch UDF, capped by the ledger cache/live-calls.jsonl
+#                      (scripts/record.py). Without CONFIRM=yes it only prints the plan. ARGS="--ledger"
+#                      prints the totals, ARGS="--info" logs one free /info reading.
 
 TARGET ?= local
 export TARGET
@@ -67,4 +70,4 @@ dns-check: db-check
 	$(PY) -m scripts.dns
 
 record: db-check
-	$(PY) -m scripts.record --patterns "$(PATTERNS)" --confirm "$(CONFIRM)"
+	$(PY) -m scripts.record --patterns "$(PATTERNS)" --confirm "$(CONFIRM)" $(ARGS)

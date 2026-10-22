@@ -55,14 +55,14 @@
 ## Group I
 - [x] 7.5 Quality gate
 - [x] 8.1 `docs/user-guide.md`
-- [ ] 8.2 `specs/architecture.md`
+- [x] 8.2 `specs/architecture.md`
 - [ ] 8.3 `docs/roadmap.md`
-- [ ] 8.4 `CLAUDE.md` dense bullets
+- [x] 8.4 `CLAUDE.md` dense bullets
 
 ## Group J (sequential, gated)
-- [ ] 9.0 Gate
-- [ ] 9.1 Recorder `scripts/record.py` (`make record PATTERNS=… CONFIRM=yes`), run as `CFB_OWNER`
-- [ ] 9.2 Real deployment on Personal
+- [x] 9.0 Gate
+- [x] 9.1 Recorder `scripts/record.py` (`make record PATTERNS=… CONFIRM=yes`), run as `CFB_OWNER`
+- [x] 9.2 Real deployment on Personal
 - [ ] 9.3 S1 measurement (≤ 26 calls) with `vs/live/s1-patterns.yaml`
 - [ ] 9.4 Apply the findings
 - [ ] 9.5 S2 live verification (≤ 7 calls; record everything)
@@ -72,7 +72,7 @@
 - [x] F.1 Fail-fast fetch pool (M1), key redaction scoped to the key (m2), replay attempts (m9) [expert]
 - [x] F.2 IT guard and harness hardening (m22, m23, m26, m27), deploy prefix guard (m3), single sys-password source (m15), local|aws target resolution, `make test-network` (m24)
 - [x] F.3 Catalog hash over generated content (m5), RANKINGS_POLLS_RANKS parent keys + regenerate (Phase 2 review M8), dead code, SQL type grammar DRY, user-guide mismatches
-- [ ] F.4 Redact the key after JSON parsing too (closes the exotic-escape gap from F.1: `\/`, `\u002B`, lowercase %hex); after the ITs finish
+- [x] F.4 Redact the key after JSON parsing too (closes the exotic-escape gap from F.1: `\/`, `\u002B`, lowercase %hex); after the ITs finish
 
 ## Review and Verification
 - [x] R.1 Code review

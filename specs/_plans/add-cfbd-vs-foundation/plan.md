@@ -724,5 +724,5 @@ All commands run from the repo root against Exasol Personal local (127.0.0.1:856
 | Coverage | `make coverage` | ≥ 90 % line coverage for `vs/cfbd_vs` and `vs/gen` |
 | Deploy | `make deploy && make grants && make deploy` | Exit 0; `SELECT * FROM CFBD_VS.INFO` returns tier, remaining calls and features |
 | DNS (live gate) | `make dns-check` | Resolves `api.collegefootballdata.com` from a UDF (path `doh` on Personal nano) and completes a certificate-verified TLS handshake; 0 CFBD calls |
-| Live ledger | `uv run python scripts/record.py --ledger` | Total CFBD calls for this plan ≤ 50 |
+| Live ledger | `make record ARGS=--ledger` (or `uv run python -m scripts.record --ledger`) | Total CFBD calls for this plan ≤ 50 |
 | Secrets | `git grep -n -I -e 'IDENTIFIED BY' -e 'Bearer ' -- . ':!docs/user-guide.md' ':!specs'` | No key material; only placeholders and documentation |

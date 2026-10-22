@@ -285,8 +285,9 @@ class Rig:
         connection_error: Exception | None = None,
         executor: Any = None,
         latency: float = 0.0,
+        key: str = KEY,
     ) -> None:
-        self.exa = FakeExa(GAMES_NAMES if names is None else names, connection_error)
+        self.exa = FakeExa(GAMES_NAMES if names is None else names, connection_error, key)
         self.transport = FakeTransport(answers, latency=latency)
         self.files = files or MemoryFiles()
         self.resolver_calls: list[str] = []
@@ -577,6 +578,88 @@ def test_bearer_words_in_a_response_value_reach_the_row_unchanged() -> None:
     body = [{"id": 1, "homeTeam": "the standard bearer Smith", "startDate": None}]
     rig = Rig(answers={GAMES_SLICE: body})
     assert games_row(rig.run(args())[0])["HOME_TEAM"] == "the standard bearer Smith"
+
+
+EXOTIC_KEY = "ab+/cé=Zq9"
+EXOTIC_FORMS = [
+    "ab\\u002b\\/c\\u00e9=Zq9",
+    "ab\\u002B\\/c\\u00E9\\u003dZq9",
+    "ab%2b%2fc%c3%a9%3dZq9",
+    "ab%2B%2Fc%C3%A9%3DZq9",
+    "ab\\u002b/c\\u00e9\\u003d\\u005aq9",
+]
+
+
+def exotic_body(form: str) -> str:
+    return (
+        f'[{{"id": 1, "homeTeam": "x {form} y", "startDate": null, '
+        f'"{form}": "as object key"}}, {{"id": 2, "homeTeam": "the standard bearer Smith", '
+        '"startDate": null}]'
+    )
+
+
+def decoded_texts(text: str) -> list[str]:
+    tree = json.loads(text)
+    found: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            found.append(value)
+        elif isinstance(value, dict):
+            for name, item in value.items():
+                found.append(name)
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(tree)
+    return found
+
+
+@pytest.mark.parametrize("form", EXOTIC_FORMS)
+def test_exotic_escapes_of_the_key_never_reach_an_emitted_row(form: str) -> None:
+    assert EXOTIC_KEY not in form
+    body = TransportResponse(200, {}, exotic_body(form).encode())
+    rig = Rig(answers={GAMES_SLICE: body}, key=EXOTIC_KEY)
+    rows = [games_row(r) for r in rig.run(args())]
+    assert "[REDACTED]" in rows[0]["HOME_TEAM"]
+    assert EXOTIC_KEY not in repr(rows)
+    assert rows[1]["HOME_TEAM"] == "the standard bearer Smith"
+
+
+@pytest.mark.parametrize("form", EXOTIC_FORMS)
+def test_exotic_escapes_of_the_key_never_reach_a_raw_part(form: str) -> None:
+    body = TransportResponse(200, {}, exotic_body(form).encode())
+    rig = Rig(RAW_NAMES, answers={GAMES_SLICE: body}, key=EXOTIC_KEY)
+    rows = raw_rows(rig.run(args(table="@RAW")))
+    text = assemble_parts(rows).body
+    assert EXOTIC_KEY not in text
+    assert all(EXOTIC_KEY not in name for name in decoded_texts(text))
+    assert "ab%2b" not in text.lower()
+    assert "bearer Smith" in text
+
+
+def test_a_redacted_raw_recording_replays_into_the_rows_a_live_fetch_emits() -> None:
+    form = EXOTIC_FORMS[0]
+    body = TransportResponse(200, {}, exotic_body(form).encode())
+    live = Rig(RAW_NAMES, answers={GAMES_SLICE: body}, key=EXOTIC_KEY)
+    saved = assemble_parts(raw_rows(live.run(args(table="@RAW"))))
+    replayed = Rig(files=replay_files(saved), key=EXOTIC_KEY)
+    replay_rows = [games_row(r) for r in replayed.run(args(mode="replay"))]
+    fresh = Rig(answers={GAMES_SLICE: body}, key=EXOTIC_KEY)
+    live_rows = [games_row(r) for r in fresh.run(args())]
+    skipped = {"REQ_SOURCE", "REQ_MS", "REQ_AT"}
+    assert [{k: v for k, v in r.items() if k not in skipped} for r in replay_rows] == [
+        {k: v for k, v in r.items() if k not in skipped} for r in live_rows
+    ]
+
+
+def test_a_body_without_the_key_is_emitted_to_raw_byte_for_byte() -> None:
+    text = '[ {"id":1,  "homeTeam":"caf\\u00e9 \\/ x"} ]'
+    body = TransportResponse(200, {}, text.encode())
+    rig = Rig(RAW_NAMES, answers={GAMES_SLICE: body}, key=EXOTIC_KEY)
+    assert assemble_parts(raw_rows(rig.run(args(table="@RAW")))).body == text
 
 
 def test_flatten_errors_name_the_table_and_the_slice() -> None:
