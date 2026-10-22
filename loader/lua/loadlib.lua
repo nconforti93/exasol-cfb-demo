@@ -111,6 +111,10 @@
 --   whole_number(v, what), short_error(text), meta_table(name), core_table(name),
 --   stage_table(name), virtual_table(name), run_sql(statement, binds), commit(), rollback(),
 --   failure_code(message).
+--   qualified_name('SCHEMA.NAME') -> '"SCHEMA"."NAME"': a plan's script name (REFRESH_STEPS) for
+--       statement text; anything but two UPPER_CASE identifiers joined by one dot raises.
+--   is_killed(message) -> true when the error was a kill or client abort (R0003). Re-raise such an
+--       error unchanged (error(message, 0)): fail() recognizes it by the message and logs nothing.
 
 local KILLED = "R0003"
 local COLLISION = "40001"
@@ -255,6 +259,21 @@ local function quoted(name)
     error("loader: not an UPPER_CASE identifier: " .. tostring(name), 0)
   end
   return '"' .. name .. '"'
+end
+
+function qualified_name(name)
+  local schema, object = nil, nil
+  if type(name) == "string" then
+    schema, object = name:match("^([A-Z][A-Z0-9_]*)%.([A-Z][A-Z0-9_]*)$")
+  end
+  if schema == nil then
+    error("loader: not a qualified UPPER_CASE name like SCHEMA.NAME, got " .. tostring(name), 0)
+  end
+  return quoted(schema) .. "." .. quoted(object)
+end
+
+function is_killed(message)
+  return failure_code(message) == KILLED
 end
 
 function meta_table(name)

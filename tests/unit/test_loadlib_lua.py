@@ -156,6 +156,25 @@ def test_short_error_keeps_the_adapter_line(lib: LoadLib) -> None:
     assert lib.run("return short_error('first line\\nsecond')") == "first line"
 
 
+def test_qualified_name_quotes_both_parts_of_a_script_name(lib: LoadLib) -> None:
+    assert lib.run("return qualified_name('CFB_INFRA.REFRESH_MODEL')") == (
+        '"CFB_INFRA"."REFRESH_MODEL"'
+    )
+    for bad in ("REFRESH_MODEL", "cfb_infra.M", 'A."B"', "A.B.C", "A.B; DROP", "A.", ".B"):
+        message = lib.error_of(f"qualified_name({lua_text(bad)})")
+        assert "not a qualified UPPER_CASE name like SCHEMA.NAME" in message, bad
+    assert "got nil" in lib.error_of("qualified_name(nil)")
+
+
+def test_is_killed_names_only_a_kill_or_abort(lib: LoadLib) -> None:
+    lib.fail_with("SELECT 1", KILLED, "Client requested execution abort.")
+    lib.fail_with("SELECT 2", "42000", "syntax error")
+    assert lib.run("local ok, err = pcall(run_sql, 'SELECT 1'); return is_killed(err)") is True
+    assert lib.run("local ok, err = pcall(run_sql, 'SELECT 2'); return is_killed(err)") is False
+    assert lib.run("return is_killed('Client requested execution abort.')") is False
+    assert lib.run("return is_killed(nil)") is False
+
+
 def test_the_default_per_query_budget_equals_the_adapter_default() -> None:
     found = re.search(r"DEFAULT_MAX_CALLS_PER_QUERY = (\d+)", LIBRARY)
     highest = re.search(r"MAX_MAX_CALLS_PER_QUERY = (\d+)", LIBRARY)

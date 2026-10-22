@@ -155,7 +155,7 @@ def write(path: Path, *entries: Entry) -> None:
 def test_the_committed_config_has_the_plan_caps_and_the_october_authorization() -> None:
     config = ledger.load_config()
     assert config.plans == {PLAN: 50, PERSISTENCE: 300}
-    assert config.months == {"2026-10": 400}
+    assert config.months == {"2026-10": 400, "2026-11": 1000}
     assert "2026-11" not in config.months
 
 

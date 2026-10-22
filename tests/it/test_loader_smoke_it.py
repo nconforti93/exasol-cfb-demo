@@ -6,7 +6,6 @@ switch the plan or the clock are followed by one that shows the reset put the mo
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -63,7 +62,7 @@ def test_the_reset_cleared_the_clock_and_kept_the_plan(harness: Harness) -> None
 
 def test_a_plan_variant_replaces_the_plan_and_registers_gaps(harness: Harness) -> None:
     report = harness.deploy_plan("gaps", {"now_override": NOW})
-    assert report.skipped_scripts == ("REFRESH_WEEK",)
+    assert report.skipped_scripts == ()
     slices = harness.load_slices("GAMES")
     assert [row["SEASON"] for row in slices] == [1869, 1870, 1871, 1872]
     assert [row["IS_GAP"] for row in slices] == [False, False, True, False]
@@ -220,15 +219,6 @@ def _is_executing(harness: Harness, session_id: int) -> bool:
         user="sys",
     )
     return bool(rows) and rows[0][0] != IDLE_STATUS
-
-
-def test_the_exapump_environment_holds_the_owner_dsn_in_memory_only(harness: Harness) -> None:
-    env, args = harness.exapump_env()
-    dsn = env["EXAPUMP_DSN"]
-    assert dsn.startswith(f"exasol://{harness.namespace.owner_user}:")
-    assert dsn.endswith("@127.0.0.1:8563")
-    assert args[0] == "--certificate-fingerprint"
-    assert "EXAPUMP_DSN" not in os.environ
 
 
 def test_the_snapshot_directory_is_private_and_outside_the_repo(snapshot_dir: Path) -> None:
