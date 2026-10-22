@@ -15,7 +15,7 @@ entry only while the virtual schema lists its feature.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -83,10 +83,15 @@ class SliceTemplate:
 
 def compile_plan(plan: LoadPlan, catalog: Catalog) -> tuple[SliceTemplate, ...]:
     """Compile every entry; raises `PlanError` listing each entry that breaks a request rule."""
+    return compile_entries(plan.entries, catalog)
+
+
+def compile_entries(entries: Sequence[PlanEntry], catalog: Catalog) -> tuple[SliceTemplate, ...]:
+    """`compile_plan` for entries that are not (yet) part of a valid plan."""
     tables = {table.name: table for table in catalog.tables}
     issues: list[PlanIssue] = []
     compiled: list[SliceTemplate] = []
-    for entry in plan.entries:
+    for entry in entries:
         result = _compile_entry(entry, tables[entry.table], issues)
         if result is not None:
             compiled.append(result)

@@ -303,6 +303,23 @@ def test_an_invalid_plan_sends_no_statement(no_lua: Path) -> None:
     assert not db.statements and not db.queries
 
 
+def test_one_deploy_lists_the_parse_and_the_request_rule_problems(no_lua: Path) -> None:
+    plan = (
+        "version: 1\nentries:\n"
+        "  - {table: NOPE, profile: demo, priority: 1, slicing: none, refresh_class: static}\n"
+        "  - {table: PLAYS, profile: demo, priority: 2, slicing: season, seasons: {from: 2019},"
+        " refresh_class: weekly}\n"
+    )
+    db = LoaderDatabase(TEST)
+    with pytest.raises(DeployError) as caught:
+        run(db, no_lua, TEST, plan_text=plan)
+    message = str(caught.value)
+    assert message.startswith("the load plan has 2 problems:")
+    assert "entry 1 (NOPE): unknown-table" in message
+    assert "entry 2 (PLAYS): plays.spec_required" in message
+    assert not db.statements and not db.queries
+
+
 def test_an_invalid_override_sends_no_statement_and_lists_every_problem(no_lua: Path) -> None:
     db = LoaderDatabase(TEST)
     with pytest.raises(DeployError) as caught:

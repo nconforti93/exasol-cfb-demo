@@ -41,7 +41,7 @@ from loader.plan import (
     parse_config_overrides,
     parse_plan,
 )
-from loader.templates import SliceTemplate, compile_plan
+from loader.templates import SliceTemplate, compile_entries, compile_plan
 from vs.bundle import BundleError
 from vs.cfbd_vs.catalog import Catalog
 from vs.cfbd_vs.sqlrender import sql_literal
@@ -129,7 +129,7 @@ def _prepare(namespace: Namespace, options: LoaderOptions) -> _Prepared:
         config = plan.config.with_overrides(options.config_overrides)
         templates = compile_plan(plan, catalog)
     except PlanError as error:
-        raise DeployError(str(error)) from None
+        raise DeployError(str(_with_request_rule_issues(error, catalog))) from None
     keeps_override = namespace.prefix.startswith(TEST_PREFIX)
     dropped = config.now_override is not None and not keeps_override
     settings = config.settings()
@@ -138,6 +138,15 @@ def _prepare(namespace: Namespace, options: LoaderOptions) -> _Prepared:
     return _Prepared(
         plan, templates, settings, _stage_tables(namespace, plan, catalog, options), dropped
     )
+
+
+def _with_request_rule_issues(error: PlanError, catalog: Catalog) -> PlanError:
+    """`error` plus the request-rule problems of the entries that parsed (one message lists all)."""
+    try:
+        compile_entries(error.entries, catalog)
+    except PlanError as rules:
+        return PlanError([*error.issues, *rules.issues])
+    return error
 
 
 def _read_plan(options: LoaderOptions, catalog: Catalog) -> LoadPlan:
