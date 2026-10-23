@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-23 afternoon by Claude Code (Opus 5.5) at the handover to Codex
+Last updated: 2026-10-23 by Codex at orchestrator takeover
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**HANDOVER POINT: 2026-10-23 afternoon. Claude stopped all work so Codex can take over.** No Claude agents are running. Two tasks were stopped mid-work, and their uncommitted files are on disk (see "Work in progress" below). No local-DB or AWS statement was running when they stopped. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row, it belongs to a dead session, and the run lock treats it as stale.
+**Codex took over on 2026-10-23.** Phase 4 task 1.4 is being completed first under the speq implementation workflow; no database run has started in this takeover. The two uncommitted task sets at handover are listed below. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row from the stopped Claude session, the run lock treats it as stale.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -126,6 +126,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-23: **Codex took over as orchestrator.** Read `CLAUDE.md` and this handover, checked worktree state, and started Phase 4 task 1.4 with an implementation agent. No database or live API call yet.
 
 - 2026-10-23: **Handover to Codex.** Claude stopped p4 1.4 and p5 1.1 mid-task (uncommitted WIP listed in §4). Nothing running.
 
