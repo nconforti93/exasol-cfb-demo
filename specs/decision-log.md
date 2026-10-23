@@ -947,3 +947,481 @@ The orchestrator's decision: two in a row protects the quota during an outage (a
 Shapes the `loader` domain specs (`specs/loader/*`). Plan decision [45].
 
 ---
+
+## ADR-031: The model covers the stored demo data only; everything else is named, not wrapped
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Mirrors in `CFB_CORE` hold only what the `demo` load profile stores. The architecture also lists datasets that the demo does not store (players, plays, box scores, weather, ...).
+- A model object that reached into `CFBD_VS` could trigger API calls, and the chat needs to be able to explain a gap.
+
+### Decision
+
+- `CFB_MODEL` reads only the demo profile's mirrors (`GAMES`, `METRICS_WP_PREGAME`, `RATINGS_SP`, `RANKINGS_POLLS_RANKS`, `CALENDAR`, `CONFERENCES_AFFILIATIONS`, `TEAMS`, `VENUES`, `CONFERENCES`).
+- Datasets that are not stored appear in the reference table `DATASET` as `ON_DEMAND` or `UNAVAILABLE`, with their CFBD endpoint, declared seasons and `CFBD_VS` table.
+- No model object reads `CFBD_VS`; lint and a dependency test enforce it.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Pass-through views over `CFBD_VS` in the model | ✗ Rejected — A model object could trigger API calls; on-demand access belongs to `CFB_API` views that carry the required filters. |
+| Silent omission | ✗ Rejected — The chat could not explain a gap. |
+
+### Consequences
+
+"The model costs zero calls" stays provable. The gap list is data. Shapes `specs/model/deploy` and `specs/model/coverage`. Plan decision [1].
+
+---
+
+## ADR-032: Model objects are views by default; a measured fallback decides what becomes a table
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- `BACKFILL` and `make restore` run no refresh steps, so tables materialized only by a step would go stale after them. Nothing was measured yet, and all history is about 250,000 games.
+- A scaled synthetic league (about 250,000 games) lets the cost of the view stack be measured before the dependent views exist.
+
+### Decision
+
+- Dimensions, facts, coverage, as-of helpers and checks are views over `CFB_CORE`, the loader's plan views and other model objects. The only tables are the seeded reference tables.
+- A view more than 2x over its target is first restructured. Only if that fails does it become a table, rebuilt by every `make model`, by `REFRESH_MODEL` before its checks, and by a post-hook that `make backfill` and `make restore` call.
+- The performance smoke runs before the team-season and as-of views are built, and again on the full model and on AWS.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Materialize in a `REFRESH_WEEK` step only | ✗ Rejected — `BACKFILL` and `make restore` run no steps, so the tables would go stale. |
+| Materialize for safety | ✗ Rejected — No measured need at the time. |
+
+### Consequences
+
+Always consistent with the stored data and no rebuild order to get wrong, until the measurement said otherwise. **Partly superseded by ADR-045**, which applies the fallback to eight objects. Plan decision [2].
+
+---
+
+## ADR-033: As-of visibility has one horizon: event time or fetch time against the next kickoff
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Polls used "Sunday after the week" while SP+ and lines used the next kickoff. With a committee lead of 0, a Tuesday committee ranking became visible one week late, so the live demo would show last week's ranking although this week's was stored.
+- Phase 5's frozen predictions are made before kickoff, and Phase 4's backtests need leak-free inputs.
+
+### Decision
+
+- An as-of point means "everything known after that week's games and before the next week's first kickoff" (`CUTOFF_AT`). "The Sunday after week N" names a point; it is not a second horizon.
+- Event facts become visible when they happen: results, completed flags, postgame values, pregame Elo, polls (`VISIBLE_AT_WEEK_SEQ` <= P), the previous season's SP+.
+- Values CFBD overwrites during a season (current SP+, next-week lines, the current season's polls) become visible from their fetch time (`REQ_AT` < `CUTOFF_AT`).
+- Games whose participants depend on results follow ADR-041. An invariance test proves that no fact after the point changes an as-of answer.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Week labels only | ✗ Rejected — Would leak historic closing lines and end-of-season SP+ into mid-season points. |
+| Snapshot tables per week | ✗ Rejected — Rejected, see ADR-035. |
+| "Sunday after week N" for everything | ✗ Rejected — Wednesday lines and Tuesday rankings would be invisible at the current point. |
+
+### Consequences
+
+One definition everywhere, leak-free without history tables, explainable per column, testable as a property. Historic committee rankings are visible one week after their release (lead 0). Shapes `specs/model/as-of`. Plan decision [4].
+
+---
+
+## ADR-034: Points are addressed by a week sequence that matches `REFRESH_WEEK`
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Phase 2's step contract passes `(season, week, season_type)`; both season types number their weeks from 1, so a point needs an unambiguous order key.
+
+### Decision
+
+- `WEEK_SEQ`: 0 for the preseason, n for regular week n, 100 + n for postseason week n. `AS_OF_POINT` maps `(season, week, season_type)` 1:1, the same arguments `REFRESH_WEEK` and its registered steps receive.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| A calendar ordinal | ✗ Rejected — The calendar is stored only from 2013. |
+| A timestamp cutoff | ✗ Rejected — Historic games have date-only kickoffs, and pages think in weeks. |
+
+### Consequences
+
+Deterministic for every season since 1869 and aligned with the step contract. Known limit: as-of points inside the postseason are no finer than CFBD's postseason weeks; with one postseason week the whole postseason becomes known at once at point 101. Plan decision [5].
+
+---
+
+## ADR-035: No in-season snapshot history of SP+ and lines
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- CFBD overwrites current-season SP+ and lines. Keeping a per-week history costs storage and refresh logic for a replay case the demo does not need, and it would be lost on restore unless snapshots were extended.
+
+### Decision
+
+- The model keeps no per-week history of current-season SP+ or lines. A replay of an earlier week of the current season shows them as NULL; the latest fetch is visible only from its fetch time.
+- The leak-free prior for season S is the SP+ of S - 1 as last fetched, available from 2014, which covers Phase 4's 2014-2025 calibration. Phase 5's frozen predictions keep the inputs they used.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| An append-only snapshot table written by the `MODEL` step | ✗ Rejected — Storage and refresh logic for a case the demo does not need; moved to the backlog. |
+
+### Consequences
+
+YAGNI with a clear upgrade path (roadmap backlog). Plan decision [7].
+
+---
+
+## ADR-036: Venues use `GEOMETRY(4326)`; distances come from a great-circle function; no travel distance
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Exasol has no `GEOGRAPHY` type. `ST_DISTANCE` on SRID 4326 computes in the plane of the coordinates, in degrees (probe 1.1c). No v1 page or engine input uses travel distance.
+
+### Decision
+
+- `VENUE.GEO_POINT` is `GEOMETRY(4326)` (x = longitude, y = latitude), guarded against NULL coordinates.
+- `GREAT_CIRCLE_KM` (haversine, R = 6,371.0088 km) gives kilometres for ad-hoc questions. `TEAM_GAME.TRAVEL_KM` is dropped.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| `GEOGRAPHY` | ✗ Rejected — Does not exist in Exasol. |
+| `ST_DISTANCE` | ✗ Rejected — Planar, unit undocumented on 4326. |
+| `ST_TRANSFORM` to a metric CRS | ✗ Rejected — Depends on `EXA_SPATIAL_REF_SYS` contents and distorts over long distances. |
+| Drop the function too | ✗ Rejected — The chat would lose the only correct distance. |
+
+### Consequences
+
+The only spatial type, correct distances, still usable with Exasol's `ST_*` functions. The mission's "GEOGRAPHY" wording became "GEOMETRY(4326)". Plan decision [12].
+
+---
+
+## ADR-037: Model objects are commented (grain first), named unquoted in upper case, and verified after deploy
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- The chat and analysts need the grain of every object without guessing, and plain SQL should work without quoting. `COMMENT ON` does not work for views (probe 1.1a); inline comments are atomic with the replace.
+
+### Decision
+
+- Views carry their comments inline in `CREATE OR REPLACE FORCE VIEW`; tables do the same in `CREATE OR REPLACE TABLE`.
+- Every table and view comment starts with "One row per ...".
+- DDL object and column names are unquoted, upper case and not reserved; the lint rejects anything else. Query bodies quote every identifier.
+- The deploy compiles every view and reads the comments back, and fails below 100 %. `docs/model-dictionary.md` is generated from the SQL files.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| `COMMENT ON` after creation | ✗ Rejected — Not in the grammar for views and not atomic with a replace. |
+| Quoted DDL names | ✗ Rejected — Against the skill rule. |
+| Free-form comments | ✗ Rejected — The grain would vary. |
+
+### Consequences
+
+Self-describing model; the deploy report shows 100 % (454 of 454 on both targets). Shapes `specs/model/documentation`. Plan decision [13].
+
+---
+
+## ADR-038: A generic one-transaction SQL-object deployer
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Phases 4 and 5 deploy their own objects (`CFB_SIM`, `CFB_PRED`, `CFB_API`) with the same needs: atomic, idempotent, lint-gated, comment-checked.
+
+### Decision
+
+- `vs/host/sqlobjects.py` (load, lint, render, deploy) deploys a directory of object files in one transaction under the loader's run lock (lock kind `DEPLOY`), creates views with `FORCE`, drops orphans in the target schema, compiles every view and reads comments back.
+- `model/deploy.py` binds it to `sql/model/`.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Per-phase scripts | ✗ Rejected — Duplicated logic. |
+| `CREATE` without dropping orphans | ✗ Rejected — Stale views would mislead the chat. |
+| Plain views in file order | ✗ Rejected — Fragile; `FORCE` lets a view reference a later file. |
+
+### Consequences
+
+Atomic and lint-gated deploys, written once. Probe 1.1b showed DDL is transactional, so no validation-schema fallback was needed. Shapes `specs/model/deploy`. Plan decision [14].
+
+---
+
+## ADR-039: The `MODEL` refresh step checks the model and stops the chain on a failed ERROR check
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- The chain must stop before predictions or simulations consume broken inputs, and the timeline should show "model" as the mission describes.
+
+### Decision
+
+- Step 100 `MODEL` = `CFB_INFRA.REFRESH_MODEL(run_id, season, week, season_type)`. It evaluates `MODEL_CHECKS` for the season and the week, logs them to `CFB_META.MODEL_CHECK_LOG`, commits, and fails on any failed ERROR check. `make model-check` prints the same checks without the step.
+- The nested `COMMIT` ends the caller's transaction too; that is harmless because the refresh commits its step row before a step starts. Each check filters by season before it aggregates.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| No step | ✗ Rejected — Renames and broken inputs would reach the simulations. |
+| A rebuild step | ✗ Rejected at the time — there was nothing to rebuild (ADR-032); ADR-045 later added the rebuild. |
+
+### Consequences
+
+The chain stops on bad inputs. **The "rebuilds nothing" part is superseded by ADR-045**, which adds the rebuild to the same step. Shapes `specs/model/refresh-step`. Plan decision [15].
+
+---
+
+## ADR-040: The model reads the loader's plan views for coverage
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Coverage must tell "not loaded yet" from "does not exist". Empty and gap slices have no mirror rows, and finality is not in the rows.
+
+### Decision
+
+- Model views may read `CFB_META.LOAD_PLAN`, `LOAD_PLAN_GAPS` and `LOAD_SLICES`, and nothing else in `CFB_META`. `specs/architecture.md` lists them.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Derive "stored" from mirror rows | ✗ Rejected — Empty and gap slices have none, finality is not in the rows. |
+| Copy load state into the model | ✗ Rejected — Two owners of one contract. |
+
+### Consequences
+
+One owner per contract. Shapes `specs/model/coverage`. Plan decision [16].
+
+---
+
+## ADR-041: Games whose participants depend on results are hidden until their participants are known
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Showing the whole schedule at a historic point leaks championship pairings, the playoff field and seeds into every as-of answer (review blocker B1). Phase 4's backtest of the 2024 and 2025 fields must not see the real pairings.
+
+### Decision
+
+- `GAME.PARTICIPANTS_RULE` says when a game's teams were known, and `GAME_AS_OF` has no row for the game before that point:
+- `CONF_CHAMPIONSHIP`: from the point after the week before the game (the game is `NEXT`). `SELECTION` (bowls with an FBS team, the season's first CFP round): from the season's last regular week. `PREVIOUS_ROUND` (later CFP rounds, every postseason game without an FBS team): from its own week. `FIXED` (every other game, placeholders included): always.
+- A hidden game shows no pregame Elo, so a quarterfinal's Elo cannot leak the first-round result. `GAME_AS_OF` exposes `IS_CONF_CHAMPIONSHIP`, `POSTSEASON_KIND`, `CFP_ROUND` and `PARTICIPANTS_RULE`; `TEAM_SEASON_AS_OF` counts remaining and next games over `GAME_AS_OF` only. The invariance test swaps the participants of the 2024 SEC championship game and quarterfinal and adds a bowl.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Rows with NULL teams and status `TBD` | ✗ Rejected — An added or cancelled bowl would still change the row set, which leaks. |
+| Always show the schedule | ✗ Rejected — Leaks pairings, the field and seeds (the blocker). |
+| Hide all postseason games until point 101 | ✗ Rejected — Delays bowls and the first round, which are known after selection. |
+
+### Consequences
+
+Rows that do not exist cannot leak their teams, existence or Elo. Known limit: lower-division championship games are not detected, so their participants show early (no FBS team involved). Shapes `specs/model/as-of` and `specs/model/games`. Plan decision [21].
+
+---
+
+## ADR-042: Engine-facing real values are fixed-scale `DECIMAL`
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Exasol's string-to-DOUBLE parse is not correctly rounded (S3: `CAST('-0.6' AS DOUBLE)` is 1 ulp off). The engine contract needs host checks, the UDF and every page to see bit-identical values.
+
+### Decision
+
+- Every real value that the score model or the engine reads is cast once in the model: spreads `DECIMAL(6,2)`, win probabilities `DECIMAL(5,4)`, SP+ overall, offense, defense and special-teams ratings `DECIMAL(6,2)`. Points, Elo and ranks are integers already. Other real values stay as CFBD reports them.
+- Probe 1.1i verified that the cast rounds rather than truncates; a cast outside the range raises, so a guard in the same select prevents it.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Keep `DOUBLE` and let Phase 4 cast | ✗ Rejected — Every consumer would have to remember it. |
+| `DECIMAL` everywhere | ✗ Rejected — No consumer needs it for the parts. |
+
+### Consequences
+
+One cast in the model. Shapes `specs/model/games` and `specs/model/ratings-rankings`. Plan decision [22].
+
+---
+
+## ADR-043: The newest fetch wins for every slice-scoped source; duplicates are a warning
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- `PROMOTE()` will make overlapping slices normal, so the grain must hold whatever slices exist.
+
+### Decision
+
+- Games, pregame lines, SP+ (season and team name), rankings (season, type, week, poll, team; ties of fetch time broken by the poll's position), calendar weeks, teams, venues and conferences are deduplicated by their natural key, newest `REQ_AT` first.
+- `DUPLICATE_SOURCE_ROW` (WARNING) reports fetched duplicates of the season-scoped sources.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Deduplicate games only | ✗ Rejected — A promoted team or week slice would break the grains of `RATING_SP` and `RANKING`. |
+| Duplicates as an ERROR | ✗ Rejected — Would stop every refresh after a promotion, although the views already resolve them. |
+
+### Consequences
+
+Grains hold regardless of slice overlap. On the real data 2022 has 100 duplicated ranking keys, resolved this way. Plan decision [23].
+
+---
+
+## ADR-044: The model provides the engine's data inputs; Phase 4 computes the rest
+
+**Date:** 2026-10-22
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- The model should stay general while no input the engine needs from data is missing. Engine parameters (`margin_cap` and others) belong to Phase 4.
+
+### Decision
+
+- `GAME_AS_OF` and `TEAM_SEASON_AS_OF` hold every data input of the engine contract (`specs/architecture.md`): neutral site, conference flag, final conference-game margins, team, conference, tier, records, conference records, conference point differential, Elo, the SP+ prior.
+- Phase 4 computes indices, mu, sigma, totals, ratings, strength of schedule and the capped point differential. Nothing in the model exists only for the engine.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| An engine-shaped `MODEL_ROWS` view in the model | ✗ Rejected — Couples the model to engine parameters and an unsettled rule set. |
+| Capped differentials in the model | ✗ Rejected — Duplicates the `margin_cap` parameter. |
+
+### Consequences
+
+The model stays general and the engine owns its parameters. Shapes `specs/model/as-of`. Plan decision [31].
+
+---
+
+## ADR-045: Eight point-independent model objects are derived tables, rebuilt by the refresh step
+
+**Date:** 2026-10-23
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- The web app queries the model live and Phase 4's engine reads the as-of views. On AWS (3 nodes, 2026.1.1) the views took 0.77 to 6.4 s, about half of it compile time of the deep view stack. A team page reads `TEAM_SEASON` across all seasons, which no season filter helps, so restructuring could not reach the target.
+
+### Decision
+
+- `GAME`, `SEASON_WEEK`, `TEAM`, `RATING_SP`, `RANKING`, `TEAM_MEMBERSHIP`, `TEAM_SEASON` and `AS_OF_POINT` are tables with the former view's names, columns, types and comments, filled by one `INSERT ... SELECT` of the former view query. The deployer needs no new kind: a table whose `INSERT` reads other objects is derived. Every other object stays a view.
+- `CFB_INFRA.REFRESH_MODEL` first rebuilds every derived table in file order (`TRUNCATE` + the file's `INSERT`, one transaction; a failure rolls the rebuild back), then resolves the point and logs the checks as ADR-039 says. A NULL season rebuilds only. Run on its own it takes the run lock as script kind `MODEL`; as step 100 it works under the refresh's lock.
+- Who rebuilds: registered step 100 `MODEL` (reaches a target with its next `make deploy`); a post-hook of `make backfill` and `make restore`; `make model` and `make deploy`; `make model-refresh`. Not covered: `EXECUTE SCRIPT CFB_INFRA.BACKFILL` run directly and manual edits of `CFB_CORE`. The planned `MATERIALIZED_STALE` check is not built.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Restructure only | ✗ Rejected — Cannot help the all-seasons `TEAM_SEASON` read, and compile time stays. |
+| Materialize only `GAME` | ✗ Rejected — Measured locally: `TEAM_SEASON` one team stayed at 3.0 s and `TEAM_SEASON_AS_OF` at 1.3 s. |
+| Materialize the as-of views per point | ✗ Rejected — Rows for every point of every season; not needed once their inputs are tables. |
+
+### Consequences
+
+This **supersedes the "views only" part of ADR-032 and the "rebuilds nothing" part of ADR-039**. Every Requirements target is met on both targets (AWS 0.05 to 1.45 s; the rebuild takes 6.3 s on AWS, about 11 s locally). The derived tables are current as of the last rebuild, and the app should treat the model as "current as of the last refresh". Real-data equality before and after was checked on both targets. Shapes `specs/model/deploy` and `specs/model/refresh-step`. Plan decision [40].
+
+---
+
+## ADR-046: The `model` domain keeps its 10 features and its large features whole (light process)
+
+**Date:** 2026-10-23
+**Plan:** `add-cfb-analytical-model`
+**Status:** Accepted
+
+### Context
+
+- Recording `add-cfb-analytical-model` delivers 10 features in one domain, above the library threshold of 8, and four features above 10 scenarios (games 15, as-of 14, teams-conferences 12, deploy 10). The owner switched to a light process ("this is a demo, not a full-blown product") and asked to proceed and note it, as ADR-012 did.
+
+### Decision
+
+- Record all 10 features in `specs/model/` as planned: deploy, documentation, seasons-eras, teams-conferences, games, ratings-rankings, venues, coverage, as-of, refresh-step. `speq feature validate` passes with no warning for any of them.
+- No split is made. Features above 10 scenarios (games 15, as-of 14, teams-conferences 12) are kept whole because no obviously MECE split exists.
+
+### Options Considered
+
+| Option | Verdict |
+|--------|---------|
+| Decision as stated above | ✓ Chosen |
+| Split into `model-core` and `model-asof` | ✗ Rejected for now — an organizational decision for the owner after the demo; the current split is the least disruptive and each feature maps to one SQL file group. |
+
+### Consequences
+
+Feature paths stay `model/<feature>`. Revisit if the domain grows past 10, for example when Phase 4 or 5 add features here.
+
+---

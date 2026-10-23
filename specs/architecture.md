@@ -250,7 +250,7 @@ Deploy and restore refuse a column difference, and orphans block re-fetching, bu
 
 ## Engine contract
 
-- **Data inputs come from the model:** `CFB_MODEL.GAME_AS_OF` and `CFB_MODEL.TEAM_SEASON_AS_OF` hold every data input below (neutral site, conference flag, final margins, records, conference records, tier, Elo, SP+ prior) as fixed-scale `DECIMAL`; the engine computes indices, μ, σ, ratings and the capped differential itself (plan decision [31]; the mapping is in the plan's Key Interfaces).
+- **Data inputs come from the model:** `CFB_MODEL.GAME_AS_OF` and `CFB_MODEL.TEAM_SEASON_AS_OF` hold every data input below (neutral site, conference flag, final margins, records, conference records, tier, Elo, SP+ prior) as fixed-scale `DECIMAL`; the engine computes indices, μ, σ, ratings and the capped differential itself (plan decision [31]; the mapping is in Key Interfaces of the recorded plan `specs/_recorded/2026-10-23-add-cfb-analytical-model/plan.md`).
 - **Input:** one SET call per sim batch with the full remaining-season model (D19, `docs/spikes/s3-python-engine-throughput.md`).
   - The model is one table of tagged rows, `MODEL_ROWS(row_kind ∈ {GAME, TEAM, PARAM}, …)`; columns that do not apply to a kind are NULL.
     - `GAME`: game_idx, home_idx, away_idx, neutral, conference flag, predicted margin μ, σ, predicted total; final games carry the played flag and margin instead (needed for head-to-head).
