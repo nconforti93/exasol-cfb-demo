@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-23 ~09:30 UTC by Claude Code (Opus 5.5)
+Last updated: 2026-10-23 ~10:15 UTC by Claude Code (Opus 5.5)
 
 ---
 
@@ -63,11 +63,11 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 | 3 Analytical model | add-cfb-analytical-model | p3 | Groups A–F done (through 3.8 `TEAM_SEASON`, de085a7). **Running:** merge of Phase 2 into p3 (conflicts in `scripts/deploy.py`, `tests/unit/test_deploy_cli.py`), then deploy of `CFB_MODEL` to AWS and local plus real-data sanity checks (and add COLOR/ALTERNATE_COLOR/logo/coords to `TEAM` if small). **Open:** 3.9 as-of views [expert], 3.10 coverage, 3.11 MODEL_CHECKS, 4.1 refresh_model.lua, 4.2 examples, 4.3 perf, docs 6.x, live 7.x, record |
 | 4 Score engine | add-cfb-score-engine | main tree (plan only) | Plan reviewed. Starts after Phase 3 3.9 (as-of). Python UDF simulation; inputs from spikes S3/S4 (see ORCHESTRATOR-STATUS "Inputs for Phase 4"). Owner idea to consider: store a calibration file in BucketFS as an Exasol showcase beat |
 | 5 Analyses / CFB_API | add-cfb-analyses | main tree (plan only) | Plan reviewed. **Thin slice first:** the views the UI needs (TEAMS with colors/coords, GAMES, TEAM_SEASONS, RANKINGS, SP_RATINGS, TEAM_TRAVEL, CURRENT_POINT, AS_OF_POINTS); see Phase 6 hand-offs P6-UI-b/c/d |
-| 6 Web app | add-cfb-app | p6 | Backend core, old frontend pages, fixture preview (`make app-preview`, port 5173) done. **UI revision planned** (674ff29: map home, `/team/:id`, `/league/*`, tasks 9.0–9.8). **Running:** 9.0 UI foundation and 9.5 logos script/route. **Next:** 9.1 shell, 9.2 map, 9.3 team page, 9.4 league week+stats, 9.6 real-data preview snapshot; then 9.7 routes (needs Phase 5 thin views), 9.8 outlook (needs Phases 4–5) |
+| 6 Web app | add-cfb-app | p6 | Backend core, old frontend pages, fixture preview (`make app-preview`, port 5173) done. **UI revision planned** (674ff29: map home, `/team/:id`, `/league/*`, tasks 9.0–9.8). 9.5 logos done (15779cc): all 138 FBS logos (light+dark) cached in `~/.cfb-demo/logos` from CFBD's CDN (decision [43]); all FBS teams have coords and colors in `CFB_CORE.TEAMS`. **Running:** 9.0 UI foundation. **Next:** 9.1 shell, 9.2 map, 9.3 team page, 9.4 league week+stats, 9.6 real-data preview snapshot; then 9.7 routes (needs Phase 5 thin views), 9.8 outlook (needs Phases 4–5) |
 | 7 Chat | add-cfb-chat | p7 | Groups A–B done (89f21ae). Group C+ blocked until Phases 5 and 6 merge (gate task 3.0) |
 | 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed. Due items: freeze rule + CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
 
-**Agents running at last update (Claude subagents; they die with Claude's session):** p3 merge+AWS model deploy; p6 task 9.0; p6 task 9.5. If you take over, assume they may have stopped mid-task. Check `git status` and `git log` in each worktree and finish or redo the task from what is on disk.
+**Agents running at last update (Claude subagents; they die with Claude's session):** p3 merge+AWS model deploy; p6 task 9.0. If you take over, assume they may have stopped mid-task. Check `git status` and `git log` in each worktree and finish or redo the task from what is on disk.
 
 ### Recommended next steps (in order)
 1. **p3:** finish the merge if it is still unresolved (keep both sides; Phase 2 added the `DEPLOY` lock and `deploy_namespace`, Phase 3 added the model deploy). Deploy `CFB_MODEL` on AWS and local; sanity-check on real data; commit.
@@ -93,6 +93,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none right now.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-23: 9.5 logos committed; 276 logo files fetched from cdn.collegefootballdata.com (not ESPN; [43]). Route `make_router` not yet mounted (no app.py yet).
 
 - 2026-10-23: HANDOVER.md created for a possible Codex takeover (Claude at ~80 % usage).
 - 2026-10-23: Phase 6 UI revision planned (674ff29); 9.0 and 9.5 started.
