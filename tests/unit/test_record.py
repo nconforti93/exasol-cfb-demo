@@ -382,17 +382,6 @@ def test_failure_text_gives_attempts_and_status(
     assert record.failure_status(message) == status
 
 
-def test_the_charge_never_undercounts() -> None:
-    assert record.charged(1, 100, 99) == 1
-    assert record.charged(1, 100, 100) == 1
-    assert record.charged(1, 100, 97) == 3
-    assert record.charged(None, 100, 100) == MAX_ATTEMPTS
-    assert record.charged(None, None, None) == MAX_ATTEMPTS
-    assert record.charged(0, 100, 100) == 0
-    assert record.charged(2, None, 50) == 2
-    assert record.charged(1, 100, 3000) == 1
-
-
 def test_an_unknown_failure_is_charged_all_attempts(tmp_path: Path) -> None:
     api = FakeApi(failures={GAMES: "websocket closed"}, charges={GAMES: 0})
     make_recorder(tmp_path, api).record(patterns(GAMES))

@@ -14,10 +14,17 @@ dev = [
     "PyYAML>=6",
     "types-PyYAML>=6",
     "pyexasol>=2,<3",
+    "httpx==0.28.1",
+]
+app = [
+    "fastapi==0.143.2",
+    "starlette==1.8.0",
+    "uvicorn==0.54.0",
 ]
 
 [tool.uv]
 package = false
+default-groups = ["dev", "app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/cli"]
@@ -26,10 +33,11 @@ addopts = "-ra"
 markers = [
     "it: integration test against Exasol Personal local (replay mode)",
     "network: needs HTTPS egress to the DoH endpoint (no CFBD call); not part of `make test-it`",
+    "e2e: browser smoke of the built app against the TEST_ stack (`make app-e2e`); not part of `make test-it`",
 ]
 
 [tool.coverage.run]
-source = ["vs/cfbd_vs", "vs/gen"]
+source = ["vs/cfbd_vs", "vs/gen", "app/backend"]
 branch = true
 
 [tool.coverage.report]
@@ -39,7 +47,7 @@ fail_under = 90
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["vs/openapi", "cache", "build", "spikes"]
+extend-exclude = ["vs/openapi", "cache", "build", "spikes", "node_modules", "app/frontend", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF"]
@@ -47,6 +55,6 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["vs", "scripts", "tests"]
+files = ["vs", "scripts", "tests", "app/__init__.py", "app/backend"]
 mypy_path = "."
 explicit_package_bases = true

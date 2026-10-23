@@ -135,3 +135,56 @@ Palette (dark, surface #0d0d0d, categorical): 2 slots
 exit 0
 
 ```
+
+## Python toolchain (task 1.2, backend part)
+
+Versions resolved on 2026-10-22 (system clock, UTC), pre-releases excluded, newest release at least
+7 days old, pinned with `==` in `pyproject.toml` and resolved in the committed `uv.lock`:
+
+| Package | Pinned | Released | Latest on PyPI that day | Group |
+|---|---|---|---|---|
+| fastapi | 0.143.2 | 2026-10-15 | 0.161.1 (2026-10-22) | `app` |
+| starlette | 1.8.0 | 2026-10-13 | 1.9.0 (2026-10-18) | `app` |
+| uvicorn | 0.54.0 | 2026-09-25 | 0.54.0 | `app` |
+| httpx | 0.28.1 | 2024-12-06 | 0.28.1 (1.0 is a pre-release) | `dev`, for `TestClient` |
+
+Resolved with them: pydantic 2.14.1, anyio 4.15.1, h11 0.16.0, click 8.5.0, annotated-doc 0.0.5 and
+opentelemetry-api 1.45.1 (a hard requirement of fastapi 0.143.2 and 0.161.x alike). fastapi 0.143.3
+was released 2026-10-16 14:14, inside the 7-day window on the day of the task. `[tool.uv]
+default-groups = ["dev", "app"]`, so a plain `uv sync` installs both.
+
+Starlette 1.8 prints a `StarletteDeprecationWarning` that `httpx` with `starlette.testclient` is
+deprecated in favour of `httpx2`. The plan pins httpx 0.28.1; the warning is harmless and the
+tests pass. Moving to `httpx2` is a decision for a later task.
+
+## Early probe results (task 1.1)
+
+Full findings: `docs/spikes/s9-app-probe.md` (script `docs/spikes/s9_app_probe.py --part early`,
+Exasol Personal local 2026.2.0-nano.3, `PROBE_APP_*` namespace, 0 calls).
+
+- (a) Lua scripts run with the caller's rights: confirmed. A user with only `EXECUTE` fails at the
+  script's first read and first insert, and nothing is written. Views read with their owner's
+  rights. Decision [2] stands: the refresh runs on the operator path as the owner.
+- (d) A user reads all of its own effective privileges from `EXA_SESSION_PRIVS`,
+  `EXA_ALL_OBJ_PRIVS`, the `EXA_USER_*` and `EXA_ROLE_*` views, with one exception: impersonation
+  granted through a role or `PUBLIC` is invisible to the user and works, so proving "may impersonate
+  no one" needs `EXA_DBA_IMPERSONATION_PRIVS` on the operator path. `PUBLIC` holds `USE ANY SCHEMA`
+  on a fresh deployment, which the check tolerates. Passwords in `CREATE USER` and `ALTER USER`
+  are masked as `'<SECRET>'` in the audit and profile views.
+- (e) `ALTER SESSION SET QUERY_TIMEOUT` is accepted. It aborts a CPU-bound statement at 30.0 s but
+  ends a statement that runs a UDF only when the UDF returns (35.2 s for a 35 s UDF); 300 lets it
+  finish. pyexasol's `socket_timeout` of 10 or 30 s did not cut a 35 s statement.
+
+## Backend unit modules (tasks 1.3 to 1.7)
+
+`make test` runs their unit tests; `make coverage` reports the pure modules.
+
+| Module | Role |
+|---|---|
+| `app/backend/settings.py` | settings table, bind resolution, operator decision, `Host` allowlist, `Origin` set |
+| `app/backend/security.py` | `Host`/`POST`/CORS/session middleware, security headers, effective-privilege check |
+| `app/backend/spend.py` | plans from manifests, guard decision, ledger entries, fetch-log rows, live timeouts |
+| `app/backend/sessions.py` | per-session preview cache, single flight, console run, query log; the live gate |
+| `app/backend/sqlcatalog.py`, `explain.py` | fixed page statements with lints; `EXPLAIN VIRTUAL` rows to manifests |
+| `app/backend/console_catalog.py` | the four console statements and their pinned expected plans |
+| `app/backend/models.py` | pydantic models of the HTTP contract; every frontend fixture parses with its model |

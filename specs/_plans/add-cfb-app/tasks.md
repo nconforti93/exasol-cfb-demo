@@ -3,24 +3,24 @@
 Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 
 ## Group A
-- [~] 1.1 Probe, early part
-- [~] 1.2 Toolchain and scaffolding (frontend part done)
-- [~] 1.3 `app/backend/settings.py` and `security.py`
-- [~] 1.4 Move `planned_live`, `slice_calls`, `query_costs` and `charged` from `scripts/record.py` t
-- [~] 1.5 `app/backend/sessions.py`
-- [~] 1.6 `app/backend/sqlcatalog.py` and `explain.py`:
-- [~] 1.7 `app/backend/console_catalog.py`
-- [x] 1.8 Frontend foundations: (frontend part; `app/backend/models.py` and `tests/unit/test_app_fixtures.py` still to do, see src/test/fixtures/manifest.json)
+- [x] 1.1 Probe, early part
+- [x] 1.2 Toolchain and scaffolding (frontend and backend parts done)
+- [x] 1.3 `app/backend/settings.py` and `security.py`
+- [x] 1.4 Move `planned_live`, `slice_calls`, `query_costs` and `charged` from `scripts/record.py` t
+- [x] 1.5 `app/backend/sessions.py`
+- [x] 1.6 `app/backend/sqlcatalog.py` and `explain.py`:
+- [x] 1.7 `app/backend/console_catalog.py`
+- [x] 1.8 Frontend foundations: (frontend part; backend half, `app/backend/models.py` and `tests/unit/test_app_fixtures.py`, done by the backend agent)
 
 ## Group A-FE1
 - [x] 5.1 Shell (`src/shell`, `src/state`, `src/api`, `App.tsx`):
 
 ## Group A-FE2
-- [ ] 5.2 Odds (`src/odds`, `src/charts` bars)
-- [ ] 5.3 Predictions (`src/predictions`, `src/charts` dot plot)
-- [ ] 5.4 Upsets (`src/upsets`)
-- [ ] 5.5 Head-to-head and spending (`src/headtohead`, `src/spend`)
-- [ ] 5.6 Refresh and inspector (`src/refresh`, `src/inspector`, `src/charts` timeline and waterfall
+- [~] 5.2 Odds (`src/odds`, `src/charts` bars)
+- [~] 5.3 Predictions (`src/predictions`, `src/charts` dot plot)
+- [~] 5.4 Upsets (`src/upsets`)
+- [~] 5.5 Head-to-head and spending (`src/headtohead`, `src/spend`)
+- [~] 5.6 Refresh and inspector (`src/refresh`, `src/inspector`, `src/charts` timeline and waterfall
 
 ## Group A3
 - [ ] 2.1 `app/backend/db.py` and `operator.py`:
