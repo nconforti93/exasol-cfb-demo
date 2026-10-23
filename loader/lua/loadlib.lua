@@ -45,15 +45,22 @@
 --       Never call it from a script nested in a locked run (a registered REFRESH_WEEK step such as
 --       Phase 4's REFRESH_SIMULATE): the caller's session owns that run's row, so the own-session
 --       rule would abandon it. A nested step works under the run id it is given.
+--   acquire_host_lock(kind, args) -> run_id: acquire_lock for a host kind only (RUN_LOCK's entry);
+--       a script kind raises before any statement, because a host session is idle between its
+--       statements and the idle rule would free the row at once.
 --   release_lock(run_id, status, detail) -> held
---       Ends a RUNNING row with an upper-case status (DONE, FAILED, ...) and commits. `held` is
---       false when the row was no longer RUNNING.
+--       Ends a RUNNING row of the calling session with an upper-case status (DONE, FAILED, ...)
+--       and commits. `held` is false when the row was no longer RUNNING or belongs to another
+--       session: only the holder's session releases a row; other sessions free it only through the
+--       stale rules of acquire_lock.
 --   new_job(kind, args) -> job
 --       acquire_lock plus the job table the functions below use: run_id, kind, tag
 --       ('<KIND>#<run_id>', the LOAD_LOG.LOADED_BY and FETCH_LOG.CONTEXT value), slices, rows,
 --       calls (the run totals), open_step, fetch_source ('LIVE' or 'REPLAY', set by the caller
 --       from vs_settings() before load_batch).
---   end_job(job, status, detail): writes the totals and releases the lock (commits).
+--   end_job(job, status, detail): writes the totals and releases the lock (commits). Raises when
+--       the run had lost its lock (another session abandoned the row), so the run fails instead of
+--       reporting a result whose work may have overlapped another run.
 --   fail(job, err): never returns. Rolls back; unless the run was killed, marks the open step
 --       and the run FAILED with the message and commits; then error(message, 0). job may be nil.
 --   Pattern for an entry:
@@ -69,6 +76,8 @@
 --   commit_step(job): commits and forgets the open step.
 --   add_step_calls(job, step_no, calls): adds measured calls to a step (caller commits).
 --   write_totals(job, slices, rows, calls) / save_totals(job): LOAD_RUN totals (caller commits).
+--   set_remaining(job, column, remaining): REMAINING_BEFORE or REMAINING_AFTER of the run's row
+--       (caller commits).
 --
 -- Settings and quota:
 --   vs_settings() -> {live, fetch_source, max_calls_per_query}: FETCH_MODE and
@@ -89,12 +98,16 @@
 --   single_slice_batches(batch) -> batches: the batch's slices one by one, in order.
 --   batch_query(batch) -> SQL: SELECT * FROM <vs>.<table> WHERE <fixed filter> AND <slicing
 --       filter> AND "REQ_SOURCE" <> 'STORED' (read-through stays on; only fetched rows are kept).
---   explain_check(batch): EXPLAIN VIRTUAL of batch_query must plan exactly the batch's keys (zero
---       calls); otherwise it raises, naming the table, both key lists and `make deploy`.
+--   explain_check(batch, fetch_source): EXPLAIN VIRTUAL of batch_query must plan exactly the
+--       batch's keys (zero calls; only the manifest's slice_keys array counts); otherwise it
+--       raises, naming the table, both key lists and `make deploy`. With fetch_source ('LIVE' or 'REPLAY')
+--       the manifest's fetch_mode must match it, so a FETCH_MODE changed during a run (a replay run
+--       turning live without a quota) raises before the fetch.
 --   load_batch(job, batch, close) -> true, {slices, rows} | false, error_text
---       One transaction: explain_check, the stage must be empty, the fetch into the stage, every
---       staged REQ_SLICE must be a batch key, the core rows of the keys are replaced, LOAD_LOG is
---       merged (IS_FINAL = FINAL_IF_LOADED_NOW, LOADED_BY = job.tag), one FETCH_LOG row per key,
+--       One transaction: explain_check with job.fetch_source, the stage must be empty, the fetch
+--       into the stage, every staged REQ_SLICE must be a batch key, the core rows of the keys are
+--       replaced, LOAD_LOG is merged (IS_FINAL = FINAL_IF_LOADED_NOW, LOADED_BY = job.tag), one
+--       FETCH_LOG row per key,
 --       the keys' LOAD_FAILURES rows and the stage are cleared, close(stats) runs (the caller's
 --       statements, e.g. step_end), COMMIT. A failed fetch is rolled back and returned as false
 --       plus a short error text; a kill and every other failure raise.
@@ -123,6 +136,8 @@ local IDENTIFIER = "^[A-Z][A-Z0-9_]*$"
 local ELLIPSIS = "..."
 local DETAIL_LENGTH = 2000
 local ARGS_LENGTH = 200
+local RUN_STATUS_LENGTH = 20
+local MAX_FAILURES = 999
 local STEP_NAME_LENGTH = 160
 local ERROR_LENGTH = 2000
 local DEFAULT_MAX_CALLS_PER_QUERY = 10
@@ -309,6 +324,16 @@ local function check_kind(kind)
   end
 end
 
+local function check_host_kind(kind)
+  check_kind(kind)
+  if LOCK_KINDS[kind] ~= HOST_RULE then
+    error("run lock: " .. kind .. " is not a host kind; RUN_LOCK takes "
+      .. table.concat(kind_names(HOST_RULE), ", ") .. ". Script kinds take the lock in their own "
+      .. "Lua (acquire_lock): a host session is idle between its statements, so the idle rule "
+      .. "would free the row at once", 0)
+  end
+end
+
 local function running_rows()
   return run_sql([[SELECT R."RUN_ID", R."RUN_KIND", CAST(R."SESSION_ID" AS VARCHAR(20)) AS "SESSION_TEXT",
   R."STARTED_AT",
@@ -393,14 +418,20 @@ function acquire_lock(kind, args)
     kind, PLAIN.META_SCHEMA, LOCK_ATTEMPTS, tostring(problem)))
 end
 
+function acquire_host_lock(kind, args)
+  check_host_kind(kind)
+  return acquire_lock(kind, args)
+end
+
 function release_lock(run_id, status, detail)
-  if type(status) ~= "string" or not status:match(IDENTIFIER) or status == "RUNNING" or #status > 20 then
+  if type(status) ~= "string" or not status:match(IDENTIFIER) or status == "RUNNING"
+      or #status > RUN_STATUS_LENGTH then
     error("release_lock: status must be an upper-case word other than RUNNING, got "
       .. tostring(status), 0)
   end
   local result = run_sql("UPDATE " .. meta_table("LOAD_RUN") .. [[ SET "RUN_STATUS" = :status,
   "ENDED_AT" = ]] .. clock_sql() .. [[, "DETAIL" = :detail
-WHERE "RUN_ID" = :run AND "RUN_STATUS" = 'RUNNING']],
+WHERE "RUN_ID" = :run AND "RUN_STATUS" = 'RUNNING' AND "SESSION_ID" = CURRENT_SESSION]],
     {status = status, detail = sql_value(clip(detail, DETAIL_LENGTH)), run = whole_number(run_id, "run_id")})
   commit()
   return affected(result) == 1
@@ -432,9 +463,19 @@ function save_totals(job)
   write_totals(job, job.slices, job.rows, job.calls)
 end
 
+function set_remaining(job, column, remaining)
+  run_sql("UPDATE " .. meta_table("LOAD_RUN") .. " SET " .. quoted(column)
+    .. ' = :remaining WHERE "RUN_ID" = :run', {remaining = sql_value(remaining), run = job.run_id})
+end
+
 function end_job(job, status, detail)
   save_totals(job)
-  release_lock(job.run_id, status, detail)
+  if not release_lock(job.run_id, status, detail) then
+    error(string.format("%s run %d lost the run lock: its row in %s.LOAD_RUN was no longer RUNNING "
+      .. "in this session when it ended %s (another session abandoned it), so the work may have "
+      .. "overlapped another run. Check %s.LOAD_RUN before trusting this run's result",
+      job.kind, job.run_id, PLAIN.META_SCHEMA, status, PLAIN.META_SCHEMA), 0)
+  end
 end
 
 function step_begin(job, step_no, name, detail)
@@ -655,17 +696,19 @@ local function key_binds(batch, binds)
   return table.concat(names, ", "), binds
 end
 
-function explain_check(batch)
+function explain_check(batch, fetch_source)
   local result = run_sql('SELECT "PUSHDOWN_SQL" FROM (EXPLAIN VIRTUAL ' .. batch_query(batch) .. ")")
   local text = (#result == 1 and nz(result[1].PUSHDOWN_SQL)) or ""
-  local planned = nil
+  local planned, listed, mode = nil, nil, nil
   if text:sub(1, #MANIFEST_OPEN) == MANIFEST_OPEN then
     local digits = text:match('"planned_requests":(%d+)')
     planned = digits and math.tointeger(tonumber(digits))
+    listed = text:match('"slice_keys":(%b[])')
+    mode = text:match('"fetch_mode":"(%a+)"')
   end
-  local matches = planned == #batch.keys
+  local matches = planned == #batch.keys and listed ~= nil
   for _, key in ipairs(batch.keys) do
-    matches = matches and text:find('"' .. key .. '"', 1, true) ~= nil
+    matches = matches and listed:find('"' .. key .. '"', 1, true) ~= nil
   end
   if not matches then
     raise("DRIFT", string.format(
@@ -673,7 +716,13 @@ function explain_check(batch)
         .. "slice key(s): %s. EXPLAIN VIRTUAL plans %s request(s): %s. Run `make deploy` to compile "
         .. "the load plan from the current catalog. No request was sent",
       batch_label(batch), #batch.keys, table.concat(batch.keys, ", "), tostring(planned or "no"),
-      text:match('"slice_keys":(%b[])') or "(no CFBD manifest)"))
+      listed or "(no CFBD manifest)"))
+  end
+  if fetch_source ~= nil and FETCH_SOURCES[mode or ""] ~= fetch_source then
+    raise("MODE", string.format(
+      "%s: the virtual schema would fetch in %s mode, but this run started in %s mode: FETCH_MODE "
+        .. "of %s changed during the run. No request was sent; run again",
+      batch_label(batch), tostring(mode or "an unknown"), string.lower(fetch_source), PLAIN.VS_NAME))
   end
 end
 
@@ -775,7 +824,7 @@ function load_batch(job, batch, close)
   if job.fetch_source == nil then
     error("load_batch: job.fetch_source is not set (use vs_settings().fetch_source)", 0)
   end
-  explain_check(batch)
+  explain_check(batch, job.fetch_source)
   require_empty_stage(batch)
   local fetched, outcome = pquery("INSERT INTO " .. stage_table(batch.table_name) .. " "
     .. batch_query(batch))
@@ -809,7 +858,8 @@ USING (
 ) X
 ON (F."TABLE_NAME" = X."TABLE_NAME" AND F."SLICE_KEY" = X."SLICE_KEY")
 WHEN MATCHED THEN UPDATE SET
-  "FAILURES" = CASE WHEN F."LAST_RUN_ID" = :run THEN F."FAILURES" ELSE LEAST(F."FAILURES" + 1, 999) END,
+  "FAILURES" = CASE WHEN F."LAST_RUN_ID" = :run THEN F."FAILURES" ELSE LEAST(F."FAILURES" + 1, ]]
+    .. number_text(MAX_FAILURES) .. [[) END,
   "LAST_ERROR" = :e, "LAST_RUN_ID" = :run, "LAST_FAILED_AT" = X."FAILED_AT"
 WHEN NOT MATCHED THEN INSERT VALUES (X."TABLE_NAME", X."SLICE_KEY", 1, :e, :run, X."FAILED_AT")]],
     {t = table_name, k = slice_key, e = clip(error_text, ERROR_LENGTH), run = job.run_id})

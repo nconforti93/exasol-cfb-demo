@@ -11,10 +11,15 @@
     make refresh SEASON=y WEEK=w [SEASON_TYPE=postseason] [CONFIRM=yes] [TARGET=local|aws]
     make quota [TARGET=local|aws]
 
-`backfill` runs `EXECUTE SCRIPT CFB_INFRA.BACKFILL(profile, from_season, max_calls)` and `refresh`
-runs `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(season, week, season_type)` as `sys` on the target
-(`vs/host/target.py`). `quota` prints `CFB_META.QUOTA` and the ledger room. `--prefix` selects a
-namespace (for example `PROBE_`), which reads the mock API, never the real key.
+`backfill` runs `EXECUTE SCRIPT CFB_INFRA.BACKFILL(run_profile, from_season, max_calls)` and
+`refresh` runs `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(season, week, season_type)` as `sys` on the
+target (`vs/host/target.py`). `quota` prints `CFB_META.QUOTA` and the ledger room. `--prefix`
+selects a namespace (for example `PROBE_`).
+
+`--max-calls` caps the calls the backfill spends: measured calls in live mode. Every request may
+take up to 4 HTTP attempts (retries on 429 and 5xx), so the script sizes a batch for that worst
+case, and a run can still spend up to 3 calls past `max_calls` (one last slice started with 1 to 3
+calls left, retried to its last attempt). The in-database refresh reserve absorbs that overshoot.
 
 Order of the guards of `backfill` and `refresh`; each stops the command before the next one runs:
 
@@ -35,42 +40,56 @@ Order of the guards of `backfill` and `refresh`; each stops the command before t
       `Ledger.check(plan, month, estimate, /info used calls)` must pass. `MAX_CALLS` defaults to
       `Ledger.room` and is capped at it (`NULL` with `LEDGER=off`). A run that needs calls while the
       room is 0 is refused (exit 1). The verdict is also shown in the preview.
-6. The run happens under the ledger lock, so two runs never spend at the same time.
+6. The run happens under the ledger lock, so two runs never spend at the same time. The
+   session id is read before the script starts.
 
-After the run (live mode), whatever its outcome: the result table is printed, `/info` is read
-again, and the run is appended to the ledger as `<KIND>#<run id>` with the larger of
-`LOAD_RUN.CALLS` and the `/info` delta of used calls (a delta that includes other clients only
-over-counts), the remaining calls before and after, and the first line of an error. When
-neither can be read, the estimate is charged. The exit code is 0 for `DONE`, `STOPPED_BUDGET` and
-`STOPPED_MAX_CALLS`, 3 when the run ended `FAILED` or `DONE_WITH_FAILURES`, a step failed or the
-script raised.
+After the run (live mode with the ledger), whatever its outcome, also after a Ctrl-C or a socket
+timeout: the run is appended to the ledger as `<KIND>#<run id>` with the larger of `LOAD_RUN.CALLS`
+and the `/info` delta of used calls (a delta that includes other clients only over-counts), the
+remaining calls before and after, and the first line of an error. A run that ended normally is read
+on its own connection. Otherwise the CLI opens a new connection: if the run's session is still
+running the script (the CLI stopped waiting), it is killed with `KILL SESSION` and awaited for up
+to `RECOVERY_WAIT_SECONDS`, so the spend is final; then the run's `LOAD_RUN` row is read by session
+id, and `/info`. When neither can be read, the worst case is charged: `max_calls` for a backfill,
+every attempt of the estimate for a refresh. A Ctrl-C is re-raised after the entry is written.
+
+The exit code is 0 for `DONE`, `STOPPED_BUDGET` and `STOPPED_MAX_CALLS`, 3 when the run ended
+`FAILED` or `DONE_WITH_FAILURES`, a step failed or the script raised, and 1 when the script refused
+to start because another loader run holds the run lock (nothing was sent, nothing is recorded).
 
 Exit codes: 0 ok, 1 refused (nothing was sent), 2 error (arguments, target, database, ledger file),
 3 the run itself failed.
 
-`--prefix` namespaces do not touch the ledger: they read `CFBD_API_MOCK`, whose calls cost nothing.
+The ledger is used unless it is off or the virtual schema reads the mock connection
+`CFBD_API_MOCK`, whose calls cost nothing. The virtual schema's `CONNECTION_NAME` decides, not the
+namespace name: a prefixed namespace pointed at the real key is charged like the real one.
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, nullcontext, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from loader.plan import FIRST_SEASON, LAST_SEASON, PROFILES
+from loader.plan import FIRST_SEASON, LAST_SEASON, PROFILES, profile_rank
+from loader.runlock import first_line
+from vs.cfbd_vs.http import MAX_ATTEMPTS
 from vs.cfbd_vs.sqlrender import quote_identifier, string_literal
 from vs.host import ledger, target
 from vs.host.ledger import Ledger, LedgerError, LedgerRefused
-from vs.host.namespace import Namespace, NamespaceError
+from vs.host.namespace import MOCK_CONNECTION, Namespace, NamespaceError
 
 PLAN_NAME = "add-cfb-persistence-refresh"
 CONFIRM_WORD = "yes"
 SOCKET_TIMEOUT_SECONDS = 900
 FETCH_MODE_PROPERTY = "FETCH_MODE"
+CONNECTION_PROPERTY = "CONNECTION_NAME"
 LIVE_MODE = "live"
 BACKFILL = "BACKFILL"
 REFRESH_WEEK = "REFRESH_WEEK"
@@ -81,6 +100,11 @@ FAILED_STEP = "FAILED"
 UNKNOWN_RUN = 0
 MAX_WEEK = 99
 DETAIL_COLUMN = "DETAIL"
+SESSION_SQL = "SELECT CAST(CURRENT_SESSION AS VARCHAR(20))"
+IDLE_SESSION = "IDLE"
+RECOVERY_WAIT_SECONDS = 30.0
+RECOVERY_POLL_SECONDS = 0.5
+_SESSION_ID = re.compile(r"[0-9]{1,20}")
 
 EXIT_OK = 0
 EXIT_REFUSED = 1
@@ -111,6 +135,7 @@ class Connection(Protocol):
 
 
 Connector = Callable[[target.Target], Connection]
+Pause = Callable[[float], None]
 
 
 def connect_deployment(deployment: target.Target) -> Connection:
@@ -200,30 +225,99 @@ class Outcome:
     error: str | None = None
 
 
-def first_line(error: BaseException | str) -> str:
-    message = str(getattr(error, "message", error)).strip()
-    return message.splitlines()[0] if message else type(error).__name__
+@dataclass(frozen=True)
+class Evidence:
+    """What could be read about a finished or abandoned run, and how it was obtained."""
+
+    row: RunRow | None
+    after: Quota | None
+    notes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _Context:
+    """Everything a command needs besides its connection; the seams the tests replace."""
+
+    namespace: Namespace
+    deployment: target.Target
+    book: Ledger
+    confirm: str
+    clock: Callable[[], datetime]
+    connector: Connector
+    pause: Pause
+
+
+class _Reader:
+    """The reads of one connection: statements, the quota, a run row and a session's status."""
+
+    def __init__(self, connection: Connection, namespace: Namespace) -> None:
+        self._connection = connection
+        self._namespace = namespace
+
+    def statement(self, sql: str) -> Statement:
+        try:
+            return self._connection.execute(sql)
+        except Exception as error:
+            raise LoaderError(f"Exasol rejected a query: {first_line(error)}") from None
+
+    def query(self, sql: str) -> list[tuple[Any, ...]]:
+        return [tuple(row) for row in self.statement(sql).fetchall()]
+
+    def quota(self) -> Quota | None:
+        statement = self.statement(f"SELECT * FROM {_meta(self._namespace, 'QUOTA')}")
+        rows = statement.fetchall()
+        if not rows:
+            return None
+        return Quota(dict(zip(statement.column_names(), rows[0], strict=True)))
+
+    def try_quota(self) -> Quota | None:
+        try:
+            return self.quota()
+        except LoaderError:
+            return None
+
+    def run_row(self, where: str) -> RunRow | None:
+        try:
+            rows = self.query(
+                f'SELECT "RUN_ID", "CALLS", "RUN_STATUS" FROM {_meta(self._namespace, "LOAD_RUN")} '
+                f"WHERE {where}"
+            )
+        except LoaderError:
+            return None
+        if not rows:
+            return None
+        found, calls, status = rows[0]
+        return RunRow(int(found), None if calls is None else int(calls), status)
+
+    def session_status(self, session: str) -> str | None:
+        rows = self.query(
+            f'SELECT "STATUS" FROM "SYS"."EXA_ALL_SESSIONS" WHERE "SESSION_ID" = {session}'
+        )
+        return str(rows[0][0]) if rows and rows[0][0] is not None else None
+
+
+def _meta(namespace: Namespace, name: str) -> str:
+    return f"{quote_identifier(namespace.meta_schema)}.{quote_identifier(name)}"
+
+
+def _by_session(session: str) -> str:
+    return f'"SESSION_ID" = {session} ORDER BY "RUN_ID" DESC LIMIT 1'
 
 
 class _Session:
-    def __init__(
-        self,
-        connection: Connection,
-        namespace: Namespace,
-        deployment: target.Target,
-        book: Ledger,
-        confirm: str,
-        clock: Callable[[], datetime],
-    ) -> None:
+    def __init__(self, connection: Connection, context: _Context) -> None:
         self._connection = connection
-        self._namespace = namespace
-        self._deployment = deployment
-        self._book = book
-        self._confirm = confirm
-        self._clock = clock
+        self._reader = _Reader(connection, context.namespace)
+        self._context = context
+        self._namespace = context.namespace
+        self._deployment = context.deployment
+        self._book = context.book
+        self._confirm = context.confirm
+        self._clock = context.clock
+        self._properties: dict[str, str] | None = None
 
     def quota(self) -> int:
-        quota = self._read_quota()
+        quota = self._reader.quota()
         if quota is None:
             raise LoaderError(f"{self._meta('QUOTA')} has no row: /info could not be read")
         print("\n".join(["quota (CFB_META.QUOTA):", *quota.lines()]))
@@ -273,39 +367,109 @@ class _Session:
             return self._run(job, spend, quota)
 
     def _run(self, job: Job, spend: Spend, before: Quota | None) -> int:
-        outcome = self._execute(job.statement(spend.limit))
+        charged = before if self._uses_ledger() else None
+        session = None if charged is None else self._session_id()
+        try:
+            outcome = self._execute(job.statement(spend.limit))
+        except BaseException as interrupt:
+            if charged is not None and session is not None:
+                self._record_interrupted(job, spend, charged, session, interrupt)
+            raise
+        if outcome.error is not None:
+            if outcome.error.startswith(f"{job.kind} refused:"):
+                raise Refused(f"{outcome.error}; nothing was sent")
+            print(f"script failed: {outcome.error}", file=sys.stderr)
         print("\n".join(_outcome_lines(job.kind, outcome)))
         code = EXIT_FAILED if _failed(job.kind, outcome) else EXIT_OK
-        if before is not None and self._uses_ledger():
-            self._record(job, spend, before, outcome)
+        if charged is not None and session is not None:
+            self._record(job, spend, charged, outcome, session)
         return code
 
-    def _record(self, job: Job, spend: Spend, before: Quota, outcome: Outcome) -> None:
-        run_id = _run_id(outcome)
-        row = self._run_row(run_id)
-        after = self._try_quota()
+    def _session_id(self) -> str:
+        rows = self._reader.query(SESSION_SQL)
+        text = str(rows[0][0]) if rows else ""
+        if not _SESSION_ID.fullmatch(text):
+            raise LoaderError(f"cannot identify the session: CURRENT_SESSION returned {text!r}")
+        return text
+
+    def _record_interrupted(
+        self, job: Job, spend: Spend, before: Quota, session: str, interrupt: BaseException
+    ) -> None:
+        message = f"interrupted ({type(interrupt).__name__})"
+        print(f"{job.kind} {message}: recording what the run spent", file=sys.stderr)
+        try:
+            self._record(job, spend, before, Outcome((), (), message), session)
+        except Exception as error:
+            print(f"ledger: the interrupted run could not be recorded: {error}", file=sys.stderr)
+
+    def _record(
+        self, job: Job, spend: Spend, before: Quota, outcome: Outcome, session: str
+    ) -> None:
+        if outcome.error is None:
+            run_id = _run_id(outcome)
+            where = f'"RUN_ID" = {run_id}' if run_id != UNKNOWN_RUN else _by_session(session)
+            evidence = Evidence(self._reader.run_row(where), self._reader.try_quota())
+        else:
+            evidence = self._recover(session)
+        for line in evidence.notes:
+            print(f"ledger: {line}")
+        row, after = evidence.row, evidence.after
         delta = None if after is None else max(0, after.used_calls - before.used_calls)
         known = [n for n in (row.calls if row else None, delta) if n is not None]
-        calls = max(known) if known else spend.expected
         note = (
             f"script reports {row.calls if row and row.calls is not None else '?'}, "
             f"/info delta {'?' if delta is None else delta}"
         )
-        if not known:
-            note += "; charged the estimate"
+        if known:
+            calls = max(known)
+        else:
+            calls, worst = _worst_case(job, spend)
+            note += f"; {worst}"
+        run_id = row.run_id if row else _run_id(outcome)
         self._book.record_run(
             PLAN_NAME,
             self._deployment.name,
             kind=job.kind,
-            run_id=row.run_id if row else run_id,
+            run_id=run_id,
             calls=calls,
             remaining_before=before.remaining_calls,
             remaining_after=None if after is None else after.remaining_calls,
             error=outcome.error,
             clock=self._clock,
         )
-        print(
-            f"ledger: recorded {calls} calls as {job.kind}#{row.run_id if row else run_id} ({note})"
+        print(f"ledger: recorded {calls} calls as {job.kind}#{run_id} ({note})")
+
+    def _recover(self, session: str) -> Evidence:
+        try:
+            fresh = self._context.connector(self._deployment)
+        except Exception as error:
+            return Evidence(
+                None, None, (f"no new connection to read the run: {first_line(error)}",)
+            )
+        reader = _Reader(fresh, self._namespace)
+        try:
+            notes = self._stop_session(reader, session)
+            return Evidence(reader.run_row(_by_session(session)), reader.try_quota(), notes)
+        finally:
+            with suppress(Exception):
+                fresh.close()
+
+    def _stop_session(self, reader: _Reader, session: str) -> tuple[str, ...]:
+        try:
+            status = reader.session_status(session)
+            if status is None or status == IDLE_SESSION:
+                return ()
+            with suppress(LoaderError):
+                reader.statement(f"KILL SESSION {session}")
+            for _ in range(round(RECOVERY_WAIT_SECONDS / RECOVERY_POLL_SECONDS)):
+                if reader.session_status(session) is None:
+                    return (f"session {session} was still running the script: killed it",)
+                self._context.pause(RECOVERY_POLL_SECONDS)
+        except LoaderError as error:
+            return (f"could not stop session {session}: {error}",)
+        return (
+            f"session {session} was still running the script: killed it, but it did not end "
+            f"within {RECOVERY_WAIT_SECONDS:g} s, so the /info delta may miss its last requests",
         )
 
     def _spend(self, job: Job, quota: Quota | None) -> Spend:
@@ -356,9 +520,10 @@ class _Session:
     def _ledger_state(self) -> list[str]:
         if not self._book.enabled:
             return [f"ledger: off ({ledger.OFF_VARIABLE}=off); no checks, no records"]
-        if not self._namespace.is_real:
+        if self._reads_mock():
             return [
-                f"ledger: not used for namespace {self._namespace.prefix} (it reads the mock API)"
+                f"ledger: not used: {self._namespace.vs_name} reads the mock connection "
+                f"{MOCK_CONNECTION} (its calls cost nothing)"
             ]
         return []
 
@@ -373,7 +538,22 @@ class _Session:
         return [f"ledger room now: {room} ({caps}{config.months.get(month, 'none')})"]
 
     def _uses_ledger(self) -> bool:
-        return self._book.enabled and self._namespace.is_real
+        return self._book.enabled and not self._reads_mock()
+
+    def _reads_mock(self) -> bool:
+        return self._vs_properties().get(CONNECTION_PROPERTY, "").upper() == MOCK_CONNECTION
+
+    def _vs_properties(self) -> dict[str, str]:
+        if self._properties is None:
+            rows = self._reader.query(
+                'SELECT "PROPERTY_NAME", "PROPERTY_VALUE" '
+                'FROM "SYS"."EXA_ALL_VIRTUAL_SCHEMA_PROPERTIES" '
+                f'WHERE "SCHEMA_NAME" = {string_literal(self._namespace.vs_name)}'
+            )
+            self._properties = {
+                str(name).upper(): "" if value is None else str(value) for name, value in rows
+            }
+        return self._properties
 
     def _exclusive(self) -> AbstractContextManager[None]:
         return self._book.exclusive() if self._uses_ledger() else nullcontext()
@@ -381,7 +561,7 @@ class _Session:
     def _preview_quota(self, live: bool) -> Quota | None:
         if not live:
             return None
-        quota = self._read_quota()
+        quota = self._reader.quota()
         if quota is None:
             raise LoaderError(
                 f"cannot read the quota: {self._meta('QUOTA')} has no row (/info unreadable); "
@@ -391,13 +571,8 @@ class _Session:
         return quota
 
     def _is_live(self) -> bool:
-        rows = self._query(
-            "SELECT PROPERTY_VALUE FROM EXA_ALL_VIRTUAL_SCHEMA_PROPERTIES "
-            f"WHERE SCHEMA_NAME = {string_literal(self._namespace.vs_name)} "
-            f"AND PROPERTY_NAME = {string_literal(FETCH_MODE_PROPERTY)}"
-        )
-        mode = str(rows[0][0]).lower() if rows and rows[0][0] else LIVE_MODE
-        return mode == LIVE_MODE
+        mode = self._vs_properties().get(FETCH_MODE_PROPERTY) or LIVE_MODE
+        return mode.lower() == LIVE_MODE
 
     def _require_script(self, name: str) -> None:
         rows = self._query(
@@ -413,7 +588,7 @@ class _Session:
             )
 
     def _backfill_estimate(self, profile: str, from_season: int | None) -> Estimate:
-        rank = PROFILES.index(profile) + 1
+        rank = profile_rank(profile)
         season = (
             "" if from_season is None else f' AND ("SEASON" IS NULL OR "SEASON" <= {from_season})'
         )
@@ -448,59 +623,20 @@ class _Session:
         )
         return _estimate(candidates, blocked)
 
-    def _read_quota(self) -> Quota | None:
-        statement = self._execute_sql(f"SELECT * FROM {self._meta('QUOTA')}")
-        rows = statement.fetchall()
-        if not rows:
-            return None
-        return Quota(dict(zip(statement.column_names(), rows[0], strict=True)))
-
-    def _try_quota(self) -> Quota | None:
-        try:
-            return self._read_quota()
-        except LoaderError:
-            return None
-
-    def _run_row(self, run_id: int) -> RunRow | None:
-        where = (
-            f'"RUN_ID" = {run_id}'
-            if run_id != UNKNOWN_RUN
-            else '"SESSION_ID" = CURRENT_SESSION ORDER BY "RUN_ID" DESC LIMIT 1'
-        )
-        try:
-            rows = self._query(
-                f'SELECT "RUN_ID", "CALLS", "RUN_STATUS" FROM {self._meta("LOAD_RUN")} '
-                f"WHERE {where}"
-            )
-        except LoaderError:
-            return None
-        if not rows:
-            return None
-        found, calls, status = rows[0]
-        return RunRow(int(found), None if calls is None else int(calls), status)
-
     def _execute(self, sql: str) -> Outcome:
         try:
             statement = self._connection.execute(sql)
             columns = tuple(statement.column_names())
             rows = tuple(tuple(row) for row in statement.fetchall())
         except Exception as error:
-            message = first_line(error)
-            print(f"script failed: {message}", file=sys.stderr)
-            return Outcome((), (), message)
+            return Outcome((), (), first_line(error))
         return Outcome(columns, rows)
 
     def _query(self, sql: str) -> list[tuple[Any, ...]]:
-        return [tuple(row) for row in self._execute_sql(sql).fetchall()]
-
-    def _execute_sql(self, sql: str) -> Statement:
-        try:
-            return self._connection.execute(sql)
-        except Exception as error:
-            raise LoaderError(f"Exasol rejected a query: {first_line(error)}") from None
+        return self._reader.query(sql)
 
     def _meta(self, name: str) -> str:
-        return f"{quote_identifier(self._namespace.meta_schema)}.{quote_identifier(name)}"
+        return _meta(self._namespace, name)
 
 
 def _estimate(counts: Sequence[Sequence[Any]], blocked: Sequence[Sequence[Any]]) -> Estimate:
@@ -514,6 +650,20 @@ def _estimate(counts: Sequence[Sequence[Any]], blocked: Sequence[Sequence[Any]])
 
 def _literal(value: int | None) -> str:
     return "NULL" if value is None else str(value)
+
+
+def _worst_case(job: Job, spend: Spend) -> tuple[int, str]:
+    """What a run whose spend cannot be read is charged: the most it could have spent."""
+    if job.limit_applies and spend.limit is not None:
+        return (
+            spend.limit,
+            f"nothing could be read, charged the script's cap max_calls {spend.limit}",
+        )
+    calls = spend.expected * MAX_ATTEMPTS
+    return calls, (
+        f"nothing could be read, charged every attempt of the estimate "
+        f"({spend.expected} x {MAX_ATTEMPTS})"
+    )
 
 
 def _run_id(outcome: Outcome) -> int:
@@ -602,7 +752,12 @@ def _parser() -> argparse.ArgumentParser:
     backfill = commands.add_parser("backfill", help="run CFB_INFRA.BACKFILL")
     backfill.add_argument("--profile", choices=PROFILES, default=PROFILES[0])
     backfill.add_argument("--from-season", type=_season, default=None, help="newest season to load")
-    backfill.add_argument("--max-calls", type=_count, default=None, help="most calls; 0 = dry run")
+    backfill.add_argument(
+        "--max-calls",
+        type=_count,
+        default=None,
+        help="most calls (measured; a last slice may retry up to 3 calls past it); 0 = dry run",
+    )
     refresh = commands.add_parser("refresh", help="run CFB_INFRA.REFRESH_WEEK")
     refresh.add_argument("--season", type=_season, required=True)
     refresh.add_argument("--week", type=_week, required=True)
@@ -618,6 +773,7 @@ def main(
     resolve: Callable[..., target.Target] = target.resolve,
     book: Ledger | None = None,
     clock: Callable[[], datetime] = utc_now,
+    pause: Pause = time.sleep,
 ) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -628,15 +784,16 @@ def main(
         print(f"loader failed: {error}", file=sys.stderr)
         return EXIT_ERROR
     try:
-        session = _Session(
-            connection,
+        context = _Context(
             namespace,
             deployment,
             Ledger.from_environment() if book is None else book,
             args.confirm,
             clock,
+            connector,
+            pause,
         )
-        return _dispatch(session, args)
+        return _dispatch(_Session(connection, context), args)
     except Refused as error:
         print(f"refused: {error}", file=sys.stderr)
         return EXIT_REFUSED
@@ -647,7 +804,8 @@ def main(
         print(f"loader failed: {error}", file=sys.stderr)
         return EXIT_ERROR
     finally:
-        connection.close()
+        with suppress(Exception):
+            connection.close()
 
 
 def _dispatch(session: _Session, args: argparse.Namespace) -> int:

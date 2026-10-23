@@ -36,23 +36,23 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 - [x] 5.2 Snapshot and restore `loader/snapshot.py` + `scripts/snapshot.py`, with the make targets `snapshot`, [expert]
 
 ## Group H (sequential)
-- [ ] 7.3 The rest of `tests/it/test_run_logs_it.py`
-- [ ] 7.4 Quality gate:
+- [x] 7.3 The rest of `tests/it/test_run_logs_it.py`
+- [x] 7.4 Quality gate:
 
 ## Group I
-- [ ] 8.1 `docs/user-guide.md` § "Persisting and refreshing":
-- [ ] 8.2 `specs/architecture.md`:
-- [ ] 8.3 `docs/roadmap.md`:
-- [ ] 8.4 `CLAUDE.md` dense bullets:
+- [x] 8.1 `docs/user-guide.md` § "Persisting and refreshing":
+- [x] 8.2 `specs/architecture.md`:
+- [x] 8.3 `docs/roadmap.md`:
+- [x] 8.4 `CLAUDE.md` dense bullets:
 
 ## Group J (sequential, gated)
-- [ ] 9.0 Gates and AWS smoke (0 CFBD calls):
-- [ ] 9.1 Estimate (0 calls)
-- [ ] 9.2 Resumable live backfill:
-- [ ] 9.3 Idempotence
-- [ ] 9.4 Live refresh
-- [ ] 9.5 Snapshot AWS → restore local (0 calls):
-- [ ] 9.6 Live documentation and reset:
+- [x] 9.0 Gates and AWS smoke (0 CFBD calls):
+- [x] 9.1 Estimate (0 calls)
+- [x] 9.2 Resumable live backfill:
+- [x] 9.3 Idempotence
+- [x] 9.4 Live refresh
+- [x] 9.5 Snapshot AWS → restore local (0 calls):
+- [x] 9.6 Live documentation and reset:
 
 ## Cross-plan items (from Phase 4 H1, 2026-10-22)
 - [x] H1 In task 4.2, the lock in `loadlib.lua` must support run kinds `SIMULATE` (stale when the session is gone, is the caller's own session, or is idle, the same as BACKFILL and REFRESH_WEEK) and `DEPLOY` (for `make sim`, `make calibrate` and the model deploy; stale only when the session is gone or is the caller's own session). The lock functions must be callable from other bundles: the Phase 4 Lua and the Phase 3 model deploy. The host-side lock goes in task 5.2. See `specs/_plans/add-cfb-score-engine/` (main tree) for decisions [29]–[43] and task 1.10.
@@ -60,7 +60,8 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 - [ ] P6-c (information only) Phase 6 task 1.9 will move the guard logic from `scripts/loader_cli.py` (estimate, quota, ledger check and record) into `loader/guard.py` after this plan merges. Keep that logic cohesive so it extracts cleanly.
 
 ## Review and Verification
-- [ ] R.1 Code review
-- [ ] V.1 Checklist
-- [ ] V.2 Scenario coverage audit
-- [ ] V.3 Manual testing and verification-report.md
+- [x] R.1 Code review
+- [x] F.1 Review fixes: M1 interrupted-run ledger entry, M2 LOAD_LOG required with CFB_CORE, minors m1-m7, m8 (decision: stop after 2 consecutive failed batches), m10-m13 [expert]
+- [x] V.1 Checklist
+- [x] V.2 Scenario coverage audit
+- [x] V.3 Manual testing and verification-report.md

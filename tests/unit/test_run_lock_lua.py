@@ -9,12 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import lupa.lua54 as LUA
 import pytest
 
 from loader import bundle
 from vs.host.namespace import Namespace
-
-LUA = pytest.importorskip("lupa.lua54")
 
 TEST = Namespace("TEST_")
 STUBS = r"""
@@ -104,6 +103,15 @@ def test_release_without_a_detail_writes_null() -> None:
     script.call("release", "FAILED", 7, None)
     detail = script.bound('SET "RUN_STATUS" = :status', "detail")
     assert str(detail) == "null"
+
+
+@pytest.mark.parametrize("kind", ["BACKFILL", "REFRESH_WEEK", "SIMULATE"])
+def test_acquire_refuses_a_script_kind_and_sends_nothing(kind: str) -> None:
+    """Review m6: a host session is idle between statements, so the idle rule frees it at once."""
+    script = RunLockScript()
+    message = script.call("acquire", kind, None, "x")
+    assert f"run lock: {kind} is not a host kind" in message
+    assert script.statements() == []
 
 
 def test_an_unknown_action_raises_naming_it_and_sends_nothing() -> None:

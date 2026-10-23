@@ -25,6 +25,7 @@ from tests.it import step_scripts
 from tests.it.backfill_helpers import (
     GAMES,
     GAMES_PATH,
+    IDLE,
     RATINGS,
     SERVER_ERROR,
     WAIT_SECONDS,
@@ -33,6 +34,7 @@ from tests.it.backfill_helpers import (
     games_requests,
     load_log,
     ratings_key,
+    session_status,
     wait_for,
 )
 from tests.it.harness import Harness, Mock
@@ -452,6 +454,45 @@ def test_progress_visible_to_other_sessions(harness: Harness) -> None:
     assert not isinstance(outcome[0], BaseException), outcome[0]
     assert [step["STEP_STATUS"] for step in harness.steps()] == ["DONE"] * 4
     assert float(outcome[0][-1][4]) >= step_scripts.SLEEP_SECONDS
+
+
+def test_a_killed_refresh_is_abandoned_by_the_next_one(harness: Harness) -> None:
+    """Review m17: a KILL STATEMENT in REFRESH_WEEK logs nothing (R0003); the next run frees it."""
+    harness.deploy_plan("refresh-step-sleep", {"now_override": NOW})
+    store_calendar(harness, 2020)
+    outcome: list[Any] = []
+
+    def running_step() -> bool:
+        return any(s["STEP_NO"] == 100 and s["STEP_STATUS"] == "RUNNING" for s in harness.steps())
+
+    with harness.owner_session() as session:
+        killed_session = int(session.execute("SELECT CURRENT_SESSION").fetchall()[0][0])
+        sql = script_call_sql(f"{harness.infra}.REFRESH_WEEK", 2020, 7, "regular")
+
+        def run() -> None:
+            try:
+                outcome.append(session.execute(sql).fetchall())
+            except BaseException as error:
+                outcome.append(error)
+
+        worker = threading.Thread(target=run)
+        worker.start()
+        try:
+            wait_for(running_step, "the registered step as RUNNING")
+            harness.kill_statement(killed_session)
+        finally:
+            worker.join(WAIT_SECONDS)
+        assert isinstance(outcome[0], pyexasol.ExaError), outcome[0]
+        [killed] = harness.runs()
+        assert (killed["RUN_KIND"], killed["RUN_STATUS"]) == ("REFRESH_WEEK", "RUNNING")
+        wait_for(lambda: session_status(harness, killed_session) == IDLE, "the idle session")
+        harness.refresh(2020, 7, "regular")
+    runs = {run["RUN_ID"]: run for run in harness.runs()}
+    assert runs[killed["RUN_ID"]]["RUN_STATUS"] == "ABANDONED"
+    assert "is idle" in runs[killed["RUN_ID"]]["DETAIL"]
+    killed_steps = harness.steps(killed["RUN_ID"])
+    assert [(s["STEP_NO"], s["STEP_STATUS"]) for s in killed_steps][-1] == (100, "FAILED")
+    assert [run["RUN_STATUS"] for run in runs.values()] == ["ABANDONED", "DONE"]
 
 
 def test_replay_refresh_zero_calls(harness: Harness, mock: Mock) -> None:

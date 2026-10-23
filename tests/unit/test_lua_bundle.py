@@ -3,6 +3,7 @@
 import re
 from pathlib import Path
 
+import lupa.lua54 as lupa
 import pytest
 
 from loader import bundle
@@ -14,7 +15,37 @@ LOADLIB = "-- library\nfunction helper()\n  return 1\nend\n"
 BACKFILL = "-- backfill entry\nlocal rows = helper()\nexit({{rows}}, 'A DECIMAL(9,0)')\n"
 REFRESH = "-- refresh entry\nlocal rows = helper()\nexit({{rows}}, 'B DECIMAL(9,0)')\n"
 RUN_LOCK = "-- run lock entry\nlocal rows = helper()\nexit({{rows}}, 'C DECIMAL(9,0)')\n"
-LOADER_LUA_DIR = Path(__file__).resolve().parents[2] / "loader" / "lua"
+ROOT = Path(__file__).resolve().parents[2]
+LOADER_LUA_DIR = ROOT / "loader" / "lua"
+RESERVED = frozenset((ROOT / "vs" / "gen" / "exasol_reserved_keywords.txt").read_text().split())
+RESULT_COLUMN = re.compile(
+    r'(?:(?<=")|(?<=, ))([A-Z][A-Z0-9_]*) (?:DECIMAL|VARCHAR|DOUBLE|BOOLEAN|DATE|TIMESTAMP)\b'
+)
+EXPECTED_RESULT_COLUMNS = {
+    "BACKFILL": [
+        "RUN_ID",
+        "TABLE_NAME",
+        "SLICES",
+        "ROWS_LOADED",
+        "CALLS",
+        "FAILED_SLICES",
+        "RUN_STATUS",
+        "CALLS_NEEDED",
+        "DETAIL",
+    ],
+    "REFRESH_WEEK": [
+        "RUN_ID",
+        "STEP_NO",
+        "STEP_NAME",
+        "STEP_STATUS",
+        "SECONDS",
+        "SLICES",
+        "ROWS_LOADED",
+        "CALLS",
+        "DETAIL",
+    ],
+    "RUN_LOCK": ["RUN_ID", "HELD"],
+}
 
 
 def write_sources(directory: Path, **overrides: str) -> Path:
@@ -41,7 +72,7 @@ def script(name: str) -> bundle.LuaScript:
 
 def test_the_three_scripts_have_the_planned_signatures_and_files() -> None:
     assert [s.name for s in bundle.SCRIPTS] == ["BACKFILL", "REFRESH_WEEK", "RUN_LOCK"]
-    assert script("BACKFILL").parameters == ("profile", "from_season", "max_calls")
+    assert script("BACKFILL").parameters == ("run_profile", "from_season", "max_calls")
     assert script("REFRESH_WEEK").parameters == ("season", "week", "season_type")
     assert script("RUN_LOCK").parameters == ("lock_action", "lock_word", "lock_run", "lock_text")
     assert script("BACKFILL").file_name == "loader_backfill.sql"
@@ -53,7 +84,7 @@ def test_the_three_scripts_have_the_planned_signatures_and_files() -> None:
 def test_the_statement_has_the_lua_script_header_and_terminator(lua_dir: Path) -> None:
     text = bundle.build_script(script("BACKFILL"), REAL, lua_dir)
     assert text.startswith(
-        "CREATE OR REPLACE LUA SCRIPT CFB_INFRA.BACKFILL(profile, from_season, max_calls) "
+        "CREATE OR REPLACE LUA SCRIPT CFB_INFRA.BACKFILL(run_profile, from_season, max_calls) "
         "RETURNS TABLE AS\n"
     )
     assert text.endswith("\n/")
@@ -125,7 +156,6 @@ def test_every_namespace_name_is_a_double_quoted_constant(lua_dir: Path) -> None
 
 
 def test_the_constants_evaluate_to_quoted_and_plain_names(lua_dir: Path) -> None:
-    lupa = pytest.importorskip("lupa.lua54")
     runtime = lupa.LuaRuntime()
     body = bundle.script_body(bundle.build_script(script("BACKFILL"), TEST, lua_dir))
     constants = body[: body.index("function helper()")]
@@ -235,7 +265,6 @@ def test_a_namespace_name_that_is_not_a_plain_identifier_is_rejected(lua_dir: Pa
 
 
 def test_the_bundled_lua_compiles(lua_dir: Path) -> None:
-    lupa = pytest.importorskip("lupa.lua54")
     runtime = lupa.LuaRuntime()
     for s in bundle.SCRIPTS:
         body = bundle.script_body(bundle.build_script(s, TEST, lua_dir)).removesuffix("\n/")
@@ -244,7 +273,6 @@ def test_the_bundled_lua_compiles(lua_dir: Path) -> None:
 
 
 def test_a_lua_syntax_error_does_not_compile(tmp_path: Path) -> None:
-    lupa = pytest.importorskip("lupa.lua54")
     broken = write_sources(tmp_path / "lua", **{"backfill.lua": "local x = (\n"})
     body = bundle.script_body(bundle.build_script(script("BACKFILL"), TEST, broken))
     assert not callable(lupa.LuaRuntime().eval("load")(body.removesuffix("\n/")))
@@ -289,3 +317,25 @@ def test_the_real_loader_sources_pass_the_source_checks() -> None:
         p for source in sources for p in bundle.check_source(source.name, source.read_text("utf-8"))
     ]
     assert problems == []
+
+
+def result_columns(script: bundle.LuaScript) -> list[str]:
+    """The column names of every `exit()` column list the script's entry file declares."""
+    return RESULT_COLUMN.findall((LOADER_LUA_DIR / script.entry_file).read_text("utf-8"))
+
+
+def test_no_script_parameter_is_a_reserved_word() -> None:
+    reserved = [
+        f"{s.name}({parameter})"
+        for s in bundle.SCRIPTS
+        for parameter in s.parameters
+        if parameter.upper() in RESERVED
+    ]
+    assert reserved == []
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED_RESULT_COLUMNS))
+def test_no_result_column_is_a_reserved_word(name: str) -> None:
+    columns = result_columns(script(name))
+    assert columns == EXPECTED_RESULT_COLUMNS[name]
+    assert [column for column in columns if column in RESERVED] == []

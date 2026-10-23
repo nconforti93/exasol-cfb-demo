@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from loader.runlock import RunLockError, RunLockRefused
+from loader.runlock import HeldLock, RunLockError, RunLockRefused
 from model import deploy as model_deploy
 from model.deploy import ModelLintError, ModelOptions, deploy_model, prepare
 from tests.unit.test_sqlobjects_deploy import FakeConnection as DeployConnection
@@ -88,6 +88,24 @@ def test_the_lock_is_taken_first_and_released_done_with_the_summary_last() -> No
         "'TEST_CFB_MODEL: 1 tables, 2 views, 1 functions; dropped 0; comments 100 %')"
     )
     assert report.run_id == 42
+
+
+def test_under_a_lock_the_caller_holds_no_lock_statement_is_sent() -> None:
+    """`make deploy` passes its own DEPLOY lock, so its three steps are one run ([35])."""
+    connection = connection_for(FIXTURES / "valid")
+    held = HeldLock(31, "DEPLOY")
+    report = deploy_model(connection, NAMESPACE, valid_options(), lock=held)
+    assert not [
+        s
+        for s in connection.statements
+        if s.startswith(("SELECT COUNT(*) FROM EXA_ALL_SCRIPTS", f"EXECUTE SCRIPT {SCRIPT}"))
+    ]
+    assert connection.statements[-1] == "COMMIT"
+    assert report.run_id == 31
+    assert held.detail == (
+        "TEST_CFB_MODEL: 1 tables, 2 views, 1 functions; dropped 0; comments 100 %"
+    )
+    assert report.lines[-1] == "model deployed as DEPLOY run 31; 0 CFBD calls"
 
 
 def test_the_transaction_starts_only_after_the_lock_is_held() -> None:

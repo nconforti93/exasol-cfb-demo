@@ -9,6 +9,8 @@ integration harness):
 3. Take the loader's run lock as kind `DEPLOY` (`loader/runlock.py`): it refuses while a loader run,
    a snapshot or a restore holds the lock (`RunLockRefused`), and it needs the loader deployed
    (`make deploy`). The lock is taken before the transaction because acquiring it commits.
+   `make deploy` passes the lock it already holds instead, so its three steps are one `DEPLOY`
+   run ([35]).
 4. `sqlobjects.deploy`: one transaction, `CREATE SCHEMA`, orphans dropped, objects in file order,
    the refresh step script (`CFB_INFRA.REFRESH_MODEL`, when it exists), a compile pass over every
    view, comment read-back, `COMMIT`; any failure rolls everything back.
@@ -26,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from loader.runlock import run_lock
+from loader.runlock import HeldLock, run_lock
 from vs.host import sqlobjects
 from vs.host.deploy import DeployError
 from vs.host.namespace import Namespace
@@ -100,18 +102,33 @@ def prepare(namespace: Namespace, directory: Path = MODEL_DIR) -> list[SqlObject
 
 
 def deploy_model(
-    connection: Any, namespace: Namespace, options: ModelOptions | None = None
+    connection: Any,
+    namespace: Namespace,
+    options: ModelOptions | None = None,
+    *,
+    lock: HeldLock | None = None,
 ) -> ModelReport:
-    """Lint, render and deploy the model into `namespace.model_schema` under the DEPLOY lock."""
+    """Lint, render and deploy the model into `namespace.model_schema` under the DEPLOY lock.
+
+    `lock` is a `DEPLOY` lock the caller already holds in this session (`make deploy` deploys the
+    virtual schema, the loader and the model under one lock, decision [35]); without it the model
+    takes the lock itself, as `options.lock_args`.
+    """
     options = options or ModelOptions()
     objects = prepare(namespace, options.directory)
     step = options.step_script(namespace)
     extra = [step] if step else []
-    with run_lock(connection, namespace, LOCK_KIND, options.lock_args) as lock:
+    if lock is not None:
         report = sqlobjects.deploy(
             connection, namespace.model_schema, objects, extra_statements=extra, lock=lock
         )
         run_id = lock.run_id
+    else:
+        with run_lock(connection, namespace, LOCK_KIND, options.lock_args) as held:
+            report = sqlobjects.deploy(
+                connection, namespace.model_schema, objects, extra_statements=extra, lock=held
+            )
+            run_id = held.run_id
     notice = (
         f"Lua script {namespace.infra_schema}.REFRESH_MODEL: replaced"
         if step

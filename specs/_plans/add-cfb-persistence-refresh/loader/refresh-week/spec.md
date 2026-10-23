@@ -22,7 +22,7 @@ After a game week, one SQL call brings the stored data up to date and drives eve
   1. Step 1, `CHECK`:
      - the arguments are valid;
      - `week` with `season_type` is a week of the stored calendar of `season`;
-     - no other loader run is active, and no planned table has orphans;
+     - no other loader run is active, and no table to be fetched (a table with due slices) has orphans. A planned table with orphans but nothing due does not stop the refresh;
      - the calls the fetch needs fit the budget.
   2. Steps 2–99, `FETCH <table>`: one step per fetched table.
   3. Steps 100 and up: the registered steps from `refresh_steps` in the load plan, by step number. Each is called as `EXECUTE SCRIPT <script>(run_id, season, week, season_type)`. This plan registers none; Phases 3–5 add theirs.

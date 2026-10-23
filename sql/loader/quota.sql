@@ -2,7 +2,7 @@
 -- loader/quota). It reads /info through the virtual schema exactly once per query; /info costs no
 -- call. If /info returns no row, the view has no row: the scripts treat that as "quota unreadable".
 -- USED_CALLS counts every call of the key this month (other tools and the shared pool too), so
--- PROJECT_BUDGET caps the key's whole monthly use, for every SQL client (review M1):
+-- PROJECT_BUDGET caps the key's whole monthly use, for every SQL client:
 --   PROJECT_BUDGET     = LEAST(MONTHLY_LIMIT, MONTHLY_CALL_BUDGET)
 --   REFRESH_SPENDABLE  = GREATEST(0, LEAST(REMAINING_CALLS, PROJECT_BUDGET - USED_CALLS))
 --   BACKFILL_SPENDABLE = GREATEST(0, REFRESH_SPENDABLE - REFRESH_RESERVE)

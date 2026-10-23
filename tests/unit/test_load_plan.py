@@ -576,6 +576,7 @@ def test_invalid_config_values_are_rejected(key: str, value: Any) -> None:
         ("schemas", []),
         ("meta_tables", ["LOAD_RUN"]),
         ("meta_tables", "LOAD_LOG"),
+        ("meta_tables", ["FETCH_LOG"]),
         ("extra", 1),
     ],
 )
@@ -585,6 +586,21 @@ def test_the_snapshot_scope_is_limited_to_what_a_restore_supports(section: str, 
 
     message = only_issue(broken(change))
     assert message.startswith("snapshot: snapshot")
+
+
+def test_the_snapshot_scope_keeps_load_log_with_cfb_core() -> None:
+    def without_load_log(data: dict[str, Any]) -> None:
+        data["snapshot"]["meta_tables"] = ["FETCH_LOG"]
+
+    message = only_issue(broken(without_load_log))
+    assert "meta_tables must include LOAD_LOG while schemas include CFB_CORE" in message
+
+
+def test_a_scope_of_cfb_core_and_load_log_alone_is_valid() -> None:
+    def load_log_only(data: dict[str, Any]) -> None:
+        data["snapshot"]["meta_tables"] = ["LOAD_LOG"]
+
+    assert parse(broken(load_log_only)).snapshot.meta_tables == ("LOAD_LOG",)
 
 
 def test_every_error_is_listed_not_only_the_first() -> None:

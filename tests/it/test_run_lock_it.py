@@ -13,7 +13,9 @@ from typing import Any
 import pyexasol
 import pytest
 
+from loader.deploy import LoaderOptions
 from loader.runlock import RunLockError, RunLockRefused, run_lock
+from scripts import deploy as deploy_cli
 from tests.it.backfill_helpers import (
     IDLE,
     deploy_games,
@@ -24,6 +26,7 @@ from tests.it.backfill_helpers import (
     wait_for,
 )
 from tests.it.harness import Harness
+from vs.host.deploy import DeployError, DeployOptions
 
 pytestmark = pytest.mark.it
 
@@ -121,3 +124,37 @@ def test_a_script_kind_is_not_a_host_lock(harness: Harness) -> None:
     ):
         pass
     assert harness.runs() == []
+
+
+def test_another_session_cannot_end_a_running_run(harness: Harness) -> None:
+    """Scenario: Another session cannot end a running run (review m6)."""
+    release = f"EXECUTE SCRIPT {harness.infra}.RUN_LOCK('release', 'DONE', {{run}}, 'stolen')"
+    acquire = f"EXECUTE SCRIPT {harness.infra}.RUN_LOCK('acquire', 'BACKFILL', NULL, 'x')"
+    with (
+        harness.owner_session() as host,
+        run_lock(host, harness.namespace, "DEPLOY", "model deploy") as lock,
+    ):
+        assert harness.owner.execute(release.format(run=lock.run_id)).fetchall() == [(0,)]
+        assert statuses(harness) == {lock.run_id: ("DEPLOY", "RUNNING")}
+        with pytest.raises(pyexasol.ExaError, match="BACKFILL is not a host kind"):
+            harness.owner.execute(acquire)
+        assert statuses(harness) == {lock.run_id: ("DEPLOY", "RUNNING")}
+    assert statuses(harness) == {lock.run_id: ("DEPLOY", "DONE")}
+
+
+def test_a_deploy_is_refused_while_a_run_holds_the_lock(harness: Harness) -> None:
+    """Scenario: A deploy is refused while a run holds the lock (review m7)."""
+    plan = f"SELECT ENTRY_ID, TABLE_NAME, PLAN_HASH FROM {harness.meta}.LOAD_PLAN ORDER BY 1"
+    before = harness.query(plan)
+    with (
+        harness.owner_session() as host,
+        run_lock(host, harness.namespace, "SNAPSHOT", "week7") as held,
+        harness.owner_session() as deployer,
+        pytest.raises(DeployError) as refused,
+    ):
+        deploy_cli.deploy_namespace(deployer, harness.namespace, DeployOptions(), LoaderOptions())
+    message = str(refused.value)
+    assert f"DEPLOY refused: SNAPSHOT run {held.run_id} is running" in message
+    assert "nothing was deployed" in message
+    assert harness.query(plan) == before
+    assert statuses(harness) == {held.run_id: ("SNAPSHOT", "DONE")}

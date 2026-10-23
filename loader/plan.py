@@ -24,7 +24,7 @@ import hashlib
 import json
 import re
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -57,6 +57,10 @@ SEASON_PARAM = "year"
 RANGE_PARAMS = ("minYear", "maxYear")
 SNAPSHOT_SCHEMAS = ("CFB_CORE",)
 SNAPSHOT_META_TABLES = ("LOAD_LOG", "FETCH_LOG")
+SCOPE_COMPANIONS = {"CFB_CORE": ("LOAD_LOG",)}
+"""Meta tables a snapshot schema needs beside it. `LOAD_LOG` says which `CFB_CORE` slices are
+stored: a restore that replaced `CFB_CORE` without it would serve replaced or deleted slices as
+stored, at zero calls, and never fetch them again (D11)."""
 PROFILE_LIST_SEPARATORS = re.compile(r"[+;]")
 
 _IDENTIFIER = r"[A-Z][A-Z0-9_]*"
@@ -173,6 +177,20 @@ class SnapshotScope:
     meta_tables: tuple[str, ...] = SNAPSHOT_META_TABLES
 
 
+def scope_problem(schemas: Iterable[str], meta_tables: Iterable[str]) -> str | None:
+    """Why a snapshot scope is unsafe (`SCOPE_COMPANIONS`), or None when it is safe."""
+    present = set(meta_tables)
+    for schema in schemas:
+        missing = [name for name in SCOPE_COMPANIONS.get(schema, ()) if name not in present]
+        if missing:
+            return (
+                f"meta_tables must include {', '.join(missing)} while schemas include {schema}: "
+                f"{', '.join(missing)} says which {schema} slices are stored, so a restore that "
+                f"replaced {schema} without it would serve replaced or deleted slices as stored"
+            )
+    return None
+
+
 @dataclass(frozen=True)
 class RefreshStep:
     """A registered `REFRESH_WEEK` step: `EXECUTE SCRIPT <script>(run_id, season, week, type)`."""
@@ -201,11 +219,23 @@ class PlanEntry:
     @property
     def profile_rank(self) -> int:
         """1 for `demo`, 2 for `full`: the order in which profiles load."""
-        return PROFILES.index(self.profile) + 1
+        return profile_rank(self.profile)
 
     def fixed_params(self) -> dict[str, ParamValue]:
         """The fixed API parameters of the entry, by API name."""
         return dict(self.params)
+
+
+def profile_rank(profile: str) -> int:
+    """1 for `demo`, 2 for `full`: the order in which profiles load (`full` includes `demo`)."""
+    return PROFILES.index(profile) + 1
+
+
+def sliced_params(slicing: str | None) -> tuple[str, ...]:
+    """The API parameters a slicing fills per slice: `year`, `minYear`/`maxYear`, or none."""
+    if slicing == SEASON_SLICING:
+        return (SEASON_PARAM,)
+    return RANGE_PARAMS if slicing == RANGE_SLICING else ()
 
 
 @dataclass(frozen=True)
@@ -453,6 +483,10 @@ def _build_snapshot(raw: Any, issues: list[PlanIssue]) -> SnapshotScope | None:
     schemas = _scope_list(raw, "schemas", SNAPSHOT_SCHEMAS, bad)
     meta_tables = _scope_list(raw, "meta_tables", SNAPSHOT_META_TABLES, bad)
     if len(issues) != start:
+        return None
+    problem = scope_problem(schemas, meta_tables)
+    if problem is not None:
+        bad(problem)
         return None
     return SnapshotScope(schemas, meta_tables)
 
@@ -764,7 +798,7 @@ def _params(
     if table is None:
         return ()
     known = {param.name: param for param in table.params}
-    sliced = _sliced_params(slicing)
+    sliced = sliced_params(slicing)
     fixed: dict[str, ParamValue] = {}
     for name in sorted(raw, key=str):
         if name in sliced:
@@ -774,12 +808,6 @@ def _params(
         elif _value_fits(known[name], raw[name], bad):
             fixed[str(name)] = raw[name]
     return tuple(sorted(fixed.items()))
-
-
-def _sliced_params(slicing: str | None) -> tuple[str, ...]:
-    if slicing == SEASON_SLICING:
-        return (SEASON_PARAM,)
-    return RANGE_PARAMS if slicing == RANGE_SLICING else ()
 
 
 def _value_fits(param: Param, value: Any, bad: Any) -> bool:

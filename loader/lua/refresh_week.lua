@@ -201,11 +201,6 @@ local function require_budget(run, needed)
   end
 end
 
-local function set_remaining(job, column, remaining)
-  run_sql("UPDATE " .. meta_table("LOAD_RUN") .. ' SET "' .. column
-    .. '" = :remaining WHERE "RUN_ID" = :run', {remaining = sql_value(remaining), run = job.run_id})
-end
-
 -- Steps -------------------------------------------------------------------------------------------
 
 local function new_step(number, name, script)

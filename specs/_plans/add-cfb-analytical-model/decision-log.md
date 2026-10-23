@@ -420,6 +420,13 @@ Coverage flags must say what is trustworthy per season.
 - **Rationale:** a deterministic answer for every case the league can produce, and no second read of `GAME`.
 - **Promotes to ADR:** no
 
+### [35] `make deploy` runs the virtual schema, the loader and the model under one `DEPLOY` lock (merge of Phase 2)
+
+- **Context:** the merge of `add-cfb-persistence-refresh` brought Phase 2's `DEPLOY` lock around the virtual schema and loader deploy (`scripts/deploy.py`, `deploy_namespace`). The model deploy takes the same lock kind itself ([29], X1). `run_lock` refuses a second lock in the same session, so the model step cannot simply run inside Phase 2's block.
+- **Decision:** `deploy_model(..., lock=held)` deploys under a lock the caller already holds. `make deploy` passes its lock, so one `DEPLOY` run covers all three steps; its `DONE` detail is `deployed plan <hash>; <model summary>`. On a namespace's first deploy (no `RUN_LOCK` yet), the virtual schema and loader run without the lock and install it, and the model step then takes the lock itself, as `make model` does. A refusal of that step says the virtual schema and loader were deployed and the model was not, instead of "nothing was deployed".
+- **Alternatives:** two consecutive `DEPLOY` runs (Phase 2 block, then the model's own lock). That is simpler, but a loader run could start in the gap and refuse the model after the loader had changed.
+- **Promotes to ADR:** no
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. -->

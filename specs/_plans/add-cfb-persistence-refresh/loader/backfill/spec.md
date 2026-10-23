@@ -4,10 +4,10 @@
 
 ## Background
 
-- Call: `EXECUTE SCRIPT CFB_INFRA.BACKFILL(profile, from_season, max_calls)`. Exasol has no `CALL` statement; `EXECUTE SCRIPT` runs a script.
-  - `profile`: `'demo'` or `'full'`. `full` includes `demo`.
+- Call: `EXECUTE SCRIPT CFB_INFRA.BACKFILL(run_profile, from_season, max_calls)`. Exasol has no `CALL` statement; `EXECUTE SCRIPT` runs a script, and its arguments are positional.
+  - `run_profile`: `'demo'` or `'full'`. `full` includes `demo`. The parameter is not called `profile`, a reserved word.
   - `from_season`: NULL, or the newest season to load. Slices of newer seasons are skipped; slices without a season (`none`, `season_range`) are always included.
-  - `max_calls`: NULL, or the most slices this run may fetch, in any fetch mode.
+  - `max_calls`: NULL, or the most calls this run may spend: the measured calls in live mode (the change of `/info`'s used calls, retries included), the fetched slices in replay mode. A live run can spend up to 3 calls more (see **Budget**).
   - `max_calls = 0` is a **dry run**: it registers gaps, checks every pending batch against the virtual schema with `EXPLAIN VIRTUAL`, and fetches nothing.
 - `make backfill PROFILE=demo [FROM=…] [MAX_CALLS=…] [CONFIRM=yes]` prints the call estimate and the quota first. In live mode it runs the script only with `CONFIRM=yes`.
 - **Candidates** are the profile's planned slices (`loader/load-plan`) that either have no `LOAD_LOG` row, or are stored as non-final and would be final if loaded now. Excluded are:
@@ -22,7 +22,7 @@
   5. entry.
 
   Entries with equal priority are therefore loaded season by season. Slices that already failed once are held back and fetched one at a time after every other candidate of the run.
-- **Batches:** a batch is the longest run of consecutive queue entries of the same **plan entry**, so one `WHERE` clause expresses it. It is capped at the virtual schema's `MAX_CALLS_PER_QUERY` and at the calls still allowed. Each batch is one `INSERT … SELECT` through `CFBD_VS`.
+- **Batches:** a batch is the longest run of consecutive queue entries of the same **plan entry**, so one `WHERE` clause expresses it. It is capped at the virtual schema's `MAX_CALLS_PER_QUERY` and at the calls still allowed (see **Budget**). Each batch is one `INSERT … SELECT` through `CFBD_VS`.
   - Before fetching, a zero-call `EXPLAIN VIRTUAL` of the batch query MUST plan exactly the batch's slice keys. Otherwise the run stops before any request, because the catalog and the deployed plan are out of sync.
   - The query reads `CFBD_VS` with read-through on and keeps only fetched rows (`REQ_SOURCE <> 'STORED'`). The loader never changes virtual schema properties.
   - Each batch is one transaction. The fetched rows land in a stage table and then replace the batch's slices in `CFB_CORE` (delete, then insert). Each slice is registered in `LOAD_LOG` (final or not, per its refresh class) with its row count, and its request is written to `FETCH_LOG`. A failed batch changes nothing; earlier batches stay committed.
@@ -30,10 +30,13 @@
   - If a batch of several slices fails, the run fetches each of its slices alone. The good ones are stored, and only the failing ones count as failed.
   - A slice that fails alone gets one failure in `CFB_META.LOAD_FAILURES` for this run, with the error. It is quarantined once it has failed in `quarantine_after` runs (default 2): the queue skips it and `LOAD_STATUS` shows it with its error until the owner deletes its `LOAD_FAILURES` row.
   - A successful load clears the slice's failures.
-  - If every slice of a batch fails, also when fetched alone, the cause is not the slice. The run stops with status `FAILED`.
+  - A batch **fails** when none of its slices is stored, also after its single-slice retries. This includes a batch of one slice and a slice that failed in an earlier run.
+  - One failed batch is recorded and the run continues, so one transient error, for example on a one-slice table like `TEAMS`, costs only that slice.
+  - After **2 consecutive failed batches** the cause is not one slice. The run stops with status `FAILED`, so an outage does not spend the quota. A batch with at least one stored slice resets the count.
 - **Budget (live mode):** the run spends at most `BACKFILL_SPENDABLE` from `CFB_META.QUOTA` (`loader/quota`), and at most `max_calls`.
-  - It reads the quota in its own transaction before each batch, and caps the batch at the calls still allowed.
-  - The spend is measured as the change of `/info`'s used calls around each batch (free), not estimated from slices, so retries are counted.
+  - It reads the quota in its own transaction before each batch.
+  - The fetch makes up to 4 HTTP attempts per request (retries on 429 and 5xx). The run therefore sizes each batch so that it fits the calls still allowed even if every request takes all 4 attempts, with at least one slice per batch. A run can still overshoot by up to 3 calls: one last slice, started with 1 to 3 calls left, retried to its last attempt. The refresh reserve absorbs that overshoot.
+  - The spend is measured as the change of `/info`'s used calls around each batch (free), not estimated from slices, so retries are counted. That includes a batch that fails after its fetch. When `/info` cannot be read after a fetch, the run charges at least that batch's requests and then fails.
   - If the quota cannot be read, a live run fails before any request.
   - In replay mode no quota is read and no call is made.
 - **Result:** one row per table that was loaded, blocked or had failures, plus a total row (`TABLE_NAME = '*'`). The columns are:
@@ -164,13 +167,22 @@
 * *AND* 2017 MUST then be quarantined with 2 failures and shown in `LOAD_STATUS` with its error
 * *AND* the second run MUST NOT request 2017
 
-### Scenario: A failure of every slice stops the run
+### Scenario: One failed single-slice batch does not stop the run
 
-* *GIVEN* live mode against the mock API, a `GAMES` entry for 2017–2020 with `MAX_CALLS_PER_QUERY = 2`, and the mock API answers every `GAMES` request with status 500
+* *GIVEN* live mode against the mock API, a `GAMES` entry for 2017–2020 with `MAX_CALLS_PER_QUERY = 1`, so every batch is one slice
+* *AND* the mock API answers every request for 2019 with status 500
 * *WHEN* the owner runs a backfill
-* *THEN* the run MUST stop with status `FAILED` after the batch 2020–2019 and its two single-slice retries
-* *AND* the 2018 and 2017 slices MUST NOT be requested
-* *AND* the 2020 and 2019 slices MUST each show 1 failure in `LOAD_FAILURES`
+* *THEN* the 2020, 2018 and 2017 slices MUST be stored
+* *AND* the 2019 slice MUST show 1 failure in `LOAD_FAILURES`
+* *AND* the total row MUST report status `DONE_WITH_FAILURES` and 1 failed slice
+
+### Scenario: Two consecutive failed batches stop the run
+
+* *GIVEN* live mode against the mock API, a `GAMES` entry for 2015–2020 with `MAX_CALLS_PER_QUERY = 2`, and the mock API answers every `GAMES` request with status 500
+* *WHEN* the owner runs a backfill
+* *THEN* the run MUST stop with status `FAILED` after the batches 2020–2019 and 2018–2017 and their single-slice retries
+* *AND* the 2016 and 2015 slices MUST NOT be requested
+* *AND* the 2020, 2019, 2018 and 2017 slices MUST each show 1 failure in `LOAD_FAILURES`
 
 ### Scenario: The next run resumes after a failure
 

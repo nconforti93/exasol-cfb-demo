@@ -11,8 +11,11 @@ so an invalid plan or `LOADER_CONFIG` override changes nothing. Then the steps, 
 2. The loader's meta tables (`metaddl.loader_meta_ddl_names`).
 3. `LOAD_PLAN`, `LOAD_PLAN_GAPS`, `LOADER_CONFIG` and `REFRESH_STEPS` are replaced in one
    transaction. The settings are those of the YAML with the `LOADER_CONFIG` overrides applied;
-   `NOW_OVERRIDE` is kept only in a `TEST_` namespace. `LOAD_PLAN.PLAN_HASH` is the hash of the
-   plan file, so an override does not change it.
+   `NOW_OVERRIDE` is kept only in a `TEST_` namespace. A change of `MONTHLY_CALL_BUDGET` or
+   `REFRESH_RESERVE` against the deployed values is a warning (`make deploy` adds the target's
+   overrides of `vs/live/loader-config.yaml` first, `loader/target_config.py`).
+   `LOAD_PLAN.PLAN_HASH` is the hash of the normalized plan (`loader.plan.normalized_json`:
+   comments, notes and entry ids do not count), so an override does not change it.
 4. `SEASON_NUMBERS` holds 1869 to 2100; it is rewritten only when it does not.
 5. The views, in `metaddl.loader_view_names()` order, as `CREATE OR REPLACE VIEW`.
 6. The Lua scripts `BACKFILL`, `REFRESH_WEEK` and `RUN_LOCK` (`loader.bundle.SCRIPTS`), bundled
@@ -42,6 +45,7 @@ from loader.plan import (
     parse_plan,
 )
 from loader.templates import SliceTemplate, compile_entries, compile_plan
+from loader.transaction import run_transaction
 from vs.bundle import BundleError
 from vs.cfbd_vs.catalog import Catalog
 from vs.cfbd_vs.sqlrender import sql_literal
@@ -60,7 +64,7 @@ from vs.host.namespace import Namespace
 
 TEST_PREFIX = "TEST_"
 SEASON_COUNT = LAST_SEASON - FIRST_SEASON + 1
-PLAN_TABLES = ("LOAD_PLAN", "LOAD_PLAN_GAPS", "LOADER_CONFIG", "REFRESH_STEPS")
+BUDGET_SETTINGS = ("MONTHLY_CALL_BUDGET", "REFRESH_RESERVE")
 FOUNDATION_HINT = "deploy the virtual schema first (`make deploy`)"
 
 
@@ -219,9 +223,11 @@ class _Deployment:
         schema = self._namespace.stage_schema
         self._execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
         self._lines.append(f"stage schema {schema}: ready")
-        self._lines.append(
-            ensure_tables(self._connection, self._prepared.stage_tables, "stage tables")
-        )
+        tables = self._prepared.stage_tables
+        if not tables:
+            self._lines.append("stage tables: none planned")
+            return
+        self._lines.append(ensure_tables(self._connection, tables, "stage tables"))
 
     def _ensure_meta_tables(self) -> None:
         meta = self._namespace.meta_schema
@@ -234,6 +240,7 @@ class _Deployment:
     def _write_plan(self) -> None:
         meta = self._namespace.meta_schema
         prepared = self._prepared
+        deployed = self._deployed_settings()
         rows = {
             "LOAD_PLAN": (_PLAN_COLUMNS, _plan_rows(prepared)),
             "LOAD_PLAN_GAPS": (("ENTRY_ID", "SEASON"), _gap_rows(prepared.plan)),
@@ -257,11 +264,22 @@ class _Deployment:
         overrides = sorted(self._options.config_overrides)
         if overrides:
             self._lines.append(f"LOADER_CONFIG overrides applied: {', '.join(overrides)}")
+        for name in BUDGET_SETTINGS:
+            before, after = deployed.get(name), prepared.settings.get(name)
+            if before is not None and before != after:
+                self._warn(f"{name} changes from {before} to {after}")
         if prepared.dropped_now_override:
             self._warn(
                 "NOW_OVERRIDE ignored: only a TEST_ namespace keeps the test clock, "
                 f"{self._namespace.meta_schema} uses the real one"
             )
+
+    def _deployed_settings(self) -> dict[str, str]:
+        rows = self._query(
+            'SELECT "SETTING_NAME", "SETTING_VALUE" '
+            f'FROM "{self._namespace.meta_schema}"."LOADER_CONFIG"'
+        )
+        return {str(name): str(value) for name, value in rows}
 
     def _fill_season_numbers(self) -> None:
         table = f"{self._namespace.meta_schema}.SEASON_NUMBERS"
@@ -327,19 +345,7 @@ class _Deployment:
         return orphans
 
     def _transaction(self, statements: Sequence[str]) -> None:
-        switch = getattr(self._connection, "set_autocommit", None)
-        if switch is not None:
-            switch(False)
-        try:
-            for statement in statements:
-                self._execute(statement)
-            self._execute("COMMIT")
-        except BaseException:
-            self._execute("ROLLBACK")
-            raise
-        finally:
-            if switch is not None:
-                switch(True)
+        run_transaction(self._connection, statements)
 
     def _warn(self, text: str) -> None:
         self._warnings.append(text)

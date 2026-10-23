@@ -1,4 +1,4 @@
-# CFBD API measurements (S1 + S2, 2026-10-22)
+# CFBD API measurements (S1 + S2, 2026-10-22; Phase 2 live run, 2026-10-23)
 
 Derived numbers from the foundation's live run (`specs/_plans/add-cfbd-vs-foundation`, tasks 9.3 and 9.5). The recordings and the raw measurements stay in the git-ignored `cache/` directory (`cache/replay/`, `cache/measurements/`), because CFBD's terms forbid redistribution.
 
@@ -102,3 +102,73 @@ The demo's head-to-head beat should therefore read pairs that are already stored
 - **Phase 2 demo profile:** **217 calls once, then 4 per weekly refresh**. S1 confirmed the profile's main assumption (A4): one `/games` call per season returns every division, so no per-classification calls are needed.
 - **October:** 21 (ledger, this plan) + 217 (backfill) + 4 per refresh comes to about 250 calls, within the 400-call October cap and far below the key's 3,000.
 - **Free tier:** the profile still fits on the free 1,000-call tier that the design targets (D13).
+
+## Phase 2 live run (AWS, 2026-10-23)
+
+Plan `add-cfb-persistence-refresh`, group J. Database: AWS Exasol Personal `default`, **2026.1.1**, 3 nodes. The local laptop runs 2026.2.0-nano.3. Every run went through `make backfill` / `make refresh` with `/info` read before and after. Run times are UTC, 06:26–06:49.
+
+### Calls spent
+
+| Step | Calls (script) | `/info` delta | Ledger | Result |
+|---|---|---|---|---|
+| 9.0 deploy, grants, `dns-check`, `quota`, probes 1.1/1.2 `--target aws`, dry run `BACKFILL('demo', NULL, 0)` | 0 | 0 | 0 (`BACKFILL#1`) | dry run: 217 slices in 29 batches checked with `EXPLAIN VIRTUAL`, 1 gap registered |
+| 9.1 estimate | 0 | 0 | none | 217, as planned (0 % over) |
+| 9.2a backfill, `MAX_CALLS=20` | 20 | 20 | 20 (`BACKFILL#2`) | `STOPPED_MAX_CALLS`, 20 slices, 11,212 rows |
+| 9.2b backfill, the rest | 197 | 197 | 197 (`BACKFILL#3`) | `DONE`, 197 slices, 143,870 rows |
+| 9.3 rerun | 0 | 0 | 0 (`BACKFILL#4`) | `DONE`, estimate 0, `LOAD_STATUS` complete, no orphans |
+| 9.4 `REFRESH_WEEK(2026, 7, 'regular')` | 4 | 4 | 4 (`REFRESH_WEEK#5`) | `DONE` |
+| 9.5 snapshot AWS, restore local | 0 | 0 | none | gate passed (see below) |
+| **Total** | **221** | **221** (used 19 → 240) | **221 of 300** | |
+
+- Every one of the 221 requests returned HTTP 200 on its first attempt. There were no retries, no failed batches, no `DONE_WITH_FAILURES` and no quarantined slices.
+- The October ledger total across all plans is 242 of 400, and `/info` reads 240 used. The ledger also charges the foundation's cut-off and refused calls (see above).
+- `BACKFILL_SPENDABLE` (331 at the start) was above this plan's ledger room (300). The CLI caps `MAX_CALLS` at the ledger room, so the effective cap was 300.
+
+### Stored data (demo profile)
+
+| Table | Seasons | Slices | Rows | CFBD ms per request (mean / max) |
+|---|---|---|---|---|
+| `GAMES` | 1869–2026 (1871 is a registered gap) | 158 | 112,674 | 631 / 4,433 |
+| `METRICS_WP_PREGAME` | 2013–2026 | 14 | 11,887 | 545 / 715 |
+| `RATINGS_SP` | 2013–2026 | 14 | 1,843 | 251 / 311 |
+| `RANKINGS_POLLS_RANKS` | 2014–2026 | 13 | 21,144 | 366 / 638 |
+| `CALENDAR` | 2013–2026 | 14 | 242 | 190 / 306 |
+| `CONFERENCES_AFFILIATIONS` | 1869–2025 (1 range call) + 2026 | 2 | 4,251 | 383 / 552 |
+| `TEAMS`, `VENUES`, `CONFERENCES` | none | 1 each | 1,933 / 852 / 256 | 787 / 243 / 161 |
+
+- In total, `CFB_CORE` holds 155,082 rows in 9 tables, about 44.5 MiB raw and 72.3 MiB in memory on AWS. `LOAD_LOG` holds 218 rows and `FETCH_LOG` 221.
+- The 2026 slices of the four weekly tables stay non-final; everything else is final.
+
+### Timing
+
+- **Backfill batches** (one plan entry, at most 10 slices, fan-out in parallel):
+  - Most batches took 2.3–3.6 s.
+  - The two largest were the first two `GAMES` batches of run 3: 7.8 s (24,929 rows) and 5.0 s (14,818 rows).
+  - The mean was 2.6 s in run 2 and 3.3 s in run 3.
+  - The full demo backfill took 78 s for the first 20 calls and 125 s for the remaining 197, about 3.5 minutes in all.
+- **Refresh timeline** (`REFRESH_WEEK(2026, 7, 'regular')`, 19.8 s in the database, 31.5 s for `make refresh`):
+
+  | Step | Seconds | Rows | Calls |
+  |---|---|---|---|
+  | `CHECK` | 2.19 | 0 | 0 |
+  | `FETCH GAMES` | 3.21 | 3,678 | 1 |
+  | `FETCH METRICS_WP_PREGAME` | 2.31 | 966 | 1 |
+  | `FETCH RATINGS_SP` | 2.32 | 139 | 1 |
+  | `FETCH RANKINGS_POLLS_RANKS` | 2.37 | 1,002 | 1 |
+
+  Every `FETCH` is far below the 30 s target.
+- **Snapshot** `aws-demo-2026-10-23`:
+  - 11 gzip CSV files and a manifest, 6.6 MB, mode 0700.
+  - 155,521 rows (CFB_CORE plus `LOAD_LOG` and `FETCH_LOG`).
+  - 41 s in the database, 50 s for `make snapshot` over the internet.
+- **Restore onto local 2026.2 (the Oct 31 gate): passed.**
+  - **Checks:** columns ok; catalog hash `b6389f65c48c` equal on both sides; the plan hash equal; the file checksums ok; **fingerprints ok on all 11 landed tables**. 127 tables were replaced in one transaction, with 0 CFBD calls.
+  - **Time:** 19.8 s in the database and 30.5 s for `make restore`, against a target of under 5 minutes. A first `make deploy TARGET=local` installed the loader in the replay-mode local namespace (27 s).
+  - **After the restore:** `SELECT REQ_SOURCE, COUNT(*) FROM CFBD_VS.GAMES WHERE P_YEAR = 2019` on local returns one `STORED` group of 1,623 rows. Local `LOAD_STATUS` is complete with no orphans. `/info` used calls stayed at 240 before and after.
+
+### AWS smoke findings (2026.1.1)
+
+- **Probe 1.1 `--target aws`:** items a, b, c, g, h, i, j, l and m pass with the same results as on local 2026.2. One of the two concurrent run-lock inserts fails at once with 40001. Lua is 5.4.7. The session time zone is EUROPE/BERLIN, and the `CONVERT_TZ` UTC expression holds.
+- **Probe 1.2 `--target aws`:**
+  - The pyexasol gzip CSV round trip is exact except for full-precision DOUBLEs (maximum relative difference 9.9e-16). `MINUS` is empty both ways on `LOAD_LOG`, `FETCH_LOG` and `EXTREMES`, and every fingerprint is equal.
+  - The probe still prints "neither is exact: escalate". This is an artifact of its Python comparator, which pairs rows by `ORDER BY 1`, and `LOAD_LOG` and `FETCH_LOG` have duplicate first-column values. On 3 nodes those rows come back in a different order. The restore itself compares fingerprints, so it is not affected.

@@ -1,0 +1,13 @@
+# Loader settings per deployment target that `make deploy TARGET=<target>` applies on top of
+# loader/load-plan.yaml (loader/target_config.py, spec loader/quota). A plain redeploy keeps them,
+# so it never lifts a target's in-database budget. An explicit LOADER_CONFIG="k=v,..." wins per
+# setting; the deploy prints both.
+#
+# monthly_call_budget: ledger  = the owner's cap in vs/live/ledger.yaml for the UTC month of the
+#                                deploy. A month without a cap there refuses the deploy unless
+#                                LOADER_CONFIG sets monthly_call_budget. The value lasts until the
+#                                next deploy: redeploy after a month change to follow the new cap.
+targets:
+  aws:
+    monthly_call_budget: ledger
+    refresh_reserve: 50

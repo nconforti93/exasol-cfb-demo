@@ -1,4 +1,4 @@
-"""The loader's run lock for host processes (hand-off H1b): `run_lock(connection, namespace, ...)`.
+"""The loader's run lock for host processes: `run_lock(connection, namespace, ...)`.
 
 The run lock is the `RUNNING` row of `<meta>.LOAD_RUN` (`loader/run-logs`). Lua scripts take it
 with `acquire_lock` of `loader/lua/loadlib.lua`; a host process takes it through the script
@@ -9,9 +9,10 @@ library in the host's own session. One implementation of the stale rules serves 
         ...                       # the work, in the same session; lock.run_id is the LOAD_RUN row
         lock.detail = "..."       # optional: the DETAIL of the DONE row
 
-Kinds: `DEPLOY` (Phase 3's model deploy, Phase 4's `make sim` and `make calibrate`), `SNAPSHOT`
-and `RESTORE`. They follow the host rule: the row is stale only when its session is gone or is the
-caller's own session, never because the session is idle between statements.
+Kinds: `DEPLOY` (`make deploy`, Phase 3's model deploy, Phase 4's `make sim` and
+`make calibrate`), `SNAPSHOT` and `RESTORE`. They follow the host rule: the row is stale only when
+its session is gone or is the caller's own session, never because the session is idle between
+statements.
 
 Rules for callers (the row belongs to the session of `connection`):
 
@@ -27,6 +28,11 @@ Rules for callers (the row belongs to the session of `connection`):
   the row ends `FAILED` with the error's first line, and the error propagates.
 - A refused lock raises `RunLockRefused`, naming the running run; nothing was written and the
   block does not run.
+- Only the session that took the lock releases it (`RUN_LOCK` ends a row of the calling session
+  only); other sessions free a row only through the stale rules.
+
+`lock_installed(connection, namespace)` says whether the namespace has the `RUN_LOCK` script yet:
+the first `make deploy` of a namespace installs it, so that deploy runs without the lock.
 """
 
 from __future__ import annotations
@@ -39,7 +45,15 @@ from typing import Any, Protocol
 from vs.cfbd_vs.sqlrender import qualified_name, string_literal
 from vs.host.namespace import Namespace
 
-__all__ = ["HOST_KINDS", "HeldLock", "RunLockError", "RunLockRefused", "first_line", "run_lock"]
+__all__ = [
+    "HOST_KINDS",
+    "HeldLock",
+    "RunLockError",
+    "RunLockRefused",
+    "first_line",
+    "lock_installed",
+    "run_lock",
+]
 
 HOST_KINDS = ("DEPLOY", "RESTORE", "SNAPSHOT")
 SCRIPT_NAME = "RUN_LOCK"
@@ -128,13 +142,18 @@ def _script(namespace: Namespace) -> str:
     return qualified_name(namespace.infra_schema, SCRIPT_NAME)
 
 
-def _require_script(connection: Connection, namespace: Namespace) -> None:
+def lock_installed(connection: Connection, namespace: Namespace) -> bool:
+    """Whether `<infra>.RUN_LOCK` exists, so a host process can take the lock."""
     rows = connection.execute(
         "SELECT COUNT(*) FROM EXA_ALL_SCRIPTS "
         f"WHERE SCRIPT_SCHEMA = {string_literal(namespace.infra_schema)} "
         f"AND SCRIPT_NAME = {string_literal(SCRIPT_NAME)}"
     ).fetchall()
-    if int(rows[0][0]) == 0:
+    return int(rows[0][0]) > 0
+
+
+def _require_script(connection: Connection, namespace: Namespace) -> None:
+    if not lock_installed(connection, namespace):
         raise RunLockError(
             f"the Lua script {_script(namespace)} is not installed: run `make deploy` "
             "(the loader deploy installs it)"

@@ -2,6 +2,7 @@
 
 import re
 
+import lupa
 import pytest
 
 from tests.it import step_scripts
@@ -92,7 +93,6 @@ def test_no_step_touches_the_virtual_schema() -> None:
 
 
 def test_the_lua_bodies_compile() -> None:
-    lupa = pytest.importorskip("lupa")
     runtime = lupa.LuaRuntime()
     for name in step_scripts.STEP_SCRIPT_NAMES:
         body = named(name).split(" AS\n", 1)[1].removesuffix("\n/")

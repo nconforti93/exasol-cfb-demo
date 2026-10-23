@@ -1,10 +1,11 @@
--- loader/lua/backfill.lua: EXECUTE SCRIPT <infra>.BACKFILL(profile, from_season, max_calls)
+-- loader/lua/backfill.lua: EXECUTE SCRIPT <infra>.BACKFILL(run_profile, from_season, max_calls)
 -- (spec loader/backfill). Bundled after loadlib.lua; the script parameters are globals.
 --
--- profile: 'demo' or 'full' (full includes demo). from_season: NULL or the newest season to load;
--- slices without a season are always included. max_calls: NULL or the most calls this run may
--- spend (slices in replay mode); 0 is a dry run that registers gaps and checks every pending batch
--- with EXPLAIN VIRTUAL, fetching nothing.
+-- run_profile: 'demo' or 'full' (full includes demo). It is not called `profile`, a reserved word.
+-- from_season: NULL or the newest season to load; slices without a season are always included.
+-- max_calls: NULL or the most calls this run may spend (measured calls in live mode, slices in
+-- replay mode); 0 is a dry run that registers gaps and checks every pending batch with EXPLAIN
+-- VIRTUAL, fetching nothing.
 --
 -- The run, under the run lock (kind BACKFILL):
 -- 1. Live mode reads the quota first (its own transaction); an unreadable quota fails the run
@@ -12,15 +13,20 @@
 -- 2. GAPS (step 1): the profile's known gaps become final empty LOAD_LOG slices, without a request.
 -- 3. Tables with orphan slices are reported and never fetched (BACKFILL_QUEUE leaves them out).
 -- 4. Batches, one step each (BATCH <table> #<entry>): the head of BACKFILL_QUEUE for the profile
---    and season, without slices that failed in this run, split by split_batches at
---    MIN(MAX_CALLS_PER_QUERY, allowance). The allowance is max_calls minus what the run was
---    charged, and in live mode also MIN(QUOTA.BACKFILL_SPENDABLE, its value at the start minus the
---    charge). A batch is charged MAX(measured /info delta, requests) in live mode and its requests
---    in replay mode; the measured delta is the step's and the run's CALLS.
+--    and season, without slices that failed in this run. The allowance is max_calls minus what the
+--    run was charged, and in live mode also MIN(QUOTA.BACKFILL_SPENDABLE, its value at the start
+--    minus the charge). A batch has at most MAX_CALLS_PER_QUERY slices; in live mode also at most
+--    allowance / FETCH_ATTEMPTS (at least one), because every request may take FETCH_ATTEMPTS
+--    HTTP attempts. So a run spends at most FETCH_ATTEMPTS - 1 calls past its allowance (one slice
+--    started with 1 to 3 calls left). A batch is charged MAX(measured /info delta, requests) in
+--    live mode and its requests in replay mode; the measured delta is the step's and the run's
+--    CALLS, also for a batch that raises after its fetch (then it is charged before the re-raise)
+--    and, when /info cannot be read after a fetch, at least the batch's requests.
 -- 5. A failed batch of several slices is retried slice by slice. A slice that fails alone gets one
---    LOAD_FAILURES failure for the run. A slice that had failed before (BATCH_ALONE) failing again
---    is only recorded. When every slice of a fresh batch fails, also alone, the cause is not the
---    slice: the run stops with FAILED.
+--    LOAD_FAILURES failure for the run. A batch fails when none of its slices was stored, also
+--    after its single-slice retries; one stored slice resets the count. After
+--    STOP_AFTER_FAILED_BATCHES consecutive failed batches (one-slice batches and slices that had
+--    failed before included) the cause is not one slice: the run stops with FAILED.
 -- 6. The result: one row per table that was loaded, checked, blocked or had failures, then the
 --    total row (TABLE_NAME '*'). CALLS_NEEDED counts the profile's pending slices (gaps and
 --    quarantined slices excluded; tables blocked by orphans included).
@@ -36,6 +42,8 @@ local RESULT_COLUMNS = "RUN_ID DECIMAL(18,0), TABLE_NAME VARCHAR(128), SLICES DE
   .. "RUN_STATUS VARCHAR(20), CALLS_NEEDED DECIMAL(9,0), DETAIL VARCHAR(2000)"
 local DETAIL_LENGTH = 2000
 local SHOWN_FAILURES = 3
+local FETCH_ATTEMPTS = 4
+local STOP_AFTER_FAILED_BATCHES = 2
 
 local function backfill_arguments(raw_profile, raw_from, raw_max)
   local name = nz(raw_profile)
@@ -148,15 +156,36 @@ local function stop_detail(run, reason)
     run.charged)
 end
 
+local function charge_unmeasured(job, step_no, requests)
+  rollback()
+  job.calls = job.calls + requests
+  add_step_calls(job, step_no, requests)
+  save_totals(job)
+  commit()
+end
+
 local function measure(run, step_no, entry, requests)
   if not run.vs.live then
     run.charged = run.charged + requests
     return
   end
-  local spent
-  run.quota, spent = measure_spend(run.job, step_no, run.quota)
+  local measured, quota, spent = pcall(measure_spend, run.job, step_no, run.quota)
+  if not measured then
+    if not is_killed(quota) then
+      pcall(charge_unmeasured, run.job, step_no, requests)
+    end
+    error(quota, 0)
+  end
+  run.quota = quota
   run.charged = run.charged + math.max(spent, requests)
   entry.calls = entry.calls + spent
+end
+
+local function batch_size(run, room, per_query)
+  if not run.vs.live then
+    return math.min(room, per_query)
+  end
+  return math.max(1, math.min(per_query, room // FETCH_ATTEMPTS))
 end
 
 -- Batches -----------------------------------------------------------------------------------------
@@ -165,17 +194,37 @@ local function keys_text(batch)
   return table.concat(batch.keys, ", ")
 end
 
+local function close_raised_step(job, step_no, batch, err)
+  step_end(job, step_no, "FAILED", {slices = 0, rows = 0, calls = 0},
+    tostring(err) .. " (slices: " .. keys_text(batch) .. ")")
+  commit_step(job)
+end
+
+local function charge_raised_batch(run, step_no, entry, batch, err)
+  if is_killed(err) then
+    error(err, 0)
+  end
+  rollback()
+  if pcall(close_raised_step, run.job, step_no, batch, err) then
+    pcall(measure, run, step_no, entry, #batch.keys)
+  end
+  error(err, 0)
+end
+
 local function fetch_batch(run, batch)
   local job = run.job
   local entry = table_entry(run, batch.table_name)
   run.step_no = run.step_no + 1
   local step_no = run.step_no
   step_begin(job, step_no, "BATCH " .. batch.table_name .. " #" .. batch.entry_id, keys_text(batch))
-  local loaded, outcome = load_batch(job, batch, function(stats)
+  local finished, loaded, outcome = pcall(load_batch, job, batch, function(stats)
     step_end(job, step_no, "DONE", {slices = stats.slices, rows = stats.rows, calls = 0},
       keys_text(batch))
     write_totals(job, job.slices + stats.slices, job.rows + stats.rows, job.calls)
   end)
+  if not finished then
+    charge_raised_batch(run, step_no, entry, batch, loaded)
+  end
   if loaded then
     job.open_step = nil
     job.slices, job.rows = job.slices + outcome.slices, job.rows + outcome.rows
@@ -196,33 +245,35 @@ local function fetch_batch(run, batch)
   return loaded, outcome
 end
 
-local function systemic(batch, problem)
-  return string.format("every slice of batch %s #%d failed, also when fetched alone, so "
-    .. "the cause is not one slice; the run stopped: %s", batch.table_name, batch.entry_id, problem)
+local function systemic(run, batch, problem)
+  return string.format("%d consecutive batches failed, also when their slices were fetched "
+    .. "alone, so the cause is not one slice; the run stopped to protect the quota. Last: batch "
+    .. "%s #%d: %s", run.failed_batches, batch.table_name, batch.entry_id, problem)
 end
 
 local function after_failure(run, batch, problem)
-  if batch.alone then
+  local stored = 0
+  if #batch.keys > 1 then
+    for _, single in ipairs(single_slice_batches(batch)) do
+      local room, reason = allowance(run)
+      if room < 1 then
+        return reason, stop_detail(run, reason)
+      end
+      local loaded, outcome = fetch_batch(run, single)
+      if loaded then
+        stored = stored + 1
+      else
+        problem = outcome
+      end
+    end
+  end
+  if stored > 0 then
+    run.failed_batches = 0
     return nil
   end
-  if #batch.keys == 1 then
-    return "FAILED", systemic(batch, problem)
-  end
-  local stored = 0
-  for _, single in ipairs(single_slice_batches(batch)) do
-    local room, reason = allowance(run)
-    if room < 1 then
-      return reason, stop_detail(run, reason)
-    end
-    local loaded, outcome = fetch_batch(run, single)
-    if loaded then
-      stored = stored + 1
-    else
-      problem = outcome
-    end
-  end
-  if stored == 0 then
-    return "FAILED", systemic(batch, problem)
+  run.failed_batches = run.failed_batches + 1
+  if run.failed_batches >= STOP_AFTER_FAILED_BATCHES then
+    return "FAILED", systemic(run, batch, problem)
   end
   return nil
 end
@@ -246,9 +297,11 @@ local function load_pending(run)
     if room < 1 then
       return reason, stop_detail(run, reason)
     end
-    local batch = split_batches(rows, math.min(room, per_query))[1]
+    local batch = split_batches(rows, batch_size(run, room, per_query))[1]
     local loaded, problem = fetch_batch(run, batch)
-    if not loaded then
+    if loaded then
+      run.failed_batches = 0
+    else
       local status, detail = after_failure(run, batch, problem)
       if status ~= nil then
         return status, detail
@@ -344,14 +397,9 @@ local function result_rows(run, status, detail, needed)
   return rows
 end
 
-local function set_remaining(job, column, remaining)
-  run_sql("UPDATE " .. meta_table("LOAD_RUN") .. ' SET "' .. column
-    .. '" = :remaining WHERE "RUN_ID" = :run', {remaining = remaining, run = job.run_id})
-end
-
 local function backfill(job, args)
   local run = {job = job, args = args, vs = vs_settings(), charged = 0, failed = 0, gaps = 0,
-               step_no = GAPS_STEP, tables = {}, order = {}, blocked = {}}
+               failed_batches = 0, step_no = GAPS_STEP, tables = {}, order = {}, blocked = {}}
   commit()
   job.fetch_source = run.vs.fetch_source
   if run.vs.live then
@@ -376,7 +424,7 @@ local function backfill(job, args)
   return result_rows(run, status, detail, needed)
 end
 
-local arguments = backfill_arguments(profile, from_season, max_calls)
+local arguments = backfill_arguments(run_profile, from_season, max_calls)
 local job = new_job("BACKFILL", arguments.text)
 local ok, outcome = pcall(backfill, job, arguments)
 if not ok then

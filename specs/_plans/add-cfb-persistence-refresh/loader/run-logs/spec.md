@@ -4,12 +4,12 @@ Every loader run leaves a record: which run it was, what it loaded, what every s
 
 ## Background
 
-- `CFB_META.LOAD_RUN` has one row per run of `BACKFILL`, `REFRESH_WEEK`, snapshot or restore:
+- `CFB_META.LOAD_RUN` has one row per run of `BACKFILL`, `REFRESH_WEEK`, snapshot, restore or deploy:
 
   | Column | Meaning |
   |---|---|
   | `RUN_ID` | Unique, increasing |
-  | `RUN_KIND` | `BACKFILL`, `REFRESH_WEEK`, `SNAPSHOT` or `RESTORE` |
+  | `RUN_KIND` | `BACKFILL`, `REFRESH_WEEK`, `SNAPSHOT`, `RESTORE` or `DEPLOY` (`make deploy`, once the namespace has the run lock; later phases add theirs) |
   | `RUN_ARGS` | The arguments, e.g. `demo, NULL, 20` or `2026, 9, regular` |
   | `SESSION_ID` | Session that runs it |
   | `STARTED_AT`, `ENDED_AT` | UTC |
@@ -20,18 +20,19 @@ Every loader run leaves a record: which run it was, what it loaded, what every s
 
 - `CFB_META.REFRESH_LOG` has one row per step:
   - `REFRESH_WEEK` writes `CHECK`, one `FETCH <table>` per table, and the registered steps;
-  - `BACKFILL` writes one row per batch (`BATCH <table> #<entry>`) and one `GAPS` row.
+  - `BACKFILL` writes one row per batch (`BATCH <table> #<entry>`) and one `GAPS` row; a dry run writes one `EXPLAIN <table> #<entry>` row per checked batch instead of the batch rows.
 
   Columns: `RUN_ID`, `STEP_NO`, `STEP_NAME`, `STEP_STATUS` (`RUNNING`, `DONE`, `FAILED`), `STARTED_AT`, `ENDED_AT`, `SLICES`, `ROWS_LOADED`, `CALLS`, `DETAIL`. A row is committed when its step starts and again when it ends. The `GAPS` row has 0 slices and 0 calls, and names the number of registered gaps in `DETAIL`.
 - `CFB_META.FETCH_LOG` (contract: `cfbd-fetch/fetch-log`) gets one row per slice a run fetched, including slices without rows, with `CONTEXT = '<RUN_KIND>#<RUN_ID>'`. The rows equal what the reference capture helper (`vs/host/fetchlog.py`) writes for the same staged result.
 - `CFB_META.LOAD_LOG` (contract: `cfbd-fetch/read-through`) gets one row per stored slice. `LOADED_BY` is `'<RUN_KIND>#<RUN_ID>'`, or `'LOAD_PLAN_GAP'` for registered gaps.
 - `CFB_META.LOAD_FAILURES` has one row per failing slice: table, slice key, failure count, last error, last run and time (`loader/backfill`).
-- **Exclusive runs:** while a run is `RUNNING`, a second `BACKFILL`, `REFRESH_WEEK`, snapshot or restore is refused with a message naming the running run. A `RUNNING` row is stale, and the next run sets it to `ABANDONED` and proceeds, when:
+- **Exclusive runs:** while a run is `RUNNING`, a second `BACKFILL`, `REFRESH_WEEK`, snapshot, restore or deploy is refused with a message naming the running run. Only the session that runs a run ends its row; any other session frees it only through the stale rules. A `RUNNING` row is stale, and the next run sets it to `ABANDONED` and proceeds, when:
   - its session no longer exists;
   - it belongs to the session that starts the new run, because one session cannot run two scripts at once;
   - it is a `BACKFILL` or `REFRESH_WEEK` row and its session is idle (no statement running). A script run is one statement, so an idle session means the script ended without closing its row: a failure, a `KILL STATEMENT`, or an interrupt.
 
-  Snapshot and restore rows run from a host process that is often idle between statements, so they become stale only when their session ends.
+  Snapshot, restore and deploy rows run from a host process that is often idle between statements, so they become stale only when their session ends.
+- A run whose row another session set to `ABANDONED` fails when it ends instead of reporting its result: its work may have overlapped another run.
 - A run catches every SQL error (`pquery`) and every Lua error. It then rolls back the open batch, marks the step and the run `FAILED`, commits the log, and re-raises the error.
 
 ## Scenarios
@@ -66,7 +67,7 @@ Every loader run leaves a record: which run it was, what it loaded, what every s
 
 ### Scenario: A failed run is recorded and registers nothing from the failed batch
 
-* *GIVEN* live mode against the mock API, which answers every slice of the second batch with status 500
+* *GIVEN* live mode against the mock API, which answers every slice after the first batch with status 500, so two batches in a row fail
 * *WHEN* the owner runs a backfill
 * *THEN* `LOAD_RUN` MUST show the run as `FAILED`, with the error in `DETAIL`
 * *AND* `REFRESH_LOG` MUST show the first batch as `DONE` and the second as `FAILED`
@@ -78,6 +79,20 @@ Every loader run leaves a record: which run it was, what it loaded, what every s
 * *WHEN* another session starts a second backfill while that batch runs
 * *THEN* the second backfill MUST fail with a message naming the running backfill and its run id
 * *AND* the second backfill MUST NOT send any request or change any table
+
+### Scenario: Another session cannot end a running run
+
+* *GIVEN* a host process holds the run lock as a `DEPLOY` run in its open session
+* *WHEN* another session calls `RUN_LOCK('release', 'DONE', <that run id>, …)`, and then `RUN_LOCK('acquire', 'BACKFILL', …)`
+* *THEN* the release MUST report that it ended nothing, and the `DEPLOY` row MUST stay `RUNNING`
+* *AND* the acquire MUST fail because `BACKFILL` is not a host kind, without writing a row
+
+### Scenario: A deploy is refused while a run holds the lock
+
+* *GIVEN* a deployed namespace and a `SNAPSHOT` run holding the run lock in another session
+* *WHEN* the owner runs `make deploy`
+* *THEN* the deploy MUST fail before any change, naming the running run
+* *AND* the deployed plan MUST be unchanged
 
 ### Scenario: A run whose session ended does not block the next run
 

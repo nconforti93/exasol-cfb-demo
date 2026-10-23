@@ -442,7 +442,7 @@ No git commit is made before implementation.
   - In `BACKFILL`, a failed batch of several slices is rolled back and each slice is fetched alone. The good ones commit.
   - A slice that fails alone gets one failure per run in `LOAD_FAILURES`. From then on it is batched alone, after every other candidate of a run, and it is quarantined after `quarantine_after` (2) runs.
   - Quarantined slices are skipped and shown in `LOAD_STATUS` until the owner deletes the row; a success clears them.
-  - If every slice of a batch fails alone too, the cause is not the slice: the run stops with `FAILED`.
+  - If every slice of a batch fails alone too, the cause is not the slice: the run stops with `FAILED`. *Amended by [45]: the run stops after 2 consecutive failed batches.*
   - `REFRESH_WEEK` has no fallback or quarantine: a failure stops the refresh and is shown.
 - **Alternatives:**
   - Fail the run and re-run the same batch: the fetch UDF fails the whole fan-out on one slice (`vs/cfbd_vs/fetch.py`), so every retry re-pays the siblings, and a persistent failure blocks the queue forever (review M2).
@@ -622,7 +622,7 @@ No git commit is made before implementation.
 - **Decision:**
   - `loader/deploy.py` reads, validates and compiles the plan and the `LOADER_CONFIG` overrides before it sends any statement. An invalid plan or override changes nothing, and the four plan tables are replaced in one transaction (`set_autocommit(False)`, then `COMMIT`; `ROLLBACK` on failure).
   - The Lua statements are built in memory for the namespace (`loader.bundle.build_script`), not read from `build/sql/loader_*.sql`. A script without sources is skipped with a notice.
-  - `LOAD_PLAN.PLAN_HASH` is the hash of the plan file. A `LOADER_CONFIG` override changes the settings but not the hash.
+  - `LOAD_PLAN.PLAN_HASH` is the hash of the plan file. A `LOADER_CONFIG` override changes the settings but not the hash. *Wording corrected in F.1 (review n6): it is the SHA-256 of the normalized plan (`loader.plan.normalized_json`), so comments, notes and entry ids do not change it.*
   - `NOW_OVERRIDE` is dropped with a warning outside a `TEST_` namespace.
 - **Alternatives:**
   - Install the files of `build/sql`.
@@ -679,6 +679,101 @@ No git commit is made before implementation.
 - **Rationale:** YAGNI; it would also need the lower-case fingerprint fix found in probe 1.2.
 - **Promotes to ADR:** no
 
+### [45] A backfill stops after 2 consecutive failed batches, not after one failed one-slice batch (F.1, review m8)
+
+- **Decision:**
+  - A batch **fails** when none of its slices is stored, also after its single-slice retries. That includes a fresh batch of one slice and a slice that failed in an earlier run (`BATCH_ALONE`).
+  - A failed batch is recorded (its slices get one `LOAD_FAILURES` failure each) and the run continues. After `STOP_AFTER_FAILED_BATCHES = 2` consecutive failed batches the run stops with `FAILED` and names the last error. A batch with at least one stored slice resets the count.
+  - The spec scenario "A failure of every slice stops the run" becomes "Two consecutive failed batches stop the run" (`GAMES` 2015–2020, `MAX_CALLS_PER_QUERY = 2`: the third batch is never requested), plus "One failed single-slice batch does not stop the run".
+- **Alternatives:**
+  - The rule of [24], stop at the first failed batch: in the demo plan `TEAMS`, `VENUES`, `CONFERENCES` and both `CONFERENCES_AFFILIATIONS` entries are one-slice batches, so one transient 500 on reference data stopped the whole backfill.
+  - Record and continue without a stop: an outage would spend the quota slice by slice.
+  - Do not count failures toward quarantine in a run that ended systemic (the review's second option): changes the quarantine semantics; not needed for the outage case.
+  - Count only fresh batches, not slices that failed before: an outage over the held-back slices at the end of the queue would fetch every one of them.
+- **Rationale:** The orchestrator's decision: two in a row protects the quota during an outage (at most two batches and their single-slice retries are paid), and one transient error, for example on `TEAMS`, costs only that slice. Two adjacent slices that keep failing alone now end the run `FAILED` instead of `DONE_WITH_FAILURES`; they are quarantined after `quarantine_after` runs as before.
+- **Promotes to ADR:** yes (amends [24], D48)
+
+### [46] Per-target loader settings in `vs/live/loader-config.yaml`; on AWS the budget follows the ledger's month cap (F.1, review m4)
+
+- **Decision:**
+  - `vs/live/loader-config.yaml` (committed) holds `LOADER_CONFIG` overrides per deployment target. `make deploy TARGET=<target>` applies them on top of `loader/load-plan.yaml`, so a plain redeploy (to fix a view, say) keeps a target's in-database budget.
+  - `aws: {monthly_call_budget: ledger, refresh_reserve: 50}`. `ledger` means the owner's cap in `vs/live/ledger.yaml` for the UTC month of the deploy: 400 in October 2026, 1000 from the first November deploy. A month without a cap refuses the deploy unless `LOADER_CONFIG` sets `monthly_call_budget`.
+  - An explicit `LOADER_CONFIG` wins per setting. The deploy prints each override with its source, and `loader/deploy.py` warns when a deploy changes `MONTHLY_CALL_BUDGET` or `REFRESH_RESERVE` against the deployed values (the review's own fix).
+  - The values are deploy-time: they last until the next deploy. After a month change, the previous month's value stays in force until the first deploy of the new month.
+- **Alternatives:**
+  - Literal values per target (`aws: 400`): November needs a manual edit, and a forgotten edit keeps 400 or, worse, lifts it.
+  - Month-keyed budgets in `LOADER_CONFIG`, chosen by the `QUOTA` view at query time: follows the month without a redeploy, but changes the view, the plan settings and the spec for a two-month horizon; a month without an entry would fall back to the plan's 1000.
+  - Writing 0 for a month without a cap: `monthly_call_budget` must be at least 1, and `refresh_reserve` would exceed it.
+  - Only the warning (the review's fix): still silent for anyone who does not read the deploy output, and November still needs the right `LOADER_CONFIG` by hand.
+- **Rationale:** The simplest rule that is correct at every deploy: the in-database guard equals the owner's authorization of the month the deploy happens in, from the one file the owner already edits. Between deploys the value can only be the previous month's, never a lifted one; the ledger stays the second guard. The owner's caps stay in `ledger.yaml` only.
+- **Promotes to ADR:** no
+
+### [47] An interrupted or timed-out run is recorded from a new session (F.1, review M1)
+
+- **Decision:**
+  - `scripts/loader_cli.py` reads `CURRENT_SESSION` before it starts the script. A `KeyboardInterrupt` (any `BaseException`) during the script is caught, the run is recorded, then the interrupt is re-raised.
+  - When the script did not return normally (an error, a socket timeout, an interrupt), the CLI opens a **new** connection. If the run's session is still running the script, it is killed with `KILL SESSION` and awaited for up to 30 s, so the measured spend is final. Then it reads the run's `LOAD_RUN` row by session id and `/info`, and records the larger of `CALLS` and the `/info` delta. A script error whose session is already idle is read the same way, without a kill.
+  - When neither can be read, the worst case is charged: the script's cap `max_calls` for a backfill, every attempt of the estimate (estimate × 4) for a refresh. This replaces the old fallback of the estimate, which was below the script's real cap.
+  - A refusal raised by the script itself (`<KIND> refused:`, the run lock) exits 1 and records nothing (review n8).
+- **Alternatives:**
+  - Read on the old connection: after a socket timeout its websocket may still carry the old statement's response; after a Ctrl-C it does.
+  - Read without killing: the script keeps spending after the CLI has read `/info`, so the entry undercounts.
+  - Always charge the cap after an interrupt: a Ctrl-C after 5 calls would charge 300 and block the plan.
+- **Rationale:** The ledger is the plan cap's only guard, so every run that may have spent must leave an entry, and the entry must not be smaller than what the key was charged. Killing the session also makes Ctrl-C mean "stop", instead of leaving the script running until the closing websocket frees it.
+- **Promotes to ADR:** no
+
+### [48] A live batch is sized for 4 attempts per request; the run overshoots `max_calls` by at most 3 calls (F.1, review m2)
+
+- **Decision:** In live mode a batch has at most `MAX(1, MIN(MAX_CALLS_PER_QUERY, allowance // 4))` slices, because the fetch UDF makes up to `MAX_ATTEMPTS = 4` HTTP attempts per request (`vs/cfbd_vs/http.py`; a unit test pins the Lua constant to it). A batch therefore fits the allowance even if every request is retried to its last attempt. The only overshoot left is one last slice started with 1 to 3 calls left: at most 3 calls past `max_calls` or `BACKFILL_SPENDABLE`, which the refresh reserve absorbs. Replay batches keep `MIN(allowance, MAX_CALLS_PER_QUERY)`. The bound is documented in the spec, the Lua header and the CLI help.
+- **Alternatives:** documenting the overshoot only (the review's first option; up to 3 × `MAX_CALLS_PER_QUERY` = 30 calls past the cap); refusing a fetch with fewer than 4 calls left (no overshoot, but `MAX_CALLS=3` would fetch nothing).
+- **Rationale:** Batching changes the number of statements, not the number of calls, so smaller batches near the end of the allowance cost run time only. With the plan cap at 300 and the demo at 217, 30 calls of overshoot mattered; 3 do not.
+- **Promotes to ADR:** no
+
+### [49] The ledger is used unless the virtual schema reads the mock connection (F.1, review m3)
+
+- **Decision:** `make backfill` / `make refresh` decide from the virtual schema's `CONNECTION_NAME`, not from the namespace prefix: the ledger is used (when it is on) unless the virtual schema reads `CFBD_API_MOCK`. A prefixed namespace pointed at the real key is charged like the real one; the real namespace pointed at the mock on a local test deployment is not.
+- **Alternatives:** keep the prefix rule and rely on the deploy refusing the real connection with a prefix: a manual `ALTER VIRTUAL SCHEMA` or a later deploy change would bypass it silently.
+- **Rationale:** The money follows the connection, and the CLI already reads the virtual schema's properties for `FETCH_MODE`.
+- **Promotes to ADR:** no
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. The plan review (pre-implementation) is resolved in review.md § Review resolution. -->
+
+Code review `code-review.md` (2026-10-23), fixed in task F.1. Tests named are new or changed.
+
+| # | Resolution | Tests |
+|---|---|---|
+| M1 | Fixed, decision [47]: session id read first; `BaseException` caught, recorded from a new session (kill of a still-running script, wait up to 30 s), re-raised; worst case `max_calls` (backfill) or estimate × 4 (refresh) when nothing is readable | `tests/cli/test_loader_cli.py`: `test_an_interrupted_run_is_recorded_from_a_new_session_and_re_raised`, `test_a_timed_out_run_is_recorded_from_a_new_session`, `test_a_session_that_does_not_end_is_noted_and_the_run_still_recorded`, `test_when_nothing_can_be_read_*` |
+| M2 | Fixed: `loader.plan.scope_problem` (`LOAD_LOG` required with `CFB_CORE`) in plan validation, `Manifest.from_json`, `check_restore` and `take_snapshot`; spec `loader/snapshot-restore` and `loader/load-plan` | `test_load_plan.py`, `test_snapshot.py`, `test_snapshot_flow.py`, IT `test_restore_refuses_a_manifest_without_load_log` |
+| m1 | Fixed: a batch that raises after its fetch is rolled back, its step closed `FAILED`, its spend measured, then re-raised; an unreadable `/info` after a fetch charges at least the requests | `tests/unit/test_backfill_lua.py` (new lupa harness of the whole script) |
+| m2 | Fixed, decision [48]: live batches sized for 4 attempts per request; overshoot ≤ 3 calls, stated in the spec, the Lua header, the CLI help and the user guide | `test_backfill_lua.py`: `test_a_live_batch_is_sized_*`, `test_without_retries_*`, `test_replay_batches_are_not_shrunk` |
+| m3 | Fixed, decision [49]: ledger unless `CONNECTION_NAME` is `CFBD_API_MOCK` | `test_loader_cli.py`: `test_a_prefixed_namespace_on_the_real_connection_uses_the_ledger` and three more |
+| m4 | Fixed, decision [46]: `vs/live/loader-config.yaml` + `loader/target_config.py`; `aws` budget = ledger month cap; explicit `LOADER_CONFIG` wins and is printed; deploy warns on a budget change | `tests/unit/test_target_config.py`, `test_deploy_cli.py`, `test_loader_deploy.py` |
+| m5 | Fixed: `end_job` raises when `release_lock` returns `held = false` | `test_loadlib_lua.py::test_end_job_raises_when_the_run_lost_its_lock` |
+| m6 | Fixed: release only `AND "SESSION_ID" = CURRENT_SESSION`; `RUN_LOCK` takes host kinds only (`acquire_host_lock`) | `test_loadlib_lua.py`, `test_run_lock_lua.py`, IT `test_another_session_cannot_end_a_running_run` |
+| m7 | Fixed: `make deploy` holds the `DEPLOY` lock around the VS and loader deploy once `RUN_LOCK` exists (`scripts.deploy.deploy_namespace`, `loader.runlock.lock_installed`) | `test_deploy_cli.py`, IT `test_a_deploy_is_refused_while_a_run_holds_the_lock` |
+| m8 | Fixed, decision [45]: stop after 2 consecutive failed batches | `test_backfill_lua.py`, IT `test_one_failed_single_slice_batch_does_not_stop_the_run`, `test_systemic_failure_stops_run`, `test_failed_run_recorded` |
+| m9 | Fixed: IT with key echo | IT `test_the_key_never_reaches_the_loader_logs` |
+| m10, m11 | Fixed in the specs (`refresh-week` CHECK wording; `backfill` `max_calls` in calls) | — |
+| m12 | Fixed | `tests/unit/test_loader_sources.py` |
+| m13 | Fixed: `BACKFILL(run_profile, …)`; positional calls unchanged | `test_lua_bundle.py`: `test_no_script_parameter_is_a_reserved_word`, `test_no_result_column_is_a_reserved_word` |
+| m14 | Partly: one `first_line` (`loader.runlock`), one `run_transaction` (`loader/transaction.py`), one `set_remaining` (`loadlib.lua`), one `sliced_params` and `profile_rank` (`loader/plan.py`). **Skipped:** `connect_deployment` / `SOCKET_TIMEOUT_SECONDS` in `scripts/snapshot.py` and `scripts/record.py`; a shared helper belongs in the foundation's `vs/host/target.py` | existing tests |
+| m15 | Partly: `_Reader` (reads of one connection) and `_Context` (seams) extracted from `_Session`. **Skipped:** the full guard/view split, which Phase 6 task 1.9 (P6-c) does when it moves the guard into `loader/guard.py` | — |
+| m16 | Fixed in the loader deploy (an empty plan is valid by `test_an_empty_entry_list_is_valid`) | `test_loader_deploy.py::test_an_empty_plan_deploys_without_stage_tables` |
+| m17 | Fixed: the tests above, plus a `REFRESH_WEEK` kill and the refused run's unchanged tables | IT `test_a_killed_refresh_is_abandoned_by_the_next_one`, `test_concurrent_run_refused` |
+| n1 | **Skipped:** the ledger lock is taken milliseconds after the verdict and is non-blocking; a re-check would add a second `/info` read to every run for a window that small, and the in-DB budget still caps | — |
+| n2 | Fixed: `load_batch` passes `job.fetch_source`; `explain_check` refuses a manifest whose `fetch_mode` differs | `test_loadlib_lua.py::test_a_batch_refuses_a_fetch_mode_changed_during_the_run` |
+| n3 | **Skipped:** the directory is private (0700), and the landed fingerprints catch a file changed after its checksum check | — |
+| n4 | Fixed: the restore logs a note when the manifest's name differs from the directory | `test_snapshot_flow.py::test_a_copied_snapshot_restores_*` |
+| n5, n6 | Fixed: `EXPLAIN` rows in `run-logs`; [40] and the module docstrings say "normalized plan" | — |
+| n7 | **Skipped:** the names are validated against `^[A-Z][A-Z0-9_]*$`; quoting the header changes the statement text the foundation's fake and the lock probe parse, for no behavior gain | — |
+| n8 | Fixed: `<KIND> refused:` from the script exits 1 and records nothing | `test_loader_cli.py::test_a_refusal_raised_by_the_script_*` |
+| n9, n11, n12, n13 | Fixed: dead `PLAN_TABLES` removed; `QUOTED` comment; plan-local references in code point to specs or D-numbers; `RUN_STATUS_LENGTH`, `MAX_FAILURES` | — |
+| n10 | **Skipped:** `RESTORE_SCHEMA` / `INFRA_SCHEMA` constants and placeholders are part of `render_constants`, the cross-bundle contract (H1) the Phase 3/4 bundles build on | — |
+| n14 | **Skipped:** low priority per the review; the signatures are used by other phases | — |
+| n15 | **Skipped:** `vs/host/deploy.py` is the foundation's table comparison; `LOAD_RUN` is only ever created by the deploy itself | — |
+| n16 | Fixed: `lupa` imported directly (mypy override for the untyped package) | — |
+| n17 | Fixed | IT `test_a_retried_server_error_is_charged_every_attempt` |
+| n18 | **Skipped:** fine at demo scale (the review's own assessment) | — |
+| H (`explain_check`) | Fixed: keys are matched inside the `slice_keys` array only | `test_loadlib_lua.py::test_a_key_outside_the_slice_key_list_*` |

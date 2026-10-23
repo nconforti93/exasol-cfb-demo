@@ -14,6 +14,7 @@ Data paid for once is never fetched again (D11). `make snapshot` copies the stor
   - An existing snapshot is never overwritten.
   - Snapshots stay private: CFBD allows private retention, not redistribution.
 - **Scope:** every `CFB_CORE` mirror, plus `CFB_META.LOAD_LOG` and `CFB_META.FETCH_LOG`. The load plan's `snapshot` section lists the scope, so later phases can add their schemas.
+  - `LOAD_LOG` is required whenever `CFB_CORE` is in the scope: it says which slices are stored. A restore that replaced `CFB_CORE` without it would serve replaced or deleted slices as stored, at zero calls, and never fetch them again. Plan validation, the snapshot and the restore all refuse a scope or manifest without it.
   - Not in the scope: the run and step logs (`LOAD_RUN`, `REFRESH_LOG`), the failure list, and the configuration tables. Each deployment keeps its own run history, and `make deploy` recreates the configuration from the YAML.
   - Restored `LOADED_BY` and `CONTEXT` values refer to the runs of the deployment the snapshot came from.
   - The restored fetch log changes the quota view's attribution of past calls. The budget guard is unaffected, because it uses `/info`.
@@ -114,6 +115,13 @@ Data paid for once is never fetched again (D11). `make snapshot` copies the stor
 * *THEN* the command MUST fail, naming the file whose checksum or fingerprint differs
 * *AND* every scope table MUST keep its previous content
 * *AND* the command MUST NOT leave a landing schema behind
+
+### Scenario: A snapshot without the load log is refused
+
+* *GIVEN* a snapshot whose manifest was edited to drop `LOAD_LOG`, the file of `LOAD_LOG` removed
+* *WHEN* the owner runs `make restore NAME=week7 CONFIRM=yes`
+* *THEN* the command MUST fail before changing any table, naming `LOAD_LOG` and `CFB_CORE`
+* *AND* every scope table MUST keep its previous content
 
 ### Scenario: Snapshot and restore are refused while a loader run is active
 

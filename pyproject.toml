@@ -31,7 +31,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["vs/cfbd_vs", "vs/gen"]
+source = ["vs/cfbd_vs", "vs/gen", "loader"]
 branch = true
 
 [tool.coverage.report]
@@ -52,3 +52,7 @@ strict = true
 files = ["vs", "loader", "model", "scripts", "tests"]
 mypy_path = "."
 explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["lupa", "lupa.*"]
+ignore_missing_imports = true
