@@ -7,7 +7,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [44]). Details, files, test
 ## Slice 1: 2026 odds and what-if on AWS (first usable result)
 
 ### Group S1-A
-- [ ] 1.1 Engine core `engine/core.py` from the S3 prototype: fixed-shape draws, team offsets, 2026 rules, tagged stage frame with tallies [expert]
+- [x] 1.1 Engine core `engine/core.py` from the S3 prototype: fixed-shape draws, team offsets, 2026 rules, tagged stage frame with tallies [expert]
 - [x] 1.2 Simulation schema, deploy (`make sim`) and the engine script (`engine/udf.py`, `engine/bundle.py`, data tables)
 
 ### Group S1-B
