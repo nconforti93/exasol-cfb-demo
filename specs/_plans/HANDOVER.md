@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-23 by Codex after the AWS 100k simulation
+Last updated: 2026-10-23 by Codex after the AWS 1M simulation
 
 ---
 
@@ -59,14 +59,14 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Codex took over on 2026-10-23.** Phase 4 task 1.4 is committed as `3fa2fbc` after 2 focused IT tests passed (190.40 s), focused unit tests, mypy and Ruff. Local 10k simulation of 2026 after week 7 is `DONE` (run 1, 14.879 s). The model correction and simulation objects are deployed on AWS (DEPLOY runs 22 and 23, zero CFBD calls). AWS 100k run 1 is `DONE` (14.496 s in database; 143 teams, 377 games); Auburn P(CFP) is 4.94% now, 11.33% if it beats LSU in week 8 (36,453 matching seasons, 0.318 s query). Task 1.5's AWS 1M run and verification are next. AWS quota baseline is 241 of the October project cap of 400. The p5 uncommitted task set at handover is listed below. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row from the stopped Claude session, the run lock treats it as stale.
+**Codex took over on 2026-10-23.** Phase 4 task 1.4 is committed as `3fa2fbc` after 2 focused IT tests passed (190.40 s), focused unit tests, mypy and Ruff. Local 10k simulation of 2026 after week 7 is `DONE` (run 1, 14.879 s). The model correction and simulation objects are deployed on AWS (DEPLOY runs 22 and 23). AWS 100k run 1 is `DONE` in 14.496 s; Auburn P(CFP) is 4.94% now, 11.33% if it beats LSU. AWS 1M run 2 is `DONE` in 32.672 s; Auburn P(CFP) is 4.94% now, 11.20% if it beats LSU (366,207 matching seasons, 0.155 s query). Both use 143 teams and 377 games. Post-run AWS quota is unchanged at 241/400, confirming zero CFBD calls. Task 1.5 verification write-up is in progress. The p5 uncommitted task set at handover is listed below. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row from the stopped Claude session, the run lock treats it as stale.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
 | 1 VS foundation | add-cfbd-vs-foundation | recorded | **Done.** Live on AWS |
 | 2 Persistence & refresh | add-cfb-persistence-refresh | recorded | **Done.** 221 live calls. AWS `CFB_CORE`: 155k rows (GAMES 1869–2026, SP+/WP 2013–2026, polls 2014–2026, TEAMS 1933, VENUES 852). 2026 is refreshed through regular week 7. The local DB has an identical copy (snapshot restore; Oct 31 restore gate **passed**) |
 | 3 Analytical model | add-cfb-analytical-model | recorded, **`main` = 2a26584** | **Done.** `CFB_MODEL` is live on AWS and local. 8 derived tables are rebuilt by refresh step 100 `CFB_INFRA.REFRESH_MODEL`, registered on both targets. Also as-of views and `MODEL_CHECKS`. ADR-031..046. Page queries run in 0.07–0.8 s on AWS. **Rule:** filter as-of views with literal `AS_OF_SEASON`/`AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF` |
-| 4 Score engine | add-cfb-score-engine | **p4** (HEAD 3fa2fbc) | Light plan 513455b: 14 tasks in 3 slices; see `tasks.md`. **Done:** 1.1 engine core (a70c7fc), 1.2 `CFB_SIM` schema + `CFB_INFRA.SIM_ENGINE` UDF (74af62c), 1.3 fitted params + engine input views (5395e21; HFA 3.14, SIGMA_1 16.6, TAU 2.83; margin RMSE 16.9 vs the CFBD line's 15.7), 1.4 stored runs and what-if (3fa2fbc; local 10k smoke and focused IT passed; model and sim deployed on AWS). **Next:** 1.5: 100k/1M on AWS plus Auburn what-if. Then slice 2: 2.1 predictions freeze/grade (**deadline below**), 2.2 movement + rooting guide, 2.3 live. Then slice 3 |
+| 4 Score engine | add-cfb-score-engine | **p4** (HEAD 3fa2fbc) | Light plan 513455b: 14 tasks in 3 slices; see `tasks.md`. **Done:** 1.1 engine core (a70c7fc), 1.2 `CFB_SIM` schema + `CFB_INFRA.SIM_ENGINE` UDF (74af62c), 1.3 fitted params + engine input views (5395e21; HFA 3.14, SIGMA_1 16.6, TAU 2.83; margin RMSE 16.9 vs the CFBD line's 15.7), 1.4 stored runs and what-if (3fa2fbc; local 10k smoke and focused IT passed), 1.5 AWS 100k/1M runs and Auburn what-if passed; write-up in progress. **Next:** slice 2 task 2.1 predictions freeze/grade (**deadline below**), 2.2 movement + rooting guide, 2.3 live. Then slice 3 |
 | 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 1af6214) | Light plan 1af6214: 8 tasks. Slice A 1.1→1.5 is 20 engine-free `CFB_API` views, roles `CFB_APP`/`CFB_MCP`, `make api`. Slice B 2.1–2.3 is thin views over Phase 4 objects, gated on Phase 4 1.4/2.1/2.2 being merged into p5. **1.1 is in progress, uncommitted (see below)** |
 | 6 Web app | add-cfb-app | **p6** (HEAD b900208) | UI revision done:<br>• 9.0 foundation 3342b9c<br>• 9.1 shell + 9.2 US map 3545207<br>• 9.3 team page + 9.4 league week/stats 7003bcb<br>• 9.5 logos 15779cc (138 FBS logos in `~/.cfb-demo/logos`, from cdn.collegefootballdata.com, [43])<br>• 9.6 real-data snapshot preview a307279<br>• secrets loader bc401d0 ([44])<br>**The preview runs at http://127.0.0.1:5173/** (`make app-preview REAL=1` with `CHOKIDAR_USEPOLLING=1`; it serves JSON from `~/.cfb-demo/fixtures/latest`, a snapshot taken 2026-10-23 08:01 UTC, **not live DB**). Real: map, team pages, this week, stats, search. Sample: odds, predictions, upsets, H2H, outlooks. **Next:** 2.2 `app/backend/main.py` + `scripts/app.py` (serve/user; users `CFB_APP_WEB`/`CFB_CONSOLE_WEB`, passwords from `~/.cfb-demo/app.env`), 9.7 live routes over `CFB_API` (needs Phase 5 slice A), 9.8 outlook (needs Phase 4 slice 1–2 + Phase 5 slice B). The logo route `make_router` is not mounted yet |
 | 7 Chat | add-cfb-chat | p7 (HEAD 89f21ae) | Groups A–B done. Group C+ is blocked until Phases 5 and 6 merge (gate 3.0). Hand-off `P7-secrets`: adopt `vs/host/appenv.py`. There is no Anthropic key, so build and test only |
@@ -126,6 +126,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-23: **AWS 1M simulation and Auburn what-if passed.** Run 2 `DONE` in 32.672 s, engine 25.182 s, 12 instances on 3 nodes; Auburn P(CFP) 4.94% now vs 11.20% if it beats LSU (366,207 matching seasons, 0.155 s query). Post-run quota unchanged at 241/400: zero CFBD calls.
 
 - 2026-10-23: **AWS 100k simulation and Auburn what-if passed.** Run 1 `DONE` in 14.496 s, engine 5.636 s, 12 instances on 3 nodes, 143 teams and 377 games; P(CFP) 4.94% now vs 11.33% if Auburn beats LSU (0.318 s query). Zero CFBD calls.
 
