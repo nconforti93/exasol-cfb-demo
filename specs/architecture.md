@@ -28,13 +28,13 @@
 
 | Schema | Contents | Reads from | Read by |
 |--------|----------|-----------|---------|
-| `CFB_INFRA` | Adapter, fetch UDF, loader scripts (`BACKFILL`, `REFRESH_WEEK`, `RUN_LOCK`), registered refresh-step scripts (later phases) | — | `sys` (owner) |
+| `CFB_INFRA` | Adapter, fetch UDF, loader scripts (`BACKFILL`, `REFRESH_WEEK`, `RUN_LOCK`), registered refresh-step scripts (`REFRESH_MODEL`; later phases add more) | — | `sys` (owner) |
 | `CFBD_VS` | Virtual schema, one table per endpoint | CFBD API | Loader, `CFB_API` on-demand views, presenter |
 | `CFB_META` | Tables: `LOAD_LOG`, `FETCH_LOG`, the compiled load plan (`LOAD_PLAN`, `LOAD_PLAN_GAPS`, `LOADER_CONFIG`, `SEASON_NUMBERS`, `REFRESH_STEPS`), the run records (`LOAD_RUN`, `REFRESH_LOG`, `LOAD_FAILURES`). Views: `LOADER_SETTINGS`, `LOAD_SLICES`, `LOAD_ORPHANS`, `BACKFILL_QUEUE`, `LOAD_STATUS`, `QUOTA` | `CFBD_VS` (`INFO`, for `QUOTA`) | `sys` (owner), the virtual schema (`LOAD_LOG`), `CFB_API` (inspector, timeline) |
 | `CFB_STAGE` | One empty mirror per planned table: where a loader batch lands before the swap into `CFB_CORE` | `CFBD_VS` | The loader only |
 | `CFB_RESTORE` | Landing schema that exists only while a restore runs (dropped afterwards, also on failure) | snapshot files | The restore only |
 | `CFB_CORE` | Persisted mirrors of stored endpoints, all history | `CFB_STAGE` (loader), snapshot files (restore) | `CFB_MODEL` only (current-season rule below) |
-| `CFB_MODEL` | Era-aware dims and facts, as-of helpers, `COMMENT ON` throughout | `CFB_CORE` | Analyses |
+| `CFB_MODEL` | Era-aware dims and facts (stored data only), as-of views, seeded reference tables, `GREAT_CIRCLE_KM`; every object commented | `CFB_CORE`, `CFB_META.{LOAD_PLAN, LOAD_PLAN_GAPS, LOAD_SLICES}`, itself | Analyses |
 | `CFB_SIM` | Season model, run registry, `SIM_PATH`, `SIM_TEAM`, what-if | `CFB_MODEL` | `CFB_API` |
 | `CFB_PRED` | Weekly predictions (frozen at refresh), scorecard, upset rankings | `CFB_MODEL`, `CFB_SIM` | `CFB_API` |
 | `CFB_API` | Serving layer | `CFB_MODEL`, `CFB_SIM`, `CFB_PRED`, on-demand `CFBD_VS` tables | App user, MCP user |
@@ -88,10 +88,14 @@ Rules:
   - **Snapshots** (D45): `make snapshot` / `make restore`, gzip CSV in a private directory, atomic and fingerprint-checked restore. A rebuild costs zero calls (D11).
   - **Host Python** only deploys, wraps the scripts with the estimate, the confirmation and the call ledger (`scripts/loader_cli.py`), takes the host run lock (`loader/runlock.py`) and runs snapshot and restore (`loader/snapshot.py`, `scripts/snapshot.py`).
   - **`PROMOTE()` is deferred.** The nightly persistence of on-demand slices needs the backend's capture of on-demand fetch logs (Phase 6); before that there is nothing to promote except by re-fetching. It is in the backlog.
-- **CFB_MODEL** (`sql/model/`):
-  - Dimensions: team, team-season (conference, classification/era), venue (`GEOGRAPHY`), player, coach, calendar.
-  - Facts: game, team-game stats, play, drive, rating (Elo/SRS/SP+/FPI by week), ranking, recruit, transfer, draft pick, line, weather.
-  - Coverage flags per game for play-level facts.
+- **CFB_MODEL** (`sql/model/`, plan `add-cfb-analytical-model`; one file per object, deployed in one transaction by `vs/host/sqlobjects.py` under the run lock):
+  - **Stored data only.** It reads the demo profile's mirrors in `CFB_CORE` and the loader's plan views (`LOAD_PLAN`, `LOAD_PLAN_GAPS`, `LOAD_SLICES`), never `CFBD_VS`, so it costs zero calls (lint plus a dependency test). Datasets that are not stored (players, plays, drives, weather, ...) are rows of the reference table `DATASET` with their endpoint and `CFBD_VS` table; `SEASON_COVERAGE` gives a trust level per season and dataset.
+  - **Objects:** seven seeded reference tables (eras, division labels, conference tiers, championship seasons, polls, datasets, classification transitions); eight derived tables (`GAME`, `SEASON_WEEK`, `TEAM`, `RATING_SP`, `RANKING`, `TEAM_MEMBERSHIP`, `TEAM_SEASON`, `AS_OF_POINT`); views for the rest (`TEAM_GAME`, `SEASON`, `VENUE`, `CONFERENCE`, `CONFERENCE_CHAMPIONSHIP_GAME`, `SEASON_COVERAGE`, `MODEL_CHECKS`) and the as-of views; one function. The dictionary is `docs/model-dictionary.md`.
+  - **Derived tables** are views that were measured too slow (compile time of the deep stack) and became tables. They are current as of the last rebuild: `CFB_INFRA.REFRESH_MODEL` rebuilds them (registered refresh step 100, post-hook of `make backfill` / `make restore`, `make model`, `make model-refresh`). A `BACKFILL` run directly or a manual edit of `CFB_CORE` leaves them stale until the next rebuild (plan decision [40]).
+  - **As-of views** (`CURRENT_AS_OF`, `GAME_AS_OF`, `RANKING_AS_OF`, `TEAM_SEASON_AS_OF`): one horizon, "known before the next week's first kickoff"; points are `(season, WEEK_SEQ)` with `WEEK_SEQ` 0 preseason, n regular week n, 100 + n postseason week n; games whose teams depend on results are hidden until known; filter with literal points. No in-season snapshot history.
+  - **Venues** use `GEOMETRY(4326)` (Exasol has no `GEOGRAPHY`); distances come from `GREAT_CIRCLE_KM`.
+  - **Refresh step 100 `MODEL`** (`CFB_INFRA.REFRESH_MODEL`): rebuilds the derived tables, evaluates `MODEL_CHECKS` for the point, logs to `CFB_META.MODEL_CHECK_LOG` and stops the chain on a failed ERROR check.
+  - **Not built (backlog):** players, coaches, plays, drives, recruits, transfers, draft, weather, per-week snapshot history of SP+ and lines.
 
 ### Analyses
 - **Score model** (`sql/sim/model/`): per remaining game, a predicted margin (rating difference + home field; ratings computed in SQL from games, with SP+ as a prior) and a predicted total (offense/defense parts of SP+, or a fallback). σ is calibrated on 2014–2025 from residuals, and calibration and Brier scores are reported. Upset probability for older seasons comes from pre-game Elo.
@@ -246,6 +250,7 @@ Deploy and restore refuse a column difference, and orphans block re-fetching, bu
 
 ## Engine contract
 
+- **Data inputs come from the model:** `CFB_MODEL.GAME_AS_OF` and `CFB_MODEL.TEAM_SEASON_AS_OF` hold every data input below (neutral site, conference flag, final margins, records, conference records, tier, Elo, SP+ prior) as fixed-scale `DECIMAL`; the engine computes indices, μ, σ, ratings and the capped differential itself (plan decision [31]; the mapping is in the plan's Key Interfaces).
 - **Input:** one SET call per sim batch with the full remaining-season model (D19, `docs/spikes/s3-python-engine-throughput.md`).
   - The model is one table of tagged rows, `MODEL_ROWS(row_kind ∈ {GAME, TEAM, PARAM}, …)`; columns that do not apply to a kind are NULL.
     - `GAME`: game_idx, home_idx, away_idx, neutral, conference flag, predicted margin μ, σ, predicted total; final games carry the played flag and margin instead (needed for head-to-head).
@@ -301,6 +306,7 @@ Rules:
 - **Resolved (D45): snapshot format.** gzip CSV through pyexasol, not Parquet through exapump (probe 1.2); no S3.
 - **Deferred: `PROMOTE()`** (nightly persistence of on-demand slices) until the backend captures on-demand fetch logs (Phase 6); backlog.
 - **Open: mirror migration on a catalog change.** See [Loader contract](#loader-contract).
+- **Open (Phase 3, Q3): as-of granularity inside the postseason.** CFBD puts all bowls and CFP rounds in one postseason week, so as-of points inside the postseason are no finer than that week; Phase 4 and 5 handle it by date.
 - **Resolved: flattening edge cases.** Object-root = one row, scalar root = `VALUE`, over-500-field objects curated + `RAW_JSON`, wide stats tables not pivoted (a `CFB_MODEL` concern).
 - **Resolved (D20): `SIM_PATH` layout and per-game score storage at 1M sims.** Layout C (wide BOOLEAN), sparse `SIM_TEAM`, loader-built `LEVERAGE`, no per-sim margins (`docs/spikes/s4-sim-storage.md`). Still open for Phase 5: the conditional rooting guide (k = 3) measures about 2.2 s p95 at 1M against the < 1 s target.
 - **Resolved (D19): Python engine throughput.** The vectorized chain runs 100k sims in about 7 s (local, compute only) and 12.4 s end to end on AWS; locally 55.4 s median, dominated by row emission. `GROUP BY batch_id` fans out to `nrOfCores` instances per node (`docs/spikes/s3-python-engine-throughput.md`).

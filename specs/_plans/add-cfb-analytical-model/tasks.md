@@ -44,28 +44,28 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [x] 4.3 Performance on the full model (needs 3.9–3.11 and a "local free" window): eight derived tables (decision [40]); numbers in `docs/spikes/s6-model-probe.md`
 
 ## Group I
-- [ ] 5.1 Lint, coverage and the integration suite:
+- [-] 5.1 Lint, coverage and the integration suite: (light process: `make test` 6926 passed and `make lint` clean on 2026-10-23; the coverage gate and a full `make test-it` were not re-run in the closing pass, the model IT suites ran as each task landed; listed as open in the verification report)
 
 ## Group J
-- [ ] 6.1 `docs/user-guide.md` § "The analytical model":
-- [ ] 6.2 `specs/architecture.md`:
-- [ ] 6.3 `docs/roadmap.md`:
-- [ ] 6.4 `CLAUDE.md` dense bullets:
+- [x] 6.1 `docs/user-guide.md` § "The analytical model":
+- [x] 6.2 `specs/architecture.md`:
+- [x] 6.3 `docs/roadmap.md`: (D50 to D58; Phase 3 status)
+- [x] 6.4 `CLAUDE.md` dense bullets: (also `specs/mission.md`: commands, `GEOMETRY(4326)`, as-of glossary)
 
 ## Group K (sequential, gated)
-- [ ] 7.1 Gates and deploy:
-- [ ] 7.2 Checks and assumptions on AWS:
-- [ ] 7.3 Performance and examples:
-- [ ] 7.4 Local:
-- [ ] 7.5 Zero-call proof and write-up:
-- Light pre-run of 7.1–7.3 on 2026-10-23, on the model through 3.8 (no as-of views, no `MODEL_CHECKS`): `make model` on AWS and local, real-data sanity checks, one bug fixed ([36]), `TEAM` columns for the app ([37]), observations ([38]). The full 7.x stays open.
+- [x] 7.1 Gates and deploy: (light: `make deploy` on AWS and local, 454 of 454 comments, step 100 registered on both; probe 1.1 not re-run on AWS)
+- [x] 7.2 Checks and assumptions on AWS: (Q1 to Q13 in `docs/model-verification.md`)
+- [x] 7.3 Performance and examples: (timings per decision [40]; examples other than `head_to_head` deferred with 4.2)
+- [x] 7.4 Local: (deployed, same counts and checks as AWS; timings in [40])
+- [x] 7.5 Zero-call proof and write-up: (`docs/model-verification.md`: FETCH_LOG 221 on both targets, ledger lines 37 before and after)
+- Closing pass 2026-10-23 (light process): docs 6.1 to 6.4, step 100 registered on both targets, `docs/model-verification.md`, `verification-report.md`. Earlier note: light pre-run of 7.1–7.3 on 2026-10-23, on the model through 3.8 (no as-of views, no `MODEL_CHECKS`): `make model` on AWS and local, real-data sanity checks, one bug fixed ([36]), `TEAM` columns for the app ([37]), observations ([38]). 
 
 ## Cross-plan items (from the Phase 4 revision, 2026-10-22)
 - [x] X1 Restrict championship-game detection to weeks up to the season's power-conference championship week. In the stored 2026 schedule, Army–Navy is flagged as an AAC conference game alone in week 15. The current rule would mislabel it and would miss the real AAC title game in week 14, which then enters 2026 runs as a regular game and triggers CONFERENCE_PAIR_REPEATED from the week-13 point on (late November). Fold this into task 3.1 (`CONFERENCE_CHAMPIONSHIP_GAME`) and add a scenario plus a decision-log entry. Also take the Phase 2 `DEPLOY` lock kind in the model deploy (Phase 4 H1).
-- [ ] X2 For information: under the label rule, the 2024 selection ranking only becomes visible one week after selection. Phase 4 is unaffected because it reads final rankings as labels only. Mention it in the as-of docs.
+- [x] X2 For information: (one sentence in the user guide § 10, with the real labels: the selection ranking of 2024 is labeled week 16 and visible from point 16) under the label rule, the 2024 selection ranking only becomes visible one week after selection. Phase 4 is unaffected because it reads final rankings as labels only. Mention it in the as-of docs.
 
 ## Review and Verification
-- [ ] R.1 Code review
-- [ ] V.1 Checklist
-- [ ] V.2 Scenario coverage audit
-- [ ] V.3 Manual testing and verification-report.md
+- [-] R.1 Code review (light process: review only risky code; the model is views and tables)
+- [x] V.1 Checklist
+- [-] V.2 Scenario coverage audit (light process)
+- [x] V.3 Manual testing and verification-report.md

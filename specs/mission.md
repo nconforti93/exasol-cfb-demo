@@ -37,7 +37,7 @@ This project shows both on data people care about:
 5. **Analytical model.** A general model over the stored data, aware of eras:
    - conference membership and classification per season
    - coverage flags per fact
-   - venue `GEOGRAPHY`
+   - venue `GEOMETRY(4326)` point (Exasol has no `GEOGRAPHY` type)
    - an "as of week" view for every page
 
 ### App (v1 pages)
@@ -71,7 +71,7 @@ This project shows both on data people care about:
 | Fetch log | Per-request record (endpoint, params, status, ms, rows) that powers the SQL↔HTTP inspector |
 | Load plan | `loader/load-plan.yaml`: per entry the table, slicing, seasons, known gaps, refresh class (`static` / `weekly`), profile (`demo` / `full`) and priority, plus the call budget |
 | Refresh | `REFRESH_WEEK(season, week, season_type)`: the weekly step chain from the API to the simulations |
-| As-of (season, week) | The point in time a page or model sees; only results before it are known |
+| As-of (season, week) | The point in time a page or model sees: everything known after that week's games and before the next week's first kickoff |
 | Era / coverage flag | Classification of a team-season (FBS/FCS/historic division) / whether a fact (e.g. plays) is complete for a game |
 | Sim / run / sim batch | One playout of the rest of a season / N sims for one model snapshot / the slice one UDF call handles |
 | Predicted margin / total | The model's expected point difference / combined points for a game; the sims sample around them |
@@ -126,6 +126,10 @@ make quota                                                                  # CF
 make snapshot NAME=n                       # private gzip CSV copy of CFB_CORE + load log + fetch log
 make restore NAME=n CONFIRM=yes [FORCE=yes]  # atomic restore, 0 calls; also the rehearsal reset
 make snapshots                             # list snapshots
+make model [TARGET=aws]                    # CFB_MODEL deploy (also in make deploy), 0 calls
+make model-check SEASON=y WEEK=w           # print the model checks of one point
+make model-refresh [SEASON=y WEEK=w]       # rebuild the derived tables (and log that point's checks)
+make model-docs                            # regenerate docs/model-dictionary.md
 ```
 
 `LEDGER=off` turns the call ledger off for people who run their own key. Planned with later phases (not in the Makefile yet): `make build` (frontend bundle), the model, simulation and app targets. Frontend lint (eslint) joins `make lint` with the app.
