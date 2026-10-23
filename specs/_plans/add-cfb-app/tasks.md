@@ -51,6 +51,7 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 ## Group B (gate: Phases 2–5 merged; **2.2 only:** Phase 2 merged + P6-UI-b/c/d deployed, for slice S2)
 - [ ] 1.10 Probe, late part
 - [ ] 2.2 `app/backend/main.py`, `scripts/app.py` (`serve`, `dev`, `user`) and the Makefile targets:
+  - `scripts/app.py user` reads `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` through `vs/host/appenv.py` (environment, then `~/.cfb-demo/app.env`; never the repo `.env`, [44]); it creates no secrets file (`make app-env` does) and never prints a password.
 - [ ] 2.3 `tests/it/app_stack.py` and `tests/it/fixtures/load-plan.app.yaml`, per Key Interfaces
 
 ## Group C
@@ -87,6 +88,7 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 - [ ] FU-1 Backend adds an optional `refresh_target {season, week, season_type}` to `ConfigResponse`, computed from `SEASON_WEEK` (the next week after the current point, across the regular→postseason and season boundaries). The RefreshPanel uses it instead of its week+1 guess. Update `types.ts`, the schema, the fixtures and the models. Fold this into 2.2/4.2.
 
 ## Cross-plan items
+- [ ] P7-secrets Phase 7 (`../exasol-cfb-demo-p7`, branch `add-cfb-chat`) has its own chat settings that read the repo `.env` for `ANTHROPIC_API_KEY` and `CFB_CHAT_PASSWORD`. When p6 is merged into p7 it must adopt the same loader (`vs/host/appenv.py`: environment, then `~/.cfb-demo/app.env`; fail fast on a `*_PASSWORD` or `*_API_KEY` key in the repo `.env`) and update its plan, specs and user guide to say `~/.cfb-demo/app.env` instead of `.env` ([44]). Not edited in p7.
 - [ ] P7-a..e Phase 7 hand-offs (see review.md); fold them into 5.1, 2.1, 2.2 and 6.x. P7-a update (UI revision): PageId gains `home`, `team`, `week`, `stats` (old ids kept); team page team = `focusTeam`; new `mapConference`
 - [ ] P6-UI-a (Phase 3): `CFB_MODEL.TEAM` + `COLOR`, `ALTERNATE_COLOR`
 - [ ] P6-UI-b (Phase 5): `CFB_API.TEAMS` + `MASCOT`, `ABBREVIATION`, `COLOR`, `ALTERNATE_COLOR`, `HOME_VENUE_NAME`, `HOME_CITY`, `HOME_STATE`, `LATITUDE`, `LONGITUDE`

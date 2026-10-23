@@ -34,7 +34,7 @@ FIXTURES_DIR := $(if $(filter 1 yes,$(REAL)),$(HOME)/.cfb-demo/fixtures/latest,$
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record logos db-check \
         app-deps app-build app-test app-lint \
-        app app-serve app-user app-e2e app-perf app-preview app-fixtures
+        app app-serve app-env app-user app-e2e app-perf app-preview app-fixtures
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -107,6 +107,8 @@ app-lint: app-deps
 # Backend (app/backend). `ROTATE=yes` sets a new password on existing app users (make app-user).
 # make app          dev: uvicorn --reload on 127.0.0.1:8000 plus Vite on 127.0.0.1:5173 (no live refresh)
 # make app-serve    one process serving the API and app/frontend/dist (TARGET=aws works)
+# make app-env      creates ~/.cfb-demo/app.env (0600) with random CFB_APP_PASSWORD and CFB_CONSOLE_PASSWORD;
+#                   never overwrites a key, prints no value. Secrets live there, never in the repo or OneDrive.
 # make app-e2e      browser smoke against the TEST_ stack; run it under the IT lock (flock <lock> make app-e2e)
 # make app-perf     times the fixed catalog of read endpoints, never a live endpoint
 ROTATE ?=
@@ -129,6 +131,9 @@ app-preview: app-deps
 #                    (outside the repository, never committed). 0 CFBD calls.
 app-fixtures: db-check
 	$(PY) -m scripts.app_fixtures $(if $(SEASON),--season $(SEASON))
+
+app-env:
+	$(PY) -m scripts.app_env init $(ARGS)
 
 app-user: db-check
 	$(PY) -m scripts.app user $(if $(filter yes,$(ROTATE)),--rotate) $(ARGS)

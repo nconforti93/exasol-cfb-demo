@@ -13,8 +13,8 @@ REPLACE` drops that grant, even for identical text. Never `ACCESS ANY CONNECTION
 
 `--target local|aws` (or `TARGET`) selects the Exasol Personal deployment, see `vs/host/target.py`.
 The sys password is read at run time from that deployment's secrets file. The test owner's
-password comes from `CFB_TEST_OWNER_PASSWORD` (environment or `.env`). Neither is printed or
-written, and errors from statements that carry a password are redacted.
+password comes from `CFB_TEST_OWNER_PASSWORD` (environment, then `~/.cfb-demo/app.env`). Neither is
+printed or written, and errors from statements that carry a password are redacted.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from vs.host import redact, target
+from vs.host import appenv, redact, target
 from vs.host.namespace import Namespace, NamespaceError
 
 OWNER_PASSWORD_VARIABLE = "CFB_TEST_OWNER_PASSWORD"
@@ -185,7 +185,7 @@ def _apply_owned(
         if not owner_password:
             raise GrantsError(
                 f"user {owner} does not exist and {OWNER_PASSWORD_VARIABLE} is not set "
-                "(environment or .env)"
+                f"(environment or {appenv.HOME_HINT})"
             )
         steps.append(create_user_step(owner, owner_password))
     steps.append(owner_privileges_step(owner))
@@ -196,11 +196,17 @@ def _apply_owned(
     return Report(tuple(lines + script_lines), script_grant, exit_code)
 
 
-def owner_password(environ: Mapping[str, str], dotenv: Path = target.DOTENV_PATH) -> str | None:
-    value = environ.get(OWNER_PASSWORD_VARIABLE) or target.parse_dotenv(dotenv).get(
-        OWNER_PASSWORD_VARIABLE
-    )
-    return value or None
+def owner_password(
+    environ: Mapping[str, str],
+    dotenv: Path = target.DOTENV_PATH,
+    secrets_file: Path | None = None,
+) -> str | None:
+    """The owner password: environment, then `~/.cfb-demo/app.env`; a secret in `.env` fails."""
+    try:
+        values = appenv.load_values(environ, dotenv_path=dotenv, secrets_file=secrets_file)
+    except appenv.SecretsFileError as error:
+        raise GrantsError(str(error)) from None
+    return values.get(OWNER_PASSWORD_VARIABLE) or None
 
 
 class PyexasolDatabase:

@@ -209,15 +209,24 @@ def test_logo_settings_come_from_the_environment(tmp_path: Path) -> None:
         load(environment(APP_LOGOS="maybe"), none)
 
 
-def test_the_environment_wins_over_dotenv(tmp_path: Path) -> None:
+def test_the_environment_wins_over_the_secrets_file_and_dotenv(tmp_path: Path) -> None:
     dotenv = tmp_path / ".env"
-    dotenv.write_text(
-        f"CFB_APP_PASSWORD=from-dotenv\nCFB_CONSOLE_PASSWORD={CONSOLE_PASSWORD}\nAPP_PORT=9001\n"
+    dotenv.write_text("APP_PORT=9001\nAPP_LOGOS=off\n")
+    secrets_file = tmp_path / "app.env"
+    secrets_file.write_text(
+        f"CFB_APP_PASSWORD=from-file\nCFB_CONSOLE_PASSWORD={CONSOLE_PASSWORD}\nAPP_PORT=9003\n"
     )
-    loaded = load({"CFB_APP_PASSWORD": PASSWORD, "APP_PORT": "9002"}, dotenv)
+    secrets_file.chmod(0o600)
+    loaded = Settings.from_env(
+        {"CFB_APP_PASSWORD": PASSWORD, "APP_PORT": "9002"},
+        dotenv_path=dotenv,
+        secrets_file=secrets_file,
+        resolver=LOCAL,
+    )
     assert loaded.app_password == PASSWORD
     assert loaded.console_password == CONSOLE_PASSWORD
     assert loaded.port == 9002
+    assert not loaded.logos_enabled
 
 
 def test_the_read_password_is_required_and_the_error_names_only_the_variable() -> None:

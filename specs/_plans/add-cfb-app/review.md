@@ -85,7 +85,7 @@ On WSL2, a `127.0.0.1` bind is forwarded to Windows `localhost`, which is intend
   5. **`ACCESS` on a connection.** This one matters most: a connection is how a key leaks.
   6. **`IMPERSONATION` grants.**
 - The skills' references do not name the privilege dictionary views (the plan says so, Q5). The grammar does confirm `GRANT IMPERSONATION`, `CREATE CONSUMER GROUP … QUERY_TIMEOUT` and `ALTER USER … SET CONSUMER_GROUP`.
-- **Separately, "read-only" is not "zero-spend".** `CFB_APP_WEB` can run `CFB_API_LIVE.GAME_PREVIEW` from any SQL client, using the password in `.env`, and spend a call outside the ledger. This is acceptable for a demo, but the plan should say it, not imply that the role cannot spend.
+- **Separately, "read-only" is not "zero-spend".** `CFB_APP_WEB` can run `CFB_API_LIVE.GAME_PREVIEW` from any SQL client, using the password in `~/.cfb-demo/app.env`, and spend a call outside the ledger. This is acceptable for a demo, but the plan should say it, not imply that the role cannot spend.
 
 **Fix**
 - **Probe 1.1(d) reads the effective-privilege views.** It reads the `EXA_USER_*` views and the `EXA_ROLE_*` views of the roles the user holds (system, object and role privileges, recursively, `PUBLIC` included), connection privileges, and objects owned by the user. The start check is then a **positive** rule:
@@ -490,7 +490,7 @@ Nothing was rejected outright. Where the review offered options, or where its as
 - **Start now:** groups A, A-FE1 → A-FE2 and A3 need no other phase and no CFBD call; probe 1.1 needs one "local free" window.
 - **On Phase 2's merge:** group P2 (1.9, 2.4). Tell the Phase 2 session (hand-off P6-c) that `scripts/loader_cli.py` will be refactored with its behavior unchanged, that the app's live refresh holds the ledger lock for its whole run, and that the CLI's lock during replay runs makes the app's live requests answer busy. Calling `guard.reconcile` from the CLI is optional.
 - **On the merge of Phases 2–5:** group B onward, starting with probe 1.10.
-- **Owner items:** U4 now also needs `CFB_CONSOLE_PASSWORD` in `.env`; U3 adds [24] to the decisions for the owner to review. No item blocks a task.
+- **Owner items:** U4 now also needs `CFB_CONSOLE_PASSWORD` in `~/.cfb-demo/app.env`; U3 adds [24] to the decisions for the owner to review. No item blocks a task.
 - **Cut line:** apply it, in the listed order, if Phase 5 lands late; the stretch scenarios then leave this plan's specs before recording and go to Phase 8's interview.
 
 ## Cross-plan items from Phase 7 (2026-10-23)

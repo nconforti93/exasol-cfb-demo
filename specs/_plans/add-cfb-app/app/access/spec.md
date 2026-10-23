@@ -5,7 +5,7 @@ The app reads its pages as a database user that can only read the serving schema
 ## Background
 
 - **Read path.** Every query a page runs goes through the app user, a database user that holds only `CREATE SESSION` and the role `CFB_APP` (`SELECT` on the schemas `CFB_API` and `CFB_API_LIVE`, `api/roles`).
-  - The user's name comes from `CFB_APP_USER` (default `CFB_APP_WEB`) and its password from `CFB_APP_PASSWORD`, in the environment or in `.env`, which git ignores. The password is never committed, logged, or sent to the browser. Host, port and TLS come from `TARGET` through `vs/host/target.py`.
+  - The user's name comes from `CFB_APP_USER` (default `CFB_APP_WEB`) and its password from `CFB_APP_PASSWORD`, in the environment or in `~/.cfb-demo/app.env` (outside the repository and OneDrive, mode 0600; `CFB_APP_ENV` overrides the path; a repo `.env` with a `*_PASSWORD` or `*_API_KEY` key stops the app). The password is never committed, logged, or sent to the browser. Host, port and TLS come from `TARGET` through `vs/host/target.py`.
   - The page SQL names only objects of `CFB_API` and `CFB_API_LIVE`. The only statement that names `CFB_API_LIVE.GAME_PREVIEW` is the preview statement of the spending guard (`app/live-spend`); a lint fails on any other.
   - Read sessions use autocommit, as the page contract asks (`api/serving-contract`).
 - **Console path.** The curated queries of the inspector's console (`app/inspector`) run as the console user, a database user that holds only `CREATE SESSION` and the role `CFB_READER` (`SELECT` on the virtual schema `CFBD_VS`, created by `make grants`).

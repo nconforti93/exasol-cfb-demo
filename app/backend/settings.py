@@ -1,4 +1,5 @@
-"""The app's settings: environment first, then `.env`; the bind rule; the operator decision; the
+"""The app's settings: environment first, then the secrets file `~/.cfb-demo/app.env` (and the repo
+`.env` for non-secret keys only; see `vs/host/appenv.py`); the bind rule; the operator decision; the
 `Host` allowlist and the configured `Origin` set (pure; nothing here touches the network except an
 injected resolver, and nothing secret is ever put in a message, a repr or `describe()`)."""
 
@@ -11,7 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from vs.host import ledger, target
+from vs.host import appenv, ledger, target
 from vs.host.namespace import Namespace, NamespaceError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -228,11 +229,19 @@ class Settings:
         environ: Mapping[str, str],
         *,
         dotenv_path: Path | None = None,
+        secrets_file: Path | None = None,
         resolver: Resolver = system_resolver,
     ) -> Settings:
-        """Read the settings table: the environment first, then `.env`."""
-        dotenv = target.parse_dotenv(dotenv_path or target.DOTENV_PATH)
-        values = {**dotenv, **{key: value for key, value in environ.items() if value != ""}}
+        """Read the settings table: the environment first, then `~/.cfb-demo/app.env`
+        (`CFB_APP_ENV`), then the repo `.env` for non-secret keys; a secret key in `.env` fails."""
+        try:
+            values = appenv.load_values(
+                environ,
+                dotenv_path=dotenv_path or target.DOTENV_PATH,
+                secrets_file=secrets_file,
+            )
+        except appenv.SecretsFileError as error:
+            raise SettingsError(str(error)) from None
 
         def get(name: str, default: str = "") -> str:
             return values.get(name, default).strip()
@@ -240,8 +249,8 @@ class Settings:
         app_password = values.get("CFB_APP_PASSWORD", "")
         if not app_password:
             raise SettingsError(
-                "CFB_APP_PASSWORD is not set; put it in the environment or in .env, "
-                "then run `make app-user`"
+                "CFB_APP_PASSWORD is not set; put it in the environment or in "
+                f"{appenv.HOME_HINT} (`make app-env` creates it), then run `make app-user`"
             )
         bind = resolve_bind(
             get("APP_HOST", DEFAULT_HOST), _required_port(get("APP_PORT")), resolver

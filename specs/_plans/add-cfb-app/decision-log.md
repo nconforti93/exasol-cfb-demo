@@ -71,7 +71,7 @@ Decide how the backend gets the `EXPLAIN VIRTUAL` output while the app role is r
 **Q (7) Security:** What rules?
 **A:**
 - No secrets in the frontend.
-- The backend reads its database credentials through `target.py`, or uses a dedicated app user whose password comes from the environment or `.env`, never committed.
+- The backend reads its database credentials through `target.py`, or uses a dedicated app user whose password comes from the environment or `~/.cfb-demo/app.env` ([44]), never committed.
 - Bind to localhost by default.
 - Provide a CORS policy for development.
 
@@ -393,10 +393,10 @@ The owner (Nico) was away and delegated the decisions on the independent review 
 ### [16] The read user's password comes from the environment or `.env`; `make app-user` creates the user; the start refuses a writable read user
 
 - **Decision:**
-  - `CFB_APP_USER` (default `CFB_APP_WEB`) and `CFB_APP_PASSWORD` come from the environment, then from `.env`, which git ignores.
+  - `CFB_APP_USER` (default `CFB_APP_WEB`) and `CFB_APP_PASSWORD` come from the environment, then from `~/.cfb-demo/app.env` ([44]; originally the git-ignored `.env`, which OneDrive syncs).
   - `make app-user` runs as the owner. It creates the user with that password, plus `CREATE SESSION` and `CFB_APP`. It is idempotent; `ROTATE=yes` changes the password, and it refuses when the role or the password is missing.
   - At start, the backend refuses a read user that is `sys` or the owner, or that holds any other system privilege or role (per probe 1.1(d)).
-  - No tool generates or writes a password.
+  - No tool generates or writes a password. *(Superseded in part by [44]: `make app-env` now generates the two app passwords into `~/.cfb-demo/app.env`.)*
 - **Alternatives:** the tool generates a password and writes `.env`; the read path as `sys` in development; a documented manual `CREATE USER` only.
 - **Rationale:** the precedent `CFB_TEST_OWNER_PASSWORD` (environment or `.env`, `scripts/grants.py`). Phase 5 left user creation to the owner, and this target is the owner's tool. The check makes "pages are read-only" a fact that cannot be misconfigured silently.
 - **Revised (review M2):** the start check is now the positive rule of [25], for the read user and the console user, and `make app-user` creates both users.
@@ -868,3 +868,13 @@ The owner (Nico) was away and delegated the decisions on the independent review 
 ## [43] Logo host is CFBD's CDN, not ESPN (2026-10-23, orchestrator)
 - The stored `CFB_CORE.TEAMS.LOGOS` URLs are all on `cdn.collegefootballdata.com` (`/logos/500/<id>.png`, `/logos-dark/500/<id>.png`, then 256…16), not ESPN as [37] assumed.
 - Decision: the `make logos` allowlist is `collegefootballdata.com`. It is the data provider's own CDN, read-only public images, and not a CFBD API call (no key, not counted against the quota). Everything else in [37] stands: a private cache outside the repo, never committed, never hotlinked.
+
+## [44] App secrets live in `~/.cfb-demo/app.env`, outside the repo and OneDrive (2026-10-23, owner-approved)
+- The repo lives on OneDrive. A git-ignored repo `.env` is still synced to Microsoft's cloud, so no password may sit there. The owner approved moving them: "yes, go ahead and move that".
+- Decision:
+  - Secrets (`CFB_APP_PASSWORD`, `CFB_CONSOLE_PASSWORD`, `CFB_TEST_OWNER_PASSWORD`, and Phase 7's `CFB_CHAT_PASSWORD` and `ANTHROPIC_API_KEY`) come from the environment, then from `~/.cfb-demo/app.env` (`CFB_APP_ENV=<path>` overrides the path). The loader is `vs/host/appenv.py`; `Settings.from_env` and `scripts/grants.py` use it.
+  - The file is refused when it lies inside the repo or under a path containing "OneDrive", and when its mode is wider than 0600 (refuse, not warn: a warning scrolls past).
+  - The repo `.env` is not read for secrets. If it holds any `*_PASSWORD` or `*_API_KEY` key, the app and `make grants` stop with a message naming the keys (never a value) and pointing to the new file. Non-secret keys (`EXASOL_DSN`, ports, flags) may stay there; `vs/host/target.py` is unchanged.
+  - `make app-env` (`scripts/app_env.py init`) creates the file with mode 0600 (directory 0700) and random `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` (`secrets.token_urlsafe(24)`: letters, digits, `_` and `-`, so they need no escaping inside `IDENTIFIED BY "..."`). It never overwrites a key, prints names only, adds a commented `ANTHROPIC_API_KEY` placeholder, and creates no database user (`make app-user`, task 2.2, reads the passwords from this file).
+- **Alternatives:** keep `.env` and exclude it from OneDrive sync (a per-machine setting the repo cannot enforce); warn only on a wide mode; encrypt the file.
+- **Rationale:** the secret must be outside every synced folder by construction, and the check must fail closed. This amends [16] (a tool now generates the two app passwords) and the "no password in `.env`" lines of the plan, spec and tasks. Phase 7's chat settings still read `.env`; the hand-off is in `tasks.md` "Cross-plan items".

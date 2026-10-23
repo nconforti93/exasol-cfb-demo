@@ -314,7 +314,7 @@ The frontend is a dependency-light React app: no router, state, data-fetching or
             (a REFRESH_LOG row committed at each step's start and end) ──▶ CFB_API.REFRESH_TIMELINE / FETCHES
             (polled every 1 s while a refresh runs, else every 5 s, with CURRENT_POINT's follow key; follows runs started anywhere)
  Host     cache/live-calls.jsonl (+ .lock; plans app and add-cfb-app) · vs/live/ledger.yaml (caps; owner-edited)
-          .env (CFB_APP_PASSWORD, CFB_CONSOLE_PASSWORD; git-ignored)
+          ~/.cfb-demo/app.env (CFB_APP_PASSWORD, CFB_CONSOLE_PASSWORD; outside repo and OneDrive, 0600)
           ~/.exasol/personal/deployments/<local|default>/secrets.json (sys; read at connect, never stored)
 ```
 
@@ -392,13 +392,13 @@ The frontend is a dependency-light React app: no router, state, data-fetching or
 
 Errors carry `{error, message}` and never driver text: 400 (foreign `Host`; invalid argument; `ConditionError`), 403 (a `POST` check; no operator path; no console), 409 (`max_calls_exceeded`, `ledger_refused`, `quota_refused`, `live_busy`, `live_disabled`, `reconcile_pending`, `refresh_locked`, `refresh_running`, `whatif_run_changed`), 502 `cfbd_failed` (a live statement failed and was charged), 503 (`database_unreachable`, `busy`).
 
-**Settings** (`app/backend/settings.py`; environment first, then `.env`; nothing secret is ever logged)
+**Settings** (`app/backend/settings.py`; environment first, then `~/.cfb-demo/app.env` (`CFB_APP_ENV` overrides the path; [44]); repo `.env` for non-secret keys only; nothing secret is ever logged)
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `TARGET`, `EXASOL_DSN` | `local`, — | deployment and address override (`vs/host/target.py`) |
 | `CFB_APP_USER` | `CFB_APP_WEB` | the read user |
-| `CFB_APP_PASSWORD` | — (required) | its password; `.env` is git-ignored |
+| `CFB_APP_PASSWORD` | — (required) | its password, from `~/.cfb-demo/app.env` ([44]) |
 | `CFB_CONSOLE_USER` | `CFB_CONSOLE_WEB` | the console user (role `CFB_READER`) |
 | `CFB_CONSOLE_PASSWORD` | — | its password; without it the console is off |
 | `APP_HOST`, `APP_PORT` | `127.0.0.1`, `8000` | bind; `APP_HOST` is resolved, and it is loopback only if every address is |
@@ -565,7 +565,8 @@ Task 1.8 runs the dataviz validator (`validate_palette.js`) on the chosen hexes 
 | `make app` | `db-check`, `app-deps`, then `python -m scripts.app dev`: `APP_DEV=1`, uvicorn with `--reload` on 127.0.0.1:8000 with `APP_CORS_ORIGINS` set to the Vite origins, plus `npm run dev` (127.0.0.1:5173, `strictPort`, proxy `/api`; a `--host` override is refused); Ctrl-C stops both. No live refresh in this mode |
 | `make app-build` | `app-deps`, then `npm run build` (`tsc -b && vite build`) → `app/frontend/dist/` (git-ignored) |
 | `make app-serve` | `db-check`, then `python -m scripts.app serve`: one process, one worker; refuses without `dist/`; `TARGET=aws` works |
-| `make app-user [ROTATE=yes] [ARGS=…]` | `db-check`, then `python -m scripts.app user`: create or rotate the read user, and the console user when `CFB_CONSOLE_PASSWORD` is set (`app/access`) |
+| `make app-env` | `python -m scripts.app_env init`: create `~/.cfb-demo/app.env` (0600) with random `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` and a commented `ANTHROPIC_API_KEY`; never overwrites a key, prints no value, creates no user ([44]) |
+| `make app-user [ROTATE=yes] [ARGS=…]` | `db-check`, then `python -m scripts.app user`: create or rotate the read user, and the console user when `CFB_CONSOLE_PASSWORD` is set; both passwords come from `~/.cfb-demo/app.env` or the environment (`app/access`, [44]) |
 | `make app-deps` | `npm ci` in `app/frontend` when `package-lock.json` is newer than `node_modules` |
 | `make app-test` | `app-deps`, then `npm test` (vitest run) |
 | `make app-e2e` | `db-check`, `app-build`, then `pytest tests/it -m e2e` (run under the IT lock); Playwright locally or in `mcr.microsoft.com/playwright:v1.64.1-noble` through podman with `--network host`, per task 1.2's gate |
@@ -643,7 +644,7 @@ Outside Exasol: Starlette's `TrustedHostMiddleware` (source on GitHub, read 2026
 app/__init__.py  app/backend/__init__.py
 app/backend/main.py            create_app(settings, read_factory, console_factory, owner_factory, ledger); static + SPA fallback;
                                headers; errors; startup: privilege check, ledger state, reconciliation
-app/backend/settings.py        Settings.from_env (environment, .env); bind resolution; operator decision; host and origin sets (pure)
+app/backend/settings.py        Settings.from_env (environment, `~/.cfb-demo/app.env`, repo `.env` for non-secret keys; [44]); bind resolution; operator decision; host and origin sets (pure)
 app/backend/security.py        Host allowlist; X-CFB-Action, JSON and Origin check; CSP and headers; session cookie (pure + middleware)
 app/backend/db.py              ReadPool; LiveSession; console session factory; effective-privilege check; query recorder;
                                0-call conflict retry; 503 mapping
@@ -687,7 +688,7 @@ docs/spikes/s9_app_probe.py, docs/spikes/s9-app-probe.md, docs/app-verification.
 | One worker; a 4-session read pool with checkout timeout and replacement; a reserved live session; autocommit; retries only for 0-call statements ([13]) | Several workers; a connection per request; autocommit off; one pool for all | The in-process state needs one process. pyexasol sessions cannot be shared. A live wait must not hold a page session. Autocommit is the page contract |
 | React 19 + Vite 8 + TypeScript 6.0, no router, state, data or chart library; exact pins on both sides after a 7-day wait ([14]) | TypeScript 7; react-router, TanStack Query, a chart library; bounds in `uv.lock` | TypeScript 7 breaks typescript-eslint. Four routes, one store and four SVG forms do not justify libraries. FastAPI's churn makes exact pins and the wait necessary |
 | FastAPI serves `dist` with an SPA fallback and a CSP with nothing it would block; `make app` runs a pinned Vite with a proxy ([15]) | nginx in front; hash routing; an inline theme script; Google-hosted fonts | "A single process" (interview). `StaticFiles(html=True)` has no SPA fallback. `default-src 'self'` blocks inline scripts and other hosts' fonts |
-| Passwords from the environment or `.env`; `make app-user` creates both users; the start proves their effective privileges ([16], [25]) | Tooling writes the password; the read path as `sys` in development; a name check | No tool writes a secret; "read-only pages" cannot be misconfigured silently by any route a privilege can take |
+| Passwords from the environment or `~/.cfb-demo/app.env` (`make app-env` creates the file, [44]); `make app-user` creates both users; the start proves their effective privileges ([16], [25]) | Tooling writes the password; the read path as `sys` in development; a name check | No tool writes a secret; "read-only pages" cannot be misconfigured silently by any route a privilege can take |
 | As-of in the URL; follow mode by a key with the publication, holding reloads while a refresh runs ([17], [30]) | Session state only; always follow; reload on a `CURRENT_POINT` change | Links reproduce a view; beat 4's "pages move" happens without a click and never to an unpublished week |
 | A chat slot as a store, a region and a reserved path ([19]) | Build nothing; a placeholder panel | Phase 7 plugs in without a layout or state rework; nothing visible changes now |
 | Tests: API integration tests on the `TEST_` stack, component tests on validated fixtures, Playwright locally or through podman, else API-level ([20]) | Mocked-DB API tests only; E2E for everything; API-level at the first install problem | The database behavior is the risk; fixtures cannot drift; the browser wiring (polling, follow mode, the click-only preview) needs a browser when one can be had |
@@ -734,7 +735,7 @@ Domain `app/`, as `CLAUDE.md` plans it. The Phase 2–5 specs are not changed by
 | Explicit live spend | Every action that can call CFBD has a 0-call plan, a cost label or confirmation, a server re-plan against `max_calls`, ledger and quota guards (`BACKFILL_SPENDABLE` for previews and the console), one live request at a time, no retry, one ledger entry per live request even when it fails, fetch-log rows, and reconciliation of loader runs (`app/live-spend`) |
 | Read-only pages | Pages read only `CFB_API` and `CFB_API_LIVE`, as `CFB_APP_WEB` (lint plus integration test); only `live.py` names `GAME_PREVIEW` (lint). The start proves the effective privileges of the read and console users |
 | Operator path | The owner, through `vs/host/target.py` (the password read at connect time, never stored); the allowlist only (unit-tested statement templates); on only when every bind address is loopback; one connection per action |
-| Secrets | No password, key or DSN secret in the repository, logs, API responses or the built frontend (`app/access` scenario). `.env` stays git-ignored. The CFBD key stays in `CFBD_API` only (CLAUDE.md) |
+| Secrets | No password, key or DSN secret in the repository, logs, API responses or the built frontend (`app/access` scenario). Passwords live only in `~/.cfb-demo/app.env`, outside the repo and OneDrive ([44]); a `*_PASSWORD` or `*_API_KEY` key in the repo `.env` stops the app. The CFBD key stays in `CFBD_API` only (CLAUDE.md) |
 | CFBD terms | Credit in every page's footer; "not official NCAA or CFP data"; no raw response in git; the preview's `RAW_JSON` is never sent to the browser; fixtures are synthetic (sim-league names) |
 | Browser safety | Loopback by default; a `Host` allowlist (name and port) on every request; `X-CFB-Action`, JSON and a configured `Origin` on every `POST`; CORS only for listed origins (never `*`); a pinned Vite dev server; CSP `default-src 'self'` with no inline script and no foreign host; nosniff; `frame-ancestors 'none'` |
 | Accessibility and design | Base text ≥ 18 px; contrast ≥ 4.5:1 for text and ≥ 3:1 for controls and marks, in both themes (unit-tested); keyboard reachable; states as icon plus word; a table view for every chart; dataviz palette validated in both themes |
@@ -771,7 +772,7 @@ Domain `app/`, as `CLAUDE.md` plans it. The Phase 2–5 specs are not changed by
   - U1: "local free" windows.
   - U2 (resolved 2026-10-22): the owner authorized 1000 calls for 2026-11, and the orchestrator added the plan caps `add-cfb-app: 12` and `app: 60` to `vs/live/ledger.yaml` on the Phase 2 branch. No action left; the app warns at start if a cap is missing.
   - U3: the owner reviews decisions [2], [3], [10] and [24] (the backend process holds the `sys` connection on loopback; a curated console as a reader). This does not block any task.
-  - U4: the owner sets `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` in `.env` and runs `make app-user` once per deployment (user guide, task 7.1).
+  - U4: the owner sets `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` in `~/.cfb-demo/app.env` (`make app-env` creates it with random values, [44]) and runs `make app-user` once per deployment (user guide, task 7.1).
 
 ## Migration
 
@@ -789,7 +790,7 @@ No data migration: the app adds no database object except its two users.
 | `vs/live/ledger.yaml` | no change by this plan: the Phase 2 branch already holds `add-cfb-app: 12`, `app: 60`, `2026-10: 400` and `2026-11: 1000` |
 | `.gitignore` | + `app/frontend/test-results/`, `app/frontend/playwright-report/` (`node_modules/`, `dist/`, `cache/` and `.env` are already ignored) |
 | `tests/it/harness.py` | `leftovers` and `drop_namespace` also drop test app users (`CFB_TEST_APP2`); an accessor for `CFB_TEST_READER`'s password; the app stack lives in `tests/it/app_stack.py` |
-| Local `.env` (not committed) | + `CFB_APP_PASSWORD`, `CFB_CONSOLE_PASSWORD` |
+| `~/.cfb-demo/app.env` (outside the repo and OneDrive, 0600; `make app-env`, `scripts/app_env.py`, `vs/host/appenv.py`) | + `CFB_APP_PASSWORD`, `CFB_CONSOLE_PASSWORD`; the repo `.env` keeps non-secret keys only |
 
 ## Implementation Tasks
 
@@ -933,7 +934,7 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
 
 7. **Documentation** (each file re-read first; `docs/roadmap.md`, `specs/architecture.md` and `CLAUDE.md` are edited only here)
    - [ ] 7.1 `docs/user-guide.md`, section "The app":
-     - creating the users (`CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` in `.env`, `make app-user`, `ROTATE=yes`);
+     - creating the users (`make app-env` creates `~/.cfb-demo/app.env` with `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD`, then `make app-user`, `ROTATE=yes`);
      - `make app`, `make app-build` and `make app-serve` (local and `TARGET=aws`); no live refresh under `make app`;
      - the operator path and the loopback rule; the `Host` allowlist and `APP_ALLOWED_HOSTS`; WSL2's forwarding of `127.0.0.1` to Windows `localhost`, not to the LAN;
      - what read-only does not mean: the read user can spend preview calls, and the console user any virtual-schema query, from a SQL client; the ledger guards the app's spend, not the roles'; probe 1.1(d)'s finding on passwords in statement text;
@@ -954,7 +955,7 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
      - the frontend toolchain (Node ≥ 22.12, `npm ci`, the lockfile, exact pins, TypeScript 6.0 because of typescript-eslint), with eslint in `make lint` and vitest in `make test`;
      - the live-call sources gain the app (preview, console, refresh), ledgered under `app`; `Ledger.exclusive()` does not wait; the app reconciles loader runs;
      - the operator path rule (loopback only, allowlist) and the browser-safety rules;
-     - the `.env` keys `CFB_APP_USER`, `CFB_APP_PASSWORD`, `CFB_CONSOLE_USER` and `CFB_CONSOLE_PASSWORD`;
+     - the settings `CFB_APP_USER`, `CFB_CONSOLE_USER` (environment) and the secrets `CFB_APP_PASSWORD`, `CFB_CONSOLE_PASSWORD` in `~/.cfb-demo/app.env`, and why that file is not in the repo or OneDrive;
      - this plan's ledger cap.
 
      `specs/mission.md`:
@@ -1232,7 +1233,7 @@ All commands run from the repo root against Exasol Personal local (`TARGET=local
 | Operator allowlist | `uv run pytest tests/unit/test_app_operator.py` | Every operator statement matches an allowlist template |
 | Browser safety | `uv run pytest tests/unit/test_app_security.py`; `npm --prefix app/frontend test -- viteConfig`; with `make app-serve` running: `curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: evil.example:8000' http://127.0.0.1:8000/api/config` | Pass; pass; `400` |
 | Live spending | `uv run pytest tests/unit/test_app_live.py tests/unit/test_app_spend.py tests/unit/test_loader_guard.py` | Pass: one execution per live statement, ledger before fetch log, failure charging, lock only for live plans, reconciliation |
-| Secrets | `git grep -n -E '(CFB_APP\|CFB_CONSOLE)_PASSWORD[[:space:]]*=[[:space:]]*[^[:space:]]' -- . ':!docs' ':!specs'`; `flock <scratchpad>/cfb-it.lock uv run pytest tests/it/test_app_access_it.py -k no_secret` | No password value in a tracked file outside documentation (`.env` is ignored); the scan of every response and of `dist/` for the test passwords and the marker key passes (a plain search for the word "password" would match react-dom's input-type table) |
+| Secrets | `git grep -n -E '(CFB_APP\|CFB_CONSOLE)_PASSWORD[[:space:]]*=[[:space:]]*[^[:space:]]' -- . ':!docs' ':!specs'`; `flock <scratchpad>/cfb-it.lock uv run pytest tests/it/test_app_access_it.py -k no_secret` | No password value in a tracked file outside documentation (secrets live outside the repo, in `~/.cfb-demo/app.env`); the scan of every response and of `dist/` for the test passwords and the marker key passes (a plain search for the word "password" would match react-dom's input-type table) |
 | Performance | `make app-perf` (task 6.3); task 8.2 on AWS | Budget met, or a logged decision with the breakdown; no live endpoint timed |
 | Deploy | `make deploy && make grants && make app-user && make app-build && make app-serve` | The server starts on 127.0.0.1:8000 with the operator and console paths on, the privilege check passed, and no missing ledger cap; `/api/health` 200 |
 | Zero calls | `make record ARGS="--ledger"`; `make quota TARGET=aws` before and after task 8.2 | Ledger entries for `add-cfb-app` ≤ 12 (8 planned), one to one with the `FETCH_LOG` rows of the window; the `/info` drop equals the sum of every ledger entry in the window |
