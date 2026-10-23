@@ -661,6 +661,7 @@ The owner changed the process; the orchestrator relayed the brief and the planne
   - C costs per-run DDL with up to about 900 commented columns, a derivation step never timed at 1M (the heavy plan needed a probe and a gate for it), escaping school names in generated DDL (Phase 5 review P5-M3), and generated `CFB_API` views.
   - Risk: A at 1M with the sparse table was not measured on AWS. Expected: one team 0.1–0.3 s, all teams 0.5–1.0 s at k = 1.
 - **Verify and trigger:** task 1.5 times both shapes at 1M on AWS (p95 of 20, k = 1 and 3). If the one-team what-if misses 1 s or the all-team one misses 1.5 s, task 3.6 adds layout C as a per-run table derived for the what-if only.
+- **Outcome (2026-10-23):** AWS run 2, 1M seasons: one-team p95 was 0.163 s at k = 1 and 0.148 s at k = 3; all-team p95 was 0.556 s and 0.595 s (20 cache-off executions per cell). Both are below the triggers, so layout A stays and task 3.6 is not triggered by this run. Details: `docs/engine-verification.md`.
 - **Supersedes:** [16], [34]; amends D20 (task 3.4).
 - **Promotes to ADR:** yes
 
@@ -790,7 +791,7 @@ The owner changed the process; the orchestrator relayed the brief and the planne
 | Q13 | Eligible = FBS with a game in the season; new FBS members count |
 | Q15 | Fixed by Phase 3 (`CONFERENCE_CHAMPIONSHIP_GAME.POWER_CHAMPIONSHIP_WEEK` limits the detection) |
 | Q17 | Replaced by the cleanup test of task 3.1 (a `RUNNING` row of a gone session) |
-| Q18 (new) | Layout A's what-if latency at 1M on AWS with the sparse table: task 1.5; trigger in [47] |
+| Q18 (new) | Resolved by task 1.5: the AWS 1M one-team p95 is 0.163 s at k = 1 and 0.148 s at k = 3; layout A stays ([47]) |
 | Q19 (new) | Selection day 2026-12-06: task 3.3 |
 
 ## Review Findings

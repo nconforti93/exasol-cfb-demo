@@ -17,7 +17,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [44]). Details, files, test
 - [x] 1.4 `CFB_INFRA.SIMULATE`, outputs, `SIM_TEAM_ODDS`, `engine/whatif.py`, `make simulate` and `make what-if`
 
 ### Group S1-D
-- [ ] 1.5 Live on AWS: 2026 after week 7, 100k and 1M; Auburn's what-if; timings in `docs/engine-verification.md`
+- [x] 1.5 Live on AWS: 2026 after week 7, 100k and 1M; Auburn's what-if; timings in `docs/engine-verification.md`
 
 ## Slice 2: predictions, the rooting guide and movement
 
