@@ -23,7 +23,7 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 - [x] 5.6 Refresh and inspector (`src/refresh`, `src/inspector`, `src/charts` timeline and waterfall
 
 ## Group A3
-- [~] 2.1 `app/backend/db.py` and `operator.py`:
+- [x] 2.1 `app/backend/db.py` and `operator.py`:
 
 ## Group P2 (gate: Phase 2 merged)
 - [ ] 1.9 Extract `loader/guard.py` from `scripts/loader_cli.py` [expert]
