@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-23 ~10:15 UTC by Claude Code (Opus 5.5)
+Last updated: 2026-10-23 afternoon by Claude Code (Opus 5.5) at the handover to Codex
 
 ---
 
@@ -42,7 +42,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 | `../exasol-cfb-demo-p2` | `add-cfb-persistence-refresh` | Phase 2. **Done and recorded** (df2a647 = `main`) |
 | `../exasol-cfb-demo-p3` | `add-cfb-analytical-model` | Phase 3, **done and recorded** (= `main`) |
 | `../exasol-cfb-demo-p5` | `add-cfb-analyses` (from main) | Phase 5 CFB_API views |
-| `../exasol-cfb-demo-p6` | `add-cfb-app` | Phase 6 web app, in progress (UI revision) |
+| `../exasol-cfb-demo-p6` | `add-cfb-app` | Phase 6 web app (UI revision done; live routes next) |
 | `../exasol-cfb-demo-p4` | `add-cfb-score-engine` (from p3) | Phase 4 score engine |
 | `../exasol-cfb-demo-p7` | `add-cfb-chat` (from p6) | Phase 7 chat, groups A–B done, rest blocked |
 
@@ -59,27 +59,56 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
+**HANDOVER POINT: 2026-10-23 afternoon. Claude stopped all work so Codex can take over.** No Claude agents are running. Two tasks were stopped mid-work, and their uncommitted files are on disk (see "Work in progress" below). No local-DB or AWS statement was running when they stopped. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row, it belongs to a dead session, and the run lock treats it as stale.
+
 | Phase | Plan | Where | State |
 |---|---|---|---|
 | 1 VS foundation | add-cfbd-vs-foundation | recorded | **Done.** Live on AWS |
-| 2 Persistence & refresh | add-cfb-persistence-refresh | recorded, `main`=df2a647 | **Done.** 221 live calls. AWS `CFB_CORE`: 155k rows, GAMES 1869–2026, SP+/WP 2013–2026, polls 2014–2026, TEAMS 1933, VENUES 852; 2026 refreshed through regular week 7. Oct 31 restore gate **passed** early |
-| 3 Analytical model | add-cfb-analytical-model | recorded, **`main`=2a26584** | **Done.** CFB_MODEL live on AWS+local; 8 derived tables rebuilt by refresh step 100 (registered on both targets); as-of views; MODEL_CHECKS; ADR-031..046. Open (backlog): example analyses, MATERIALIZED_STALE check, first live REFRESH_WEEK with step 100 (next weekly refresh) |
-| 4 Score engine | add-cfb-score-engine | **p4** (`../exasol-cfb-demo-p4`, branched from p3 at ebb877f) | Light replan done (513455b): 14 tasks in 3 slices; layout A what-if (`SIM_PATH` strings) [47]; rating = prior SP+ + Elo [45]; 2026 CFP rules [50]; predictions/movement owned by Phase 4 [51]. 1.2 done (74af62c: `CFB_SIM` schema + `CFB_INFRA.SIM_ENGINE` UDF deployed local+AWS via `make sim`; HEAD imports `engine.core` from 1.1, which is uncommitted until 1.1 finishes). 1.1 engine core done (a70c7fc; ~7k sims/s/core on host, 10k batch 1.4 s; check in-DB batch ms in 1.4/1.5 because of the BLAS pin). 1.3 done (5395e21): fitted on AWS (HFA 3.14, SIGMA_1 16.6, TAU 2.83; margin RMSE 16.9 vs CFBD line 15.7; calibration within 0.03); engine input views ENGINE_TEAM_AS_OF / ENGINE_GAME_AS_OF. main merged into p4 (30a0107). **Running:** 1.4 SIMULATE + what-if + first AWS 100k run + Auburn what-if (also fixes Pac-12 2026 CCG seed). Next 1.4 SIMULATE + what-if, 1.5 live AWS run (Auburn what-if). **Deadline:** week-9 predictions must be frozen before 2026-10-27 23:00 UTC (needs 2.1 + week-8 refresh) or week 9 is reconstructed/flagged. Phase 5 replan must drop the pieces Phase 4 now owns (see p4 plan.md § Cross-plan hand-offs). Starts after Phase 3 3.9 (as-of). Python UDF simulation; inputs from spikes S3/S4 (see ORCHESTRATOR-STATUS "Inputs for Phase 4"). Owner idea to consider: store a calibration file in BucketFS as an Exasol showcase beat |
-| 5 Analyses / CFB_API | add-cfb-analyses | **p5** (`../exasol-cfb-demo-p5`, from main 2a26584) | Light replan done (1af6214): 8 tasks; slice A 1.1–1.5 (20 CFB_API views, roles CFB_APP/CFB_MCP, `make api`), slice B 2.1–2.3 after Phase 4 1.4/2.1/2.2 are merged into p5. **Running:** slice A 1.1→1.5 (one agent, sequential). **Thin slice first:** the views the UI needs (TEAMS with colors/coords, GAMES, TEAM_SEASONS, RANKINGS, SP_RATINGS, TEAM_TRAVEL, CURRENT_POINT, AS_OF_POINTS); see Phase 6 hand-offs P6-UI-b/c/d |
-| 6 Web app | add-cfb-app | p6 | Backend core, old frontend pages, fixture preview (`make app-preview`, port 5173) done. **UI revision planned** (674ff29: map home, `/team/:id`, `/league/*`, tasks 9.0–9.8). 9.5 logos done (15779cc): all 138 FBS logos (light+dark) cached in `~/.cfb-demo/logos` from CFBD's CDN (decision [43]); all FBS teams have coords and colors in `CFB_CORE.TEAMS`. 9.0 foundation done (3342b9c: tokens, `src/ui` components, routing, contract). 9.1 shell + 9.2 map (3545207) and 9.3 team page + 9.4 league (7003bcb) done. Preview needs `CHOKIDAR_USEPOLLING=1` on /mnt/c. **9.6 done (a307279): the preview runs on REAL data** (`make app-fixtures TARGET=aws` → `~/.cfb-demo/fixtures/latest`, then `make app-preview REAL=1`; snapshot 2026 after week 7). Real: map, team pages, this week, stats, search. Still sample: odds, predictions, upsets, H2H, outlooks. App secrets moved to `~/.cfb-demo/app.env` (bc401d0, decision [44]; loader `vs/host/appenv.py`; `make app-env` created the real file, 0600). Hand-off `P7-secrets`: Phase 7 must adopt the loader when p6 is merged into p7. **Running also:** 9.6 real-data preview snapshot (`make app-fixtures TARGET=aws` → `~/.cfb-demo/fixtures/`, `make app-preview REAL=1`). **Next:** then 9.7 routes (needs Phase 5 thin views), 9.8 outlook (needs Phases 4–5) |
-| 7 Chat | add-cfb-chat | p7 | Groups A–B done (89f21ae). Group C+ blocked until Phases 5 and 6 merge (gate task 3.0) |
-| 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed. Due items: freeze rule + CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
+| 2 Persistence & refresh | add-cfb-persistence-refresh | recorded | **Done.** 221 live calls. AWS `CFB_CORE`: 155k rows (GAMES 1869–2026, SP+/WP 2013–2026, polls 2014–2026, TEAMS 1933, VENUES 852). 2026 is refreshed through regular week 7. The local DB has an identical copy (snapshot restore; Oct 31 restore gate **passed**) |
+| 3 Analytical model | add-cfb-analytical-model | recorded, **`main` = 2a26584** | **Done.** `CFB_MODEL` is live on AWS and local. 8 derived tables are rebuilt by refresh step 100 `CFB_INFRA.REFRESH_MODEL`, registered on both targets. Also as-of views and `MODEL_CHECKS`. ADR-031..046. Page queries run in 0.07–0.8 s on AWS. **Rule:** filter as-of views with literal `AS_OF_SEASON`/`AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF` |
+| 4 Score engine | add-cfb-score-engine | **p4** (HEAD 30a0107 = 1.3 + merge of `main`) | Light plan 513455b: 14 tasks in 3 slices; see `tasks.md`. **Done:** 1.1 engine core (a70c7fc), 1.2 `CFB_SIM` schema + `CFB_INFRA.SIM_ENGINE` UDF via `make sim` on both targets (74af62c), 1.3 fitted params + engine input views (5395e21; HFA 3.14, SIGMA_1 16.6, TAU 2.83; margin RMSE 16.9 vs the CFBD line's 15.7). **1.4 is in progress, uncommitted (see below).** Then 1.5: live 1M run on AWS plus the Auburn what-if. Then slice 2: 2.1 predictions freeze/grade (**deadline below**), 2.2 movement + rooting guide, 2.3 live. Then slice 3 |
+| 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 1af6214) | Light plan 1af6214: 8 tasks. Slice A 1.1→1.5 is 20 engine-free `CFB_API` views, roles `CFB_APP`/`CFB_MCP`, `make api`. Slice B 2.1–2.3 is thin views over Phase 4 objects, gated on Phase 4 1.4/2.1/2.2 being merged into p5. **1.1 is in progress, uncommitted (see below)** |
+| 6 Web app | add-cfb-app | **p6** (HEAD b900208) | UI revision done:<br>• 9.0 foundation 3342b9c<br>• 9.1 shell + 9.2 US map 3545207<br>• 9.3 team page + 9.4 league week/stats 7003bcb<br>• 9.5 logos 15779cc (138 FBS logos in `~/.cfb-demo/logos`, from cdn.collegefootballdata.com, [43])<br>• 9.6 real-data snapshot preview a307279<br>• secrets loader bc401d0 ([44])<br>**The preview runs at http://127.0.0.1:5173/** (`make app-preview REAL=1` with `CHOKIDAR_USEPOLLING=1`; it serves JSON from `~/.cfb-demo/fixtures/latest`, a snapshot taken 2026-10-23 08:01 UTC, **not live DB**). Real: map, team pages, this week, stats, search. Sample: odds, predictions, upsets, H2H, outlooks. **Next:** 2.2 `app/backend/main.py` + `scripts/app.py` (serve/user; users `CFB_APP_WEB`/`CFB_CONSOLE_WEB`, passwords from `~/.cfb-demo/app.env`), 9.7 live routes over `CFB_API` (needs Phase 5 slice A), 9.8 outlook (needs Phase 4 slice 1–2 + Phase 5 slice B). The logo route `make_router` is not mounted yet |
+| 7 Chat | add-cfb-chat | p7 (HEAD 89f21ae) | Groups A–B done. Group C+ is blocked until Phases 5 and 6 merge (gate 3.0). Hand-off `P7-secrets`: adopt `vs/host/appenv.py`. There is no Anthropic key, so build and test only |
+| 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed under the heavy process; do a light replan first. Due: the freeze rule and CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
 
-**Agents running at last update (Claude subagents; they die with Claude's session):** p5 slice A; p4 1.4;  If you take over, assume they may have stopped mid-task. Check `git status` and `git log` in each worktree and finish or redo the task from what is on disk.
+### Work in progress (uncommitted, stopped mid-task)
+
+**p4 task 1.4** (`SIMULATE` Lua, output split, `SIM_TEAM_ODDS`, `engine/whatif.py`, `make simulate`/`make what-if`):
+- **Modified:** `Makefile`, `engine/deploy.py`, `loader/bundle.py`, `scripts/sim.py`, `tests/it/harness.py`, `tests/it/sim_support.py`, `tests/unit/test_model_seeds.py`, and **`sql/model/013_conference_championship.sql`**. That last edit adds a Pac-12 championship game from 2026: the rebuilt 8-team Pac-12 plays one, but the seed ended the Pac-12 in 2023, so its teams had `HAS_CCG` FALSE. Redeploy the model (`make model`) for it to take effect, and log the decision in the p4 decision-log.
+- **New:** `engine/lua/`, `engine/whatif.py`, `sql/sim/230_sim_run_model_rows.sql`, `sql/sim/300_sim_team_odds.sql`, `tests/unit/test_simulate_bundle.py`, `tests/unit/test_whatif.py`.
+- **Where it stopped:** it was about to deploy locally (`make model`, then `make sim`) and run a 10k smoke under the IT lock. **No simulation run has happened on any target yet.**
+- **To finish:**
+  1. Review the diff and run `make test` / `make lint`.
+  2. Local smoke at 10k.
+  3. `make sim TARGET=aws`.
+  4. One AWS run of 2026 after week 7 at 100k (literal point: `AS_OF_SEASON=2026`, the week-7 `AS_OF_WEEK_SEQ`).
+  5. Check the in-database ms per batch against the host's ~1.4 s per 10k batch (the BLAS pin).
+  6. The Auburn what-if: P(CFP) now vs "Auburn wins its next game".
+  7. Commit.
+- **Recipe for `SIM_RUN_MODEL_ROWS`:** it is in the 1.3 notes, in `plan.md` Key Interfaces and `sql/sim/2*_engine_*_as_of.sql`.
+  - `TEAM_IDX = ROW_NUMBER() OVER (ORDER BY TEAM_ID)-1`.
+  - `GAME_IDX` per `GAME_ROLE` ordered by `START_AT, GAME_ID`.
+  - `PATH_POS = GAME_IDX+1` for `REMAINING`.
+  - Lower-case param keys.
+  - Columns exactly `core.RUN_COLUMNS + core.MODEL_COLUMNS`.
+
+**p5 task 1.1** (`make api`, first `CFB_API` views):
+- **Modified:** `vs/host/sqlobjects.py`, `vs/host/namespace.py`, `vs/host/metaddl.py` and their unit tests.
+- **Where it stopped:** it had just started taking Phase 4's generalized deployer text, which plan decision [56] says to copy identically from p4. Compare these three files with p4's HEAD versions; if p4's are a superset, take p4's text.
+- **Then:** build the 1.1 views, deploy, and continue 1.2→1.5.
+- **Source for the view SQL:** reuse `../exasol-cfb-demo-p6/scripts/app_fixtures.py`, which has working real-data SQL for the map, team, week and stats.
 
 ### Recommended next steps (in order)
-1. **p3:** finish the merge if it is still unresolved (keep both sides; Phase 2 added the `DEPLOY` lock and `deploy_namespace`, Phase 3 added the model deploy). Deploy `CFB_MODEL` on AWS and local; sanity-check on real data; commit.
-2. **p6:** finish 9.0 and 9.5, then 9.1–9.4 and 9.6 (`make app-fixtures TARGET=aws`, `make logos`, `make app-preview REAL=1`). This gives Nico a clickable map and team page on real data. **Tell Nico when it is clickable** (URL http://127.0.0.1:5173/).
-3. **Phase 5 thin slice:** new worktree p5 from `main` (after merging Phase 3 if done, else branch from p3). Build only the `CFB_API` views the UI needs, then 9.7 routes in p6 so the app serves real data instead of a snapshot.
-4. **Phase 3 rest (light):** 3.9 as-of, 3.11 checks, refresh_model; skip heavy perf work; record and merge to main.
-5. **Phase 4 engine (light):** worktree p4; minimal engine for odds and predictions; then 9.8 in p6.
-6. **Phase 5 rest, Phase 6 rest, Phase 7 group C+, Phase 8.**
-7. Merge each phase to `main` once verified (fast-forward or merge; `main` is not checked out anywhere, so `git branch -f main <commit>` works for a fast-forward).
+1. **p4: finish 1.4 and 1.5.** This gives the first real odds and the Auburn what-if, which Nico asked about directly. Report the numbers to Nico.
+2. **p4: 2.1 predictions freeze/grade, plus refresh week 8, before Tue 2026-10-27 23:00 UTC**, so week-9 predictions count as made in advance. Week 8 completes Sat Oct 24; refresh it Sun Oct 25 or Mon Oct 26 with `make refresh SEASON=2026 WEEK=8 TARGET=aws CONFIRM=yes` (about 4 calls).
+3. **p5: slice A (1.1→1.5)**, deployed on both targets.
+4. **p6: 2.2 backend main + users, then 9.7 live routes** over `CFB_API`, then retire the snapshot as the default. This is the point where the app reads the DB live. Nico explicitly wants this.
+5. **p4: 2.2/2.3, then p5 slice B, then p6 9.8**, so the outlook, odds tab and what-if are live.
+6. **Merge order to `main`:** p4 when slice 1–2 is verified, then p5, then p6. Merge `main` into p6 and p7 before their gated groups. Record each with the speq record workflow (light, as for Phases 2–3).
+7. **Phase 7 group C+, Phase 8 light replan,** and the weekly cadence from Nov 1.
+
+**Communication with Nico.** Nico prefers short, plain status updates, and wants the app usable on real, live data as early as possible. Before each change, say which data a page shows: snapshot or live.
 
 ## 5. Key dates (orchestrator owns these)
 
@@ -97,6 +126,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-23: **Handover to Codex.** Claude stopped p4 1.4 and p5 1.1 mid-task (uncommitted WIP listed in §4). Nothing running.
 
 - 2026-10-23: Phase 5 light replan committed (1af6214); slice A started.
 
