@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -11,18 +12,18 @@ SEASON = 2026
 INDIANA, OHIO, FCS_TEAM = 84, 194, 9001
 
 
-def executed(name: str, rows: list[dict]) -> export.Executed:
+def executed(name: str, rows: list[dict[str, Any]]) -> export.Executed:
     return export.Executed(name, "page", f"SELECT {name}", "2026-10-23T11:59:00Z", 12, rows)
 
 
-def weeks(done_through: int = 7) -> list[dict]:
+def weeks(done_through: int = 7) -> list[dict[str, Any]]:
     return [
         {"SEASON_TYPE": "regular", "WEEK": week, "WEEK_SEQ": week, "IS_DONE": week <= done_through}
         for week in range(1, 10)
     ]
 
 
-def map_row(team_id: int, school: str, conference: str, **extra: object) -> dict:
+def map_row(team_id: int, school: str, conference: str, **extra: object) -> dict[str, Any]:
     row = {
         "TEAM_ID": team_id,
         "SCHOOL": school,
@@ -43,7 +44,7 @@ def map_row(team_id: int, school: str, conference: str, **extra: object) -> dict
     return row | extra
 
 
-def game_row(game_id: int, team_id: int, week: int, opponent_id: int, **extra: object) -> dict:
+def game_row(game_id: int, team_id: int, week: int, opponent_id: int, **extra: object) -> dict[str, Any]:
     row = {
         "GAME_ID": game_id,
         "WEEK": week,
