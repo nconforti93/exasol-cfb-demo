@@ -32,9 +32,13 @@
 #                      ARGS="--prefix TEST_" deploys another namespace. `make deploy` runs it last.
 #   model-check        SEASON=y WEEK=w [SEASON_TYPE=postseason]: prints MODEL_CHECKS for that point
 #                      (exit 1 when an ERROR check failed). No log, 0 calls.
+#   model-refresh      [SEASON=y WEEK=w [SEASON_TYPE=postseason]]: runs CFB_INFRA.REFRESH_MODEL on its
+#                      own (run lock kind MODEL): rebuilds the derived tables of CFB_MODEL, then logs
+#                      the checks of that point (without SEASON: rebuild only). REFRESH_WEEK runs it as
+#                      step 100; backfill and restore rebuild after their run. 0 calls.
 #   model-docs         regenerates docs/model-dictionary.md from sql/model/ (no database).
 #   model-perf         times the model on the scaled league (ARGS="--prefix PERF_"); task 3.7.
-#                      All four are scripts/model.py.
+#                      All five are scripts/model.py.
 
 TARGET ?= local
 export TARGET
@@ -50,7 +54,8 @@ NAME     ?=
 ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
-.PHONY: backfill refresh quota snapshot restore snapshots model model-check model-docs model-perf
+.PHONY: backfill refresh quota snapshot restore snapshots model model-check model-refresh model-docs
+.PHONY: model-perf
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -61,6 +66,7 @@ generate:
 bundle:
 	$(PY) -m vs.bundle
 	$(PY) -m loader.bundle
+	$(PY) -m model.step
 
 test:
 	$(RUN) pytest tests/unit tests/cli
@@ -127,6 +133,9 @@ model: db-check
 
 model-check: db-check
 	$(PY) -m scripts.model check --season "$(SEASON)" --week "$(WEEK)" $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(ARGS)
+
+model-refresh: db-check
+	$(PY) -m scripts.model refresh $(if $(SEASON),--season "$(SEASON)") $(if $(WEEK),--week "$(WEEK)") $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(ARGS)
 
 model-docs:
 	$(PY) -m scripts.model docs

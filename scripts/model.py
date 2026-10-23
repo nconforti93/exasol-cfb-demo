@@ -3,11 +3,13 @@
     python -m scripts.model deploy [--target local|aws] [--dsn HOST:PORT] [--prefix PREFIX_]
                                    [--lint-only]
     python -m scripts.model check --season Y --week W [--season-type regular|postseason] [...]
+    python -m scripts.model refresh [--season Y --week W [--season-type ...]] [...]
     python -m scripts.model docs
     python -m scripts.model perf [--prefix PERF_] [--season Y] [--week-seq N] [--drop] [...]
 
     make model [TARGET=local|aws] [ARGS="--prefix TEST_"]
     make model-check SEASON=y WEEK=w [SEASON_TYPE=postseason] [TARGET=local|aws]
+    make model-refresh [SEASON=y WEEK=w [SEASON_TYPE=postseason]] [TARGET=local|aws]
     make model-docs
     make model-perf [TARGET=local|aws] [ARGS="--prefix PERF_"]
 
@@ -19,6 +21,10 @@
   "lint ok", or 2 with every problem listed.
 - `check` prints `MODEL_CHECKS` for the point `REFRESH_WEEK(season, week, season_type)` addresses,
   without the step script and without writing a log. Exit 1 when an ERROR check failed.
+- `refresh` runs the refresh step `CFB_INFRA.REFRESH_MODEL` on its own (run id NULL, run lock kind
+  `MODEL`): it rebuilds the derived tables (decision [40]) and, with a season and week, logs the
+  checks of that point to `CFB_META.MODEL_CHECK_LOG`. Without a season it only rebuilds. Exit 1
+  when the lock is held or an ERROR check failed (the tables are rebuilt either way).
 - `docs` regenerates `docs/model-dictionary.md` from the files (no database).
 - `perf` seeds the scaled synthetic league into the `PERF_` namespace when it is not stored yet
   (`tests/it/model_support.py`, no CFBD call, no virtual schema), deploys the model there under the
@@ -42,6 +48,7 @@ from loader.runlock import RunLockError, RunLockRefused
 from model import deploy as model_deploy
 from model import dictionary
 from model import perf as model_perf
+from model import step as model_step
 from model.deploy import ModelLintError, ModelOptions
 from vs.cfbd_vs.sqlrender import qualified_name, string_literal
 from vs.host import target
@@ -135,6 +142,55 @@ class _Command:
         failed_errors = _print_checks(rows)
         if failed_errors:
             raise Refused(f"{failed_errors} ERROR check(s) failed")
+        return EXIT_OK
+
+    def refresh(self) -> int:
+        namespace = Namespace(self._args.prefix)
+        season, week = self._args.season, self._args.week
+        if (season is None) != (week is None):
+            raise DeployError("refresh takes both --season and --week, or neither (rebuild only)")
+        connection = self._connector(self._resolve(self._args.target, dsn=self._args.dsn))
+        try:
+            if not model_step.step_installed(connection, namespace):
+                raise DeployError(
+                    f"{namespace.infra_schema}.{model_step.STEP_NAME} is not installed: run "
+                    "`make model` first"
+                )
+            try:
+                rows = model_step.run_step(
+                    connection,
+                    namespace,
+                    season=season,
+                    week=week,
+                    season_type=None if season is None else self._args.season_type,
+                )
+            except Exception as error:
+                text = str(getattr(error, "message", error)).strip()
+                first = text.splitlines()[0] if text else type(error).__name__
+                if "refused:" in first or "ERROR check(s) failed" in first:
+                    raise Refused(first) from None
+                raise
+        finally:
+            connection.close()
+        tables = [row for row in rows if row["ITEM_KIND"] == "TABLE"]
+        total = sum(int(row["OBSERVED"] or 0) for row in tables)
+        _print(f"rebuilt {len(tables)} derived tables of {namespace.model_schema}: {total:,} rows")
+        checks = [
+            {
+                "CHECK_NAME": row["ITEM_NAME"],
+                "SEVERITY": row["SEVERITY"],
+                "SEASON": season,
+                "WEEK_SEQ": "-",
+                "CHECK_STATUS": row["ITEM_STATUS"],
+                "OBSERVED": row["OBSERVED"],
+                "DETAIL": row["DETAIL"],
+            }
+            for row in rows
+            if row["ITEM_KIND"] == "CHECK"
+        ]
+        if checks:
+            _print_checks(checks)
+            _print(f"logged to {namespace.meta_schema}.MODEL_CHECK_LOG")
         return EXIT_OK
 
     def docs(self) -> int:
@@ -264,6 +320,12 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--season", type=int, required=True)
     check.add_argument("--week", type=int, required=True)
     check.add_argument("--season-type", default="regular", choices=SEASON_TYPES)
+    refresh = commands.add_parser(
+        "refresh", parents=[common], help="run CFB_INFRA.REFRESH_MODEL: rebuild, then checks"
+    )
+    refresh.add_argument("--season", type=int, default=None)
+    refresh.add_argument("--week", type=int, default=None)
+    refresh.add_argument("--season-type", default="regular", choices=SEASON_TYPES)
     commands.add_parser("docs", help="regenerate docs/model-dictionary.md")
     timing = commands.add_parser(
         "perf", parents=[_common()], help="time the model on the scaled league (PERF_ namespace)"

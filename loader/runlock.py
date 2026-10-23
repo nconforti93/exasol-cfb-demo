@@ -21,7 +21,8 @@ Rules for callers (the row belongs to the session of `connection`):
 - Take the lock before your own transaction starts: acquiring commits the session's open
   transaction, so a connection with autocommit off is refused before anything is sent.
 - While the lock is held, run no locking script (`BACKFILL`, `REFRESH_WEEK`, Phase 4's
-  `SIMULATE`) and no second `run_lock` in that session: the own-session rule would abandon the
+  `SIMULATE`, Phase 3's `REFRESH_MODEL` run on its own, kind `MODEL`) and no second `run_lock` in
+  that session: the own-session rule would abandon the
   row. A second `run_lock` on the same connection raises at once.
 - At the end of the block the row ends `DONE` with `lock.detail`. When the block raises (also on
   Ctrl-C), the session is rolled back first, so the release cannot commit half of the work; then

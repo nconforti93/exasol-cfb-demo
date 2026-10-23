@@ -22,6 +22,11 @@ Source checks (`check_source`, applied to the loadlib and entry file of every sc
 
 Comments are ignored by all three checks; string contents are checked by the last two.
 
+Other bundles (the model's refresh step, `model/step.py`) use the same recipe through
+`build_entry_script`: the constants (plus names of their own, such as `MODEL_SCHEMA`), generated
+data of their own (`prelude`), `loadlib.lua`, then their entry file; the same checks apply to all of
+it.
+
 Output is deterministic: no timestamps, a fixed part order and LF line endings. The script text
 of Exasol is capped at 2,000,000 characters, so a script of `SIZE_LIMIT` characters or more fails
 with an error that names the size (same limit as `vs/bundle.py`).
@@ -52,6 +57,7 @@ __all__ = [
     "BundleError",
     "BundleResult",
     "LuaScript",
+    "build_entry_script",
     "build_script",
     "check_source",
     "script_body",
@@ -126,18 +132,47 @@ def build_script(script: LuaScript, namespace: Namespace, lua_dir: Path = LUA_DI
     _require_clean(script.entry_file, entry)
     body = "\n".join([render_constants(namespace), library, entry])
     text = script.header(namespace.infra_schema) + body + SCRIPT_TERMINATOR
-    if len(text) >= SIZE_LIMIT:
-        raise BundleError(
-            f"script {script.name} is {len(text):,} characters long; Exasol caps script text at "
-            f"{SCRIPT_LIMIT:,}, so the bundle fails from {SIZE_LIMIT:,} characters. "
-            "Shrink the Lua sources"
-        )
+    _require_size(script.name, text)
     return text
 
 
-def render_constants(namespace: Namespace) -> str:
-    """The Lua `PLAIN` and `QUOTED` tables of the namespace names."""
-    names = _names(namespace)
+def _require_size(name: str, text: str) -> None:
+    if len(text) >= SIZE_LIMIT:
+        raise BundleError(
+            f"script {name} is {len(text):,} characters long; Exasol caps script text at "
+            f"{SCRIPT_LIMIT:,}, so the bundle fails from {SIZE_LIMIT:,} characters. "
+            "Shrink the Lua sources"
+        )
+
+
+def build_entry_script(
+    name: str,
+    parameters: tuple[str, ...],
+    entry_file: Path,
+    namespace: Namespace,
+    *,
+    extra_names: Mapping[str, str] | None = None,
+    prelude: str = "",
+    lua_dir: Path = LUA_DIR,
+) -> str:
+    """`CREATE OR REPLACE LUA SCRIPT <infra>.<name>(...) RETURNS TABLE` for an entry file outside
+    `loader/lua/`: the constants (with `extra_names`), `prelude`, `loadlib.lua`, the entry file."""
+    script = LuaScript(name, parameters, entry_file.name, f"{name.lower()}.sql")
+    library = _read(lua_dir, LIBRARY_FILE)
+    entry = _read(entry_file.parent, entry_file.name)
+    generated = _normalize(prelude) if prelude else ""
+    for label, text in ((LIBRARY_FILE, library), (entry_file.name, entry), ("prelude", generated)):
+        _require_clean(label, text)
+    parts = [render_constants(namespace, extra_names), *([generated] if generated else []), library]
+    body = "\n".join([*parts, entry])
+    text = script.header(namespace.infra_schema) + body + SCRIPT_TERMINATOR
+    _require_size(script.name, text)
+    return text
+
+
+def render_constants(namespace: Namespace, extra_names: Mapping[str, str] | None = None) -> str:
+    """The Lua `PLAIN` and `QUOTED` tables of the namespace names (plus `extra_names`)."""
+    names = _names(namespace, extra_names)
     plain = "".join(f'  {key} = "{value}",\n' for key, value in names.items())
     quoted = "".join(f'  {key} = "\\"{value}\\"",\n' for key, value in names.items())
     return (
@@ -211,7 +246,7 @@ def main() -> int:
     return 0
 
 
-def _names(namespace: Namespace) -> dict[str, str]:
+def _names(namespace: Namespace, extra: Mapping[str, str] | None = None) -> dict[str, str]:
     names = {
         "META_SCHEMA": namespace.meta_schema,
         "CORE_SCHEMA": namespace.core_schema,
@@ -219,6 +254,7 @@ def _names(namespace: Namespace) -> dict[str, str]:
         "RESTORE_SCHEMA": namespace.restore_schema,
         "INFRA_SCHEMA": namespace.infra_schema,
         "VS_NAME": namespace.vs_name,
+        **(extra or {}),
     }
     for key, value in names.items():
         if not _NAME.fullmatch(value):

@@ -25,8 +25,8 @@
 -- Run lock: the RUNNING row of LOAD_RUN, shared by everything that writes the loader's tables or
 -- reads them as one consistent state (loader runs, snapshots and restores, Phase 3's model deploy,
 -- Phase 4's simulations and deploys). Two stale rules, chosen by the kind:
---   script rule (BACKFILL, REFRESH_WEEK, SIMULATE): a row of a Lua script run, which is one
---       statement. It is stale when its session is gone, when it is the caller's own session, or
+--   script rule (BACKFILL, REFRESH_WEEK, SIMULATE, MODEL): a row of a Lua script run, which is one
+--       statement (MODEL: Phase 3's REFRESH_MODEL run on its own, outside a refresh). It is stale when its session is gone, when it is the caller's own session, or
 --       when its session is IDLE (a running script is never idle, so an idle session means the script
 --       ended without closing its row: a failure, a KILL STATEMENT or an interrupt).
 --   host rule (DEPLOY, SNAPSHOT, RESTORE): a row of a host process, whose session is idle between
@@ -151,6 +151,7 @@ local LOCK_KINDS = {
   BACKFILL = SCRIPT_RULE,
   REFRESH_WEEK = SCRIPT_RULE,
   SIMULATE = SCRIPT_RULE,
+  MODEL = SCRIPT_RULE,
   DEPLOY = HOST_RULE,
   SNAPSHOT = HOST_RULE,
   RESTORE = HOST_RULE,

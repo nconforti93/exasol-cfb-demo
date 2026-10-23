@@ -348,6 +348,7 @@ def test_rows_of_one_fetch_with_the_same_key_take_the_later_poll_position(
         harness.owner.execute(
             f"DELETE FROM {harness.core}.RANKINGS_POLLS_RANKS WHERE {where} AND ROW_NO < 0"
         )
+        harness.rebuild_model()
     rows = poll_week(harness, 2025, COMMITTEE, "regular", 14)
     assert [row["POINTS"] for row in rows] == [1500 - 50 * row["POLL_RANK"] for row in rows]
 
@@ -586,6 +587,7 @@ def test_ties_of_fetch_time_take_the_later_slice_key_then_the_later_row(
         harness.owner.execute(
             f"DELETE FROM {harness.core}.RATINGS_SP WHERE {where} AND ROW_NO >= 1000"
         )
+        harness.rebuild_model()
     assert decimal(rating_row(harness, 2024, "Ashford")["SP_RATING"]) == Decimal("25.10")
 
 

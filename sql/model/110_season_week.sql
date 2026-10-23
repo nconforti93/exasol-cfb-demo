@@ -1,3 +1,6 @@
+-- Materialized (decision [40]): a table with the columns the view had, filled by the INSERT below. Every
+-- `make model` recreates it, and CFB_INFRA.REFRESH_MODEL rebuilds it (TRUNCATE + the INSERT, file order)
+-- after every load: refresh step 100, and the post-hook of `make backfill` / `make restore`.
 -- Weeks of a season (model/seasons-eras). The weeks of the games and of the stored calendar are
 -- combined with UNION ALL and grouped by (season, season type, week), so a season filter reaches
 -- both branches (probe 1.1g); a FULL OUTER JOIN on COALESCE keys would hide it. Calendar weeks are
@@ -15,20 +18,22 @@
 --   filter, and the as-of views join SEASON_WEEK to GAME: through GAME, a one-point query scanned
 --   all 250,000 games, and the weeks needed none of GAME's venue, line, round and championship
 --   columns. IS_COMPLETED, START_AT and FETCHED_AT are GAME's definitions of the same columns.
-CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.SEASON_WEEK (
-  SEASON               COMMENT IS 'Season',
-  SEASON_TYPE          COMMENT IS 'regular or postseason; the only season types with weeks',
-  WEEK                 COMMENT IS 'Week as CFBD labels it within the season type',
-  WEEK_SEQ             COMMENT IS 'Week sequence: regular week n = n, postseason week n = 100 + n, so the postseason follows the regular season and (season, week, season type) of REFRESH_WEEK maps to one row; 0 is reserved for the preseason point of the as-of helpers',
-  START_AT             COMMENT IS 'Start of the week in UTC: the stored calendar''s start date when DATES_SOURCE is CALENDAR, else the first kickoff of the week''s games',
-  END_AT               COMMENT IS 'End of the week in UTC: the stored calendar''s end date when DATES_SOURCE is CALENDAR, else the last kickoff of the week''s games',
-  DATES_SOURCE         COMMENT IS 'Where START_AT and END_AT come from: CALENDAR (CFB_CORE.CALENDAR has the week; stored from 2013) or GAMES (the week''s kickoffs)',
-  FIRST_GAME_AT        COMMENT IS 'First kickoff of the week in UTC: the first kickoff of the week''s games, else (a week without stored games) the stored calendar''s first game start, which CFBD sets to the start of the week. The as-of cutoff of the week before (AS_OF_POINT.CUTOFF_AT)',
-  GAME_COUNT           COMMENT IS 'Number of games of the week in GAME (0 for a calendar week without stored games)',
-  COMPLETED_GAME_COUNT COMMENT IS 'Number of those games that are completed',
-  GAMES_FETCHED_AT     COMMENT IS 'When the season''s games were last fetched (the newest GAME.FETCHED_AT of the season, UTC); NULL for a season without games',
-  IS_DONE              COMMENT IS 'TRUE when the week has games and all of them are completed, or when the season''s games were last fetched at least one day after END_AT (so a postponed or cancelled game does not keep a past week open). A week whose Thursday game is played while its Saturday games are not stays open'
-) AS
+CREATE OR REPLACE TABLE {MODEL_SCHEMA}.SEASON_WEEK (
+  SEASON               DECIMAL(18,0)      COMMENT IS 'Season',
+  SEASON_TYPE          VARCHAR(2000) UTF8 COMMENT IS 'regular or postseason; the only season types with weeks',
+  WEEK                 DECIMAL(18,0)      COMMENT IS 'Week as CFBD labels it within the season type',
+  WEEK_SEQ             DECIMAL(3,0)       COMMENT IS 'Week sequence: regular week n = n, postseason week n = 100 + n, so the postseason follows the regular season and (season, week, season type) of REFRESH_WEEK maps to one row; 0 is reserved for the preseason point of the as-of helpers',
+  START_AT             TIMESTAMP(3)       COMMENT IS 'Start of the week in UTC: the stored calendar''s start date when DATES_SOURCE is CALENDAR, else the first kickoff of the week''s games',
+  END_AT               TIMESTAMP(3)       COMMENT IS 'End of the week in UTC: the stored calendar''s end date when DATES_SOURCE is CALENDAR, else the last kickoff of the week''s games',
+  DATES_SOURCE         VARCHAR(8) ASCII   COMMENT IS 'Where START_AT and END_AT come from: CALENDAR (CFB_CORE.CALENDAR has the week; stored from 2013) or GAMES (the week''s kickoffs)',
+  FIRST_GAME_AT        TIMESTAMP(3)       COMMENT IS 'First kickoff of the week in UTC: the first kickoff of the week''s games, else (a week without stored games) the stored calendar''s first game start, which CFBD sets to the start of the week. The as-of cutoff of the week before (AS_OF_POINT.CUTOFF_AT)',
+  GAME_COUNT           DECIMAL(9,0)       COMMENT IS 'Number of games of the week in GAME (0 for a calendar week without stored games)',
+  COMPLETED_GAME_COUNT DECIMAL(9,0)       COMMENT IS 'Number of those games that are completed',
+  GAMES_FETCHED_AT     TIMESTAMP(3)       COMMENT IS 'When the season''s games were last fetched (the newest GAME.FETCHED_AT of the season, UTC); NULL for a season without games',
+  IS_DONE              BOOLEAN            COMMENT IS 'TRUE when the week has games and all of them are completed, or when the season''s games were last fetched at least one day after END_AT (so a postponed or cancelled game does not keep a past week open). A week whose Thursday game is played while its Saturday games are not stays open'
+) COMMENT IS 'One row per season, season type and week that has games or a stored calendar week (regular and postseason only). WEEK_SEQ orders the regular season before the postseason and matches the (season, week, season type) arguments of REFRESH_WEEK. Dates come from the stored calendar when it has the week, else from the kickoffs. IS_DONE says whether the week is over, which decides the current as-of point. Materialized: rebuilt by CFB_INFRA.REFRESH_MODEL after every load, so it is current as of the last load or refresh.';
+
+INSERT INTO {MODEL_SCHEMA}.SEASON_WEEK
 WITH calendar AS (
   SELECT c."SEASON", c."SEASON_TYPE", c."WEEK", c."START_DATE", c."END_DATE", c."FIRST_GAME_START"
     FROM {CORE_SCHEMA}."CALENDAR" c
@@ -108,5 +113,4 @@ SELECT d."SEASON",
        CASE WHEN d."GAME_COUNT" > 0 AND d."COMPLETED_GAME_COUNT" = d."GAME_COUNT" THEN TRUE
             WHEN d."GAMES_FETCHED_AT" >= ADD_DAYS(d."WEEK_END", 1) THEN TRUE
             ELSE FALSE END
-  FROM dated d
-COMMENT IS 'One row per season, season type and week that has games or a stored calendar week (regular and postseason only). WEEK_SEQ orders the regular season before the postseason and matches the (season, week, season type) arguments of REFRESH_WEEK. Dates come from the stored calendar when it has the week, else from the kickoffs. IS_DONE says whether the week is over, which decides the current as-of point.';
+  FROM dated d;

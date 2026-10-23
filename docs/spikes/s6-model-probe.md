@@ -159,3 +159,24 @@ Two views were restructured, and one was left alone although it benefits. Same-s
 - **A view that appears twice in one query is evaluated once, without either occurrence's filter, when the two references share a sub-expression.** That is how `UNION ALL` of two `GAME` branches, and `SEASON_WEEK` next to `GAME`, lost the season filter. `TEAM_SEASON`, `TEAM_SEASON_AS_OF` and `GAME_AS_OF` will combine `GAME`, `TEAM_GAME`, `RANKING` and `SEASON_WEEK`: read `GAME` at most once per query, directly or through another view, and measure each as-of view with the profile (`EXA_USER_PROFILE_LAST_DAY`, rows out of the scan of `GAMES`) as well as the clock.
 - **A constant filter reaches both sides of an equi-join on the season only when it sits above the join.** In `SEASON_WEEK` x `GAME ON SEASON`, a filter inside the points side left `GAME` unfiltered (1.2 s); the same filter on the view's `AS_OF_SEASON` column above the join read 2,120 games (0.37 s). Filter the as-of views through their `AS_OF_*` columns, as the plan has it, and put no season constant inside one side.
 - **Run-to-run spread is large on this host** (up to 3x). Compare restructurings in one session, side by side, and judge a target by the idle median plus the range.
+
+## Full model on the real data (task 4.3, 2026-10-23)
+
+Real data (112,674 games, 157 seasons), warm, query cache off, 1 warm-up and 3 runs, median, client in WSL. "Before" is the all-views model of task 3.11; "after" has the eight derived tables of decision [40] (`GAME`, `SEASON_WEEK`, `TEAM`, `RATING_SP`, `RANKING`, `TEAM_MEMBERSHIP`, `TEAM_SEASON`, `AS_OF_POINT`), rebuilt by `CFB_INFRA.REFRESH_MODEL`.
+
+| Query | AWS before | AWS after | Local before | Local after | Target |
+|---|---|---|---|---|---|
+| `TEAM` current FBS teams (map) | 1.27 | 0.07 | 1.35 | 0.03 | 1 |
+| `TEAM_SEASON` one team, all seasons | 3.04 | 0.07 | 3.67 | 0.04 | 1 |
+| `TEAM_SEASON` one season | 2.84 | 0.09 | 1.41 | 0.05 | 1 |
+| `TEAM_GAME` one team and season | 0.77 | 0.08 | 0.35 | 0.07 | 1 |
+| `GAME` one season (3,831 rows) | 1.43 | 0.49 | 0.40 | 0.17 | 1 |
+| `GAME_AS_OF` one point (3,678 rows) | 1.58 | 0.44 | 0.45 | 0.16 | 1 |
+| `TEAM_SEASON_AS_OF` one point | 3.30 | 0.81 | 1.44 | 0.57 | 1 |
+| `MODEL_CHECKS` one point | 6.36 | 1.45 | 4.02 | 0.83 | 3 |
+| `SEASON_COVERAGE` in full | 3.8 ([39]) | 1.00 | | 0.85 | 3 |
+| `GAME` grouped by season | | 0.06 | | 0.03 | 2 |
+
+`GAME` and `GAME_AS_OF` after are bound by the transfer of about 3,800 wide rows: `SELECT *` of one season of `CFB_CORE.GAMES` takes 0.58 s on AWS from the same client. The rebuild (`REFRESH_MODEL(NULL, NULL, NULL, NULL)`) takes 6.3 s on AWS (217,643 rows; 7.6 s with the checks of one point) and about 11 s locally; `GAME` (3-4 s locally) and `TEAM_SEASON` (4 s, mostly compile time) dominate.
+
+A prototype with only `GAME` materialized (local) left `TEAM_SEASON` one team at 3.0 s and `TEAM_SEASON_AS_OF` at 1.3 s: the team-season and as-of stacks also need their other inputs as tables. Output equality before against after is in decision [40].

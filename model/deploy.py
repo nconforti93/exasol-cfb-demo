@@ -11,36 +11,43 @@ integration harness):
    (`make deploy`). The lock is taken before the transaction because acquiring it commits.
    `make deploy` passes the lock it already holds instead, so its three steps are one `DEPLOY`
    run ([35]).
-4. `sqlobjects.deploy`: one transaction, `CREATE SCHEMA`, orphans dropped, objects in file order,
-   the refresh step script (`CFB_INFRA.REFRESH_MODEL`, when it exists), a compile pass over every
-   view, comment read-back, `COMMIT`; any failure rolls everything back.
+4. `sqlobjects.deploy`: one transaction, `CREATE SCHEMA`, orphans dropped (a view that became a
+   table is dropped first), objects in file order, the step's log table
+   (`CFB_META.MODEL_CHECK_LOG`, created if missing) and the refresh step script
+   (`CFB_INFRA.REFRESH_MODEL`), a compile pass over every view, comment read-back, `COMMIT`; any
+   failure rolls everything back.
+
+Derived tables (decision [40]): a `TABLE` file whose `INSERT` reads other objects is a materialized
+view. The deploy recreates and fills it in file order inside the transaction, so a deployed model is
+current; `CFB_INFRA.REFRESH_MODEL` rebuilds the same tables after every load (`model/step.py`).
 
 The step script is installed in the same transaction, so a failed model deploy also leaves the
-previous script in place. Until task 4.1 adds `model/lua/refresh_model.lua` there is none, and the
-report says so. `ModelOptions.step_script` is the one place that 4.1 changes: it returns the
-`CREATE OR REPLACE LUA SCRIPT` text for a namespace.
+previous script in place. `ModelOptions.step_script` returns its `CREATE OR REPLACE LUA SCRIPT`
+text for a namespace and the rendered objects (the derived tables' `INSERT`s are compiled into it),
+or `None` when `model/lua/refresh_model.lua` does not exist.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from loader.runlock import HeldLock, run_lock
-from vs.host import sqlobjects
+from model import step as model_step
+from vs.host import metaddl, sqlobjects
 from vs.host.deploy import DeployError
 from vs.host.namespace import Namespace
 from vs.host.sqlobjects import DeployReport, SqlObject
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "sql" / "model"
-STEP_SOURCE = ROOT / "model" / "lua" / "refresh_model.lua"
+STEP_SOURCE = model_step.STEP_SOURCE
 LOCK_KIND = "DEPLOY"
 LOCK_ARGS = "make model"
 
-StepScript = Callable[[Namespace], str | None]
+StepScript = Callable[[Namespace, Sequence[SqlObject]], str | None]
 
 
 class ModelLintError(DeployError):
@@ -54,14 +61,19 @@ class ModelLintError(DeployError):
         )
 
 
-def default_step_script(namespace: Namespace) -> str | None:
-    """The text that creates `<infra>.REFRESH_MODEL`; `None` until `refresh_model.lua` exists."""
+def default_step_script(namespace: Namespace, objects: Sequence[SqlObject]) -> str | None:
+    """The text that creates `<infra>.REFRESH_MODEL` for the rendered `objects`; `None` without
+    `model/lua/refresh_model.lua`."""
     if not STEP_SOURCE.exists():
         return None
-    raise DeployError(
-        f"{STEP_SOURCE} exists but is not bundled yet: add its entry to loader/bundle.py and "
-        "return the bundled text from model.deploy.default_step_script"
-    )
+    return model_step.build_step_script(namespace, objects, STEP_SOURCE)
+
+
+def check_log_ddl(namespace: Namespace) -> str:
+    """`CREATE TABLE IF NOT EXISTS <meta>.MODEL_CHECK_LOG`: the step's log, also on a target whose
+    loader was deployed before the table was registered (`make deploy` creates it too)."""
+    ddl = metaddl.render_meta_ddl("model_check_log", namespace.meta_schema)
+    return ddl.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
 
 
 @dataclass(frozen=True)
@@ -116,8 +128,8 @@ def deploy_model(
     """
     options = options or ModelOptions()
     objects = prepare(namespace, options.directory)
-    step = options.step_script(namespace)
-    extra = [step] if step else []
+    step = options.step_script(namespace, objects)
+    extra = [check_log_ddl(namespace), *([step] if step else [])]
     if lock is not None:
         report = sqlobjects.deploy(
             connection, namespace.model_schema, objects, extra_statements=extra, lock=lock
@@ -133,11 +145,13 @@ def deploy_model(
         f"Lua script {namespace.infra_schema}.REFRESH_MODEL: replaced"
         if step
         else f"Lua script {namespace.infra_schema}.REFRESH_MODEL: skipped, "
-        f"{STEP_SOURCE.relative_to(ROOT)} does not exist yet"
+        f"{STEP_SOURCE.name} does not exist"
     )
+    derived = [obj.name for obj in model_step.derived_tables(objects)]
     lines = (
         f"lint: {len(objects)} files clean",
         *report.lines,
+        f"derived tables filled: {', '.join(derived) if derived else 'none'}",
         notice,
         f"model deployed as DEPLOY run {run_id}; 0 CFBD calls",
     )

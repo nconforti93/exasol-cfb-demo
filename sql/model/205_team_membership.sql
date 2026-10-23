@@ -1,3 +1,6 @@
+-- Materialized (decision [40]): a table with the columns the view had, filled by the INSERT below. Every
+-- `make model` recreates it, and CFB_INFRA.REFRESH_MODEL rebuilds it (TRUNCATE + the INSERT, file order)
+-- after every load: refresh step 100, and the post-hook of `make backfill` / `make restore`.
 -- Conference memberships per team and season (model/teams-conferences), games-free. TEAM_SEASON and
 -- TEAM_SEASON_AS_OF both read it, so the membership rules exist once and the as-of view reads GAME only
 -- once (through GAME_AS_OF; decision [33]: a view read twice in one query lost its season filter).
@@ -6,16 +9,18 @@
 -- VALUES list as the season generator (no SYS.DUAL dependency). Per team and season the newest fetch wins
 -- (REQ_AT, then the later slice key); within it the later START_YEAR (then the later row) wins, and spells
 -- of different conferences set HAS_MEMBERSHIP_CONFLICT.
-CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.TEAM_MEMBERSHIP (
-  TEAM_ID                 COMMENT IS 'CFBD team id (TEAM.TEAM_ID); with SEASON it identifies the row',
-  SEASON                  COMMENT IS 'Season the membership speaks for: inside the spell and inside the seasons its slice requested',
-  SCHOOL                  COMMENT IS 'CFBD school name as the membership reports it',
-  CONFERENCE_NAME         COMMENT IS 'Conference of the winning spell (CFBD name)',
-  CONFERENCE_DIVISION     COMMENT IS 'Division within the conference of the winning spell; NULL when the conference had no divisions',
-  CLASSIFICATION          COMMENT IS 'Classification code of the winning spell as CFBD reports it (fbs, fcs, ii or iii); it may be the conference''s code of today, so TEAM_SEASON prefers the team''s games',
-  HAS_MEMBERSHIP_CONFLICT COMMENT IS 'TRUE when the newest membership fetch holds spells of different conferences for the season; the spell with the later start year won (MODEL_CHECKS: MEMBERSHIP_CONFLICT)',
-  FETCHED_AT              COMMENT IS 'When the winning spell was fetched (REQ_AT, UTC)'
-) AS
+CREATE OR REPLACE TABLE {MODEL_SCHEMA}.TEAM_MEMBERSHIP (
+  TEAM_ID                 DECIMAL(18,0)      COMMENT IS 'CFBD team id (TEAM.TEAM_ID); with SEASON it identifies the row',
+  SEASON                  DECIMAL(4,0)       COMMENT IS 'Season the membership speaks for: inside the spell and inside the seasons its slice requested',
+  SCHOOL                  VARCHAR(2000) UTF8 COMMENT IS 'CFBD school name as the membership reports it',
+  CONFERENCE_NAME         VARCHAR(2000) UTF8 COMMENT IS 'Conference of the winning spell (CFBD name)',
+  CONFERENCE_DIVISION     VARCHAR(2000) UTF8 COMMENT IS 'Division within the conference of the winning spell; NULL when the conference had no divisions',
+  CLASSIFICATION          VARCHAR(2000) UTF8 COMMENT IS 'Classification code of the winning spell as CFBD reports it (fbs, fcs, ii or iii); it may be the conference''s code of today, so TEAM_SEASON prefers the team''s games',
+  HAS_MEMBERSHIP_CONFLICT BOOLEAN            COMMENT IS 'TRUE when the newest membership fetch holds spells of different conferences for the season; the spell with the later start year won (MODEL_CHECKS: MEMBERSHIP_CONFLICT)',
+  FETCHED_AT              TIMESTAMP(3)       COMMENT IS 'When the winning spell was fetched (REQ_AT, UTC)'
+) COMMENT IS 'One row per team and season with a stored conference membership whose slice speaks for the season (CFB_CORE.CONFERENCES_AFFILIATIONS): the conference, division and classification of the winning spell, and whether the newest fetch held spells of different conferences. A spell speaks only for the seasons its request asked for, so the static range slice never claims a season after a move. No games are read: the conference of a team without a membership, and the classification the model uses, are in TEAM_SEASON. Materialized: rebuilt by CFB_INFRA.REFRESH_MODEL after every load, so it is current as of the last load or refresh.';
+
+INSERT INTO {MODEL_SCHEMA}.TEAM_MEMBERSHIP
 WITH requests AS (
   SELECT a."TEAM_ID", a."TEAM", a."CONFERENCE", a."CONFERENCE_DIVISION", a."CLASSIFICATION",
          a."START_YEAR", a."END_YEAR", a."REQ_AT", a."REQ_SLICE", a."ROW_NO",
@@ -68,5 +73,4 @@ SELECT m."TEAM_ID",
        CASE WHEN m."LOW_NAME" <> m."HIGH_NAME" THEN TRUE ELSE FALSE END,
        m."REQ_AT"
   FROM memberships m
- WHERE m."SPELL_NO" = 1
-COMMENT IS 'One row per team and season with a stored conference membership whose slice speaks for the season (CFB_CORE.CONFERENCES_AFFILIATIONS): the conference, division and classification of the winning spell, and whether the newest fetch held spells of different conferences. A spell speaks only for the seasons its request asked for, so the static range slice never claims a season after a move. No games are read: the conference of a team without a membership, and the classification the model uses, are in TEAM_SEASON.';
+ WHERE m."SPELL_NO" = 1;

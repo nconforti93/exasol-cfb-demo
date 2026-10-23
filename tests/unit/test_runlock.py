@@ -147,7 +147,7 @@ def test_a_row_that_was_no_longer_running_at_the_end_is_an_error() -> None:
         pass
 
 
-@pytest.mark.parametrize("kind", ["BACKFILL", "REFRESH_WEEK", "SIMULATE", "restore", ""])
+@pytest.mark.parametrize("kind", ["BACKFILL", "REFRESH_WEEK", "SIMULATE", "MODEL", "restore", ""])
 def test_only_host_kinds_are_accepted(kind: str) -> None:
     connection = FakeConnection()
     with (

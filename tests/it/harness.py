@@ -50,6 +50,7 @@ import pyexasol
 from loader import deploy as loader_deploy
 from loader.runlock import HeldLock, run_lock
 from model import deploy as model_deploy
+from model import step as model_step
 from scripts import grants
 from tests.it import guards, loader_support, model_support, step_scripts, support
 from tests.it.loader_support import BASE_VARIANT, PlanState
@@ -586,7 +587,18 @@ class Harness:
         self._truncate_dirty_tables()
         model_support.seed_league_data(self.owner, self.namespace, league)
         self.set_now(model_support.SEED_CLOCK)
+        self.rebuild_model()
         return league
+
+    def rebuild_model(self) -> None:
+        """Rebuild the model's derived tables from the stored rows (decision [40]), as the refresh
+        step does: `REFRESH_MODEL(NULL, NULL, NULL, NULL)` as the owner. A test that changes stored
+        rows (or a seed table a derived table reads) calls it before it reads the model; seeding
+        and `mirror_edit` call it themselves. Nothing happens while no model is deployed.
+        """
+        if self._model_digest is None:
+            return
+        self.owner.execute(model_step.step_call(self.namespace))
 
     def write_league_recordings(
         self, league: League | None = None, *, wait: bool = True

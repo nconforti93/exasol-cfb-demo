@@ -39,9 +39,9 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [x] 3.11 `500_model_checks.sql`
 
 ## Group H
-- [ ] 4.1 `model/lua/refresh_model.lua` per Key Interfaces, every statement through `pquery`:
-- [ ] 4.2 Example analyses `sql/model/examples/{as_of_engine_inputs,all_time_upsets,head_to_head,cfp_field_inp
-- [ ] 4.3 Performance on the full model (needs 3.9–3.11 and a "local free" window)
+- [x] 4.1 `model/lua/refresh_model.lua` per Key Interfaces, every statement through `pquery`: (rebuilds the derived tables first, decision [40]; run lock kind `MODEL` on its own; step 100 in `loader/load-plan.yaml`; `make model-refresh`; backfill/restore post-hooks)
+- [-] 4.2 (light process: deferred) Example analyses `sql/model/examples/{as_of_engine_inputs,all_time_upsets,head_to_head,cfp_field_inp
+- [x] 4.3 Performance on the full model (needs 3.9–3.11 and a "local free" window): eight derived tables (decision [40]); numbers in `docs/spikes/s6-model-probe.md`
 
 ## Group I
 - [ ] 5.1 Lint, coverage and the integration suite:

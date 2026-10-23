@@ -79,11 +79,13 @@ def test_the_season_sliced_entries_have_distinct_priorities(project_plan: Any) -
     assert len(set(seasonal)) == len(seasonal)
 
 
-def test_the_project_plan_ships_the_default_settings_and_no_refresh_steps(
+def test_the_project_plan_ships_the_default_settings_and_the_model_step(
     project_plan: Any,
 ) -> None:
     assert project_plan.config == PlanConfig()
-    assert project_plan.refresh_steps == ()
+    assert [(s.step_no, s.name, s.script) for s in project_plan.refresh_steps] == [
+        (100, "MODEL", "CFB_INFRA.REFRESH_MODEL")
+    ]
 
 
 def test_the_estimate_drops_the_current_season_before_the_rollover(project_plan: Any) -> None:

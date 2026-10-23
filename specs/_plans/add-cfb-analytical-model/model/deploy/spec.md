@@ -7,9 +7,10 @@
 - **Source of truth:** one SQL file per model object in `sql/model/`, deployed in file-name order:
   - reference tables (curated knowledge that CFBD does not provide: eras, division labels, conference tiers, conference championship seasons, polls, datasets, classification transitions);
   - one SQL function (`GREAT_CIRCLE_KM`);
-  - views for every dimension, fact, coverage and as-of object.
+  - derived tables for the base facts and dimensions that pages and the engine read most (`GAME`, `SEASON_WEEK`, `TEAM`, `RATING_SP`, `RANKING`, `TEAM_MEMBERSHIP`, `TEAM_SEASON`, `AS_OF_POINT`): each is a materialized view, a table with the view's columns and comments, filled by an `INSERT … SELECT` of the view's former query;
+  - views for every other dimension, fact, coverage and as-of object, and for the checks.
 
-  Every derived object is a view, so the model always reflects the stored data. There are no model tables to rebuild after a backfill, a refresh or a restore.
+  A derived table is current as of the last rebuild. The deploy fills it, and the refresh step `CFB_INFRA.REFRESH_MODEL` rebuilds it after every load: as registered step 100 of a weekly refresh, and as the post-hook of `make backfill` and `make restore` (`model/refresh-step`). A `BACKFILL` run directly through `EXECUTE SCRIPT`, or a manual change of `CFB_CORE`, leaves it stale until the next rebuild.
 - **Commands** (all take `TARGET=local|aws`; `ARGS="--prefix TEST_"` deploys the integration-test namespace):
   - `make model`: lints, renders and deploys the model objects only.
   - `make deploy`: deploys the virtual schema, the loader and then the model.
@@ -23,7 +24,7 @@
 - **Deploy** runs in one transaction, holding the loader's run lock (`loader/run-logs`):
   1. refuse to start while a loader run, snapshot or restore holds the lock;
   2. create the schema if needed;
-  3. replace the reference tables and their rows;
+  3. replace the reference tables and their rows, and the derived tables, filled in file order (a view that became a table is dropped first);
   4. replace the function, and the views with `CREATE OR REPLACE FORCE VIEW` in file order, so a view may reference a view of a later file;
   5. drop model objects that no file defines any more;
   6. compile every view (a query that returns no rows) and read the comments back from the database; an invalid view or a missing comment fails the deploy.
