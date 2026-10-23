@@ -68,11 +68,12 @@ lint:
 	$(RUN) ruff format --check .
 	$(RUN) mypy
 
-# Unit + CLI tests only. Each of the two runtime packages must reach 90 % (fail_under in pyproject.toml).
+# Unit + CLI tests only. Each of the three runtime packages (vs/cfbd_vs, vs/gen, loader) must reach 90 % (fail_under in pyproject.toml).
 coverage:
 	$(RUN) pytest --cov --cov-report= tests/unit tests/cli
 	$(RUN) coverage report --include="vs/cfbd_vs/*"
 	$(RUN) coverage report --include="vs/gen/*"
+	$(RUN) coverage report --include="loader/*"
 
 # `LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"` overrides loader settings of
 # loader/load-plan.yaml until the next deploy. `make deploy` also deploys the loader (loader/deploy.py).

@@ -36,8 +36,8 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 - [x] 5.2 Snapshot and restore `loader/snapshot.py` + `scripts/snapshot.py`, with the make targets `snapshot`, [expert]
 
 ## Group H (sequential)
-- [ ] 7.3 The rest of `tests/it/test_run_logs_it.py`
-- [ ] 7.4 Quality gate:
+- [x] 7.3 The rest of `tests/it/test_run_logs_it.py`
+- [x] 7.4 Quality gate:
 
 ## Group I
 - [ ] 8.1 `docs/user-guide.md` § "Persisting and refreshing":

@@ -30,7 +30,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["vs/cfbd_vs", "vs/gen"]
+source = ["vs/cfbd_vs", "vs/gen", "loader"]
 branch = true
 
 [tool.coverage.report]
