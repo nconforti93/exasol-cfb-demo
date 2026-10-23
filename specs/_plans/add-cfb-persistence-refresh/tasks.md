@@ -62,6 +62,6 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 ## Review and Verification
 - [x] R.1 Code review
 - [x] F.1 Review fixes: M1 interrupted-run ledger entry, M2 LOAD_LOG required with CFB_CORE, minors m1-m7, m8 (decision: stop after 2 consecutive failed batches), m10-m13 [expert]
-- [ ] V.1 Checklist
-- [ ] V.2 Scenario coverage audit
-- [ ] V.3 Manual testing and verification-report.md
+- [x] V.1 Checklist
+- [x] V.2 Scenario coverage audit
+- [x] V.3 Manual testing and verification-report.md

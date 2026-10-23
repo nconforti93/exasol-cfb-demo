@@ -11,6 +11,8 @@ Roadmap Phase 2: persist CFBD data from `CFBD_VS` into the `CFB_CORE` mirrors un
 - **Logs and quota.** Run, step, failure and fetch logs, plus a zero-call quota view over `/info`. Its budget caps the key's whole monthly use.
 - **Snapshots.** `make snapshot` / `make restore` copy `CFB_CORE`, the load log and the fetch log to private Parquet files, and rebuild any deployment with zero API calls. A restore is also the rehearsal reset.
 
+> **Superseded (probe 1.2, decisions [31] and [44]):** snapshots are gzip CSV files written and read by pyexasol, not Parquet through exapump, and `loader/exapump.py` was removed again in task 5.2. Every "Parquet", "exapump" and `exapump_env` mention below (Summary, Snapshots, Targets, tasks 1.2, 1.3, 5.2, 6.1, 9.0) describes the abandoned design. The specs, `docs/user-guide.md`, `specs/architecture.md` (D45) and the decision log are authoritative.
+
 All of it is verified at zero CFBD calls against the mock API and replay in the `TEST_` namespace. Before any paid call on the AWS `default` instance, a zero-call smoke test runs there. The plan ends with a measured live run of at most 300 CFBD calls: the demo backfill (217), one refresh (4) and a snapshot from AWS restored on the laptop (0). The in-database budget is set to the owner's October authorization (400) for that run.
 
 ## Design
