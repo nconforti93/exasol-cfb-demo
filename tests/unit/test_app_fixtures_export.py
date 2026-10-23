@@ -44,7 +44,9 @@ def map_row(team_id: int, school: str, conference: str, **extra: object) -> dict
     return row | extra
 
 
-def game_row(game_id: int, team_id: int, week: int, opponent_id: int, **extra: object) -> dict[str, Any]:
+def game_row(
+    game_id: int, team_id: int, week: int, opponent_id: int, **extra: object
+) -> dict[str, Any]:
     row = {
         "GAME_ID": game_id,
         "WEEK": week,
