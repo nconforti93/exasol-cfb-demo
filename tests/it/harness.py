@@ -20,6 +20,15 @@ The loader plan: `deploy_plan(variant)` installs a variant of `tests/it/fixtures
 `PLAN_VARIANT` and optionally `PLAN_CONFIG` for the `plan_variant` fixture, which deploys it once
 per module), `set_now` moves the test clock, and the reset puts the module's plan back.
 
+The model: `ensure_model()` (once per session and per change of the files) or `deploy_model()`
+installs `TEST_CFB_MODEL` under the loader's run lock (`model/deploy.py`).
+`seed_league(variant)` stores the synthetic league (`tests/synthetic/league.py`) in `TEST_CFB_CORE`
+and `LOAD_LOG` by direct inserts and sets the league's clock. `write_league_recordings()` puts the
+league's 2026 weekly slices into the replay store. `hold_run_lock()` holds the run lock in a second
+session. `seed_scaled_league()` builds the `PERF_` namespace of the performance smoke
+(`tests/it/model_support.py`). Model test modules use the plan variant `model`
+(`PLAN_VARIANT = "model"`).
+
 `Harness.close()` drops everything again, whether or not tests failed, and verifies that no test
 object is left. Nothing reads `.env` (except the DSN) or writes a secret to disk; the target
 (`TARGET=local|aws`, see `vs/host/target.py`) supplies the sys password from the Personal secrets
@@ -31,19 +40,23 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, NoReturn
 
 import pyexasol
 
 from loader import deploy as loader_deploy
+from loader.runlock import HeldLock, run_lock
+from model import deploy as model_deploy
 from scripts import grants
-from tests.it import guards, loader_support, step_scripts, support
+from tests.it import guards, loader_support, model_support, step_scripts, support
 from tests.it.loader_support import BASE_VARIANT, PlanState
 from tests.it.support import HarnessError
 from tests.mock_cfbd import sidecar
 from tests.synthetic import fake
+from tests.synthetic.league import League, base_league
 from vs.host import deploy, fetchlog, redact, target
 from vs.host.namespace import MOCK_CONNECTION, Namespace
 
@@ -113,7 +126,7 @@ def drop_namespace(connection: Any, namespace: Namespace) -> list[str]:
     """Drop every object of the test namespace as `sys`; returns the statements that failed."""
     statements = [
         f"DROP VIRTUAL SCHEMA IF EXISTS {namespace.vs_name} CASCADE",
-        *(f"DROP SCHEMA IF EXISTS {schema} CASCADE" for schema in _namespace_schemas(namespace)),
+        *(f"DROP SCHEMA IF EXISTS {schema} CASCADE" for schema in _all_schemas(namespace)),
         f"DROP CONNECTION IF EXISTS {MOCK_CONNECTION}",
         f"DROP USER IF EXISTS {READER_USER} CASCADE",
         f"DROP USER IF EXISTS {namespace.owner_user} CASCADE",
@@ -134,7 +147,7 @@ def drop_namespace(connection: Any, namespace: Namespace) -> list[str]:
 
 def leftovers(connection: Any, namespace: Namespace) -> list[str]:
     """Names of test objects that still exist."""
-    schemas = [namespace.vs_name, *_namespace_schemas(namespace)]
+    schemas = [namespace.vs_name, *_all_schemas(namespace)]
     found: list[str] = []
     listing = ", ".join(f"'{name}'" for name in schemas)
     found += [
@@ -167,8 +180,23 @@ def _namespace_schemas(namespace: Namespace) -> tuple[str, ...]:
         namespace.core_schema,
         namespace.stage_schema,
         namespace.restore_schema,
+        namespace.model_schema,
         HARNESS_SCHEMA,
     )
+
+
+def _perf_schemas() -> tuple[str, ...]:
+    """The schemas of the performance namespace (`PERF_CFB_*`); the harness owns them too."""
+    return tuple(
+        schema
+        for schema in _namespace_schemas(model_support.perf_namespace())
+        if schema != HARNESS_SCHEMA
+    )
+
+
+def _all_schemas(namespace: Namespace) -> tuple[str, ...]:
+    """Every schema the harness may drop: the test namespace's and the performance namespace's."""
+    return (*_namespace_schemas(namespace), *_perf_schemas())
 
 
 def _stale_connections(connection: Any) -> list[str]:
@@ -274,7 +302,9 @@ class Harness:
         self._plan: PlanState | None = None
         self._baseline: PlanState | None = None
         self._clock_dirty = False
+        self._model_digest: str | None = None
         self.loader_report: loader_deploy.LoaderReport | None = None
+        self.model_report: model_deploy.ModelReport | None = None
 
     @property
     def vs(self) -> str:
@@ -295,6 +325,10 @@ class Harness:
     @property
     def stage(self) -> str:
         return self.namespace.stage_schema
+
+    @property
+    def model(self) -> str:
+        return self.namespace.model_schema
 
     @property
     def reader(self) -> Any:
@@ -512,6 +546,92 @@ class Harness:
             )
         return list(manifest.slice_keys)
 
+    # --- the model: deploy, leagues, recordings, run lock --------------------------------------
+
+    def deploy_model(self, directory: Path | None = None) -> model_deploy.ModelReport:
+        """Lint and deploy `sql/model/` (or a fixture directory) into `TEST_CFB_MODEL` as the owner,
+        under the loader's `DEPLOY` run lock. Raises what `model.deploy.deploy_model` raises
+        (`ModelLintError` before any statement, `RunLockRefused`, `DeployError`); a failed deploy
+        changes nothing, so the digest of what is deployed stays.
+        """
+        folder = directory or model_deploy.MODEL_DIR
+        report = model_deploy.deploy_model(
+            self.owner, self.namespace, model_deploy.ModelOptions(directory=folder)
+        )
+        self._model_digest = model_support.directory_digest(folder)
+        self.model_report = report
+        return report
+
+    def ensure_model(self) -> None:
+        """Deploy `sql/model/` unless exactly its current files are deployed (once per session).
+
+        `rebuild` forgets the deployment; a test that deployed a fixture directory leaves a
+        different digest, so the next `ensure_model` installs the real model again (the fixture's
+        objects are dropped as orphans).
+        """
+        if self._model_digest != model_support.directory_digest(model_deploy.MODEL_DIR):
+            self.deploy_model()
+
+    def seed_league(self, variant: Callable[[League], League] | None = None) -> League:
+        """Store the synthetic league in `TEST_CFB_CORE` and `LOAD_LOG`, and set the test clock.
+
+        `variant` is applied to the base league (`tests.synthetic.league.with_*`, `mutate_after`
+        with its arguments bound); the result is returned so tests can look up game ids. The data
+        tables are emptied first, so calling it again re-seeds cleanly. The rows are what the
+        foundation's flattener makes of API-shaped bodies, inserted directly (no virtual schema, no
+        request). The clock is the league's `NOW_OVERRIDE`, 2026-10-28 12:00 UTC; the reset puts the
+        module's clock back.
+        """
+        league = _league(variant)
+        self._truncate_dirty_tables()
+        model_support.seed_league_data(self.owner, self.namespace, league)
+        self.set_now(model_support.SEED_CLOCK)
+        return league
+
+    def write_league_recordings(
+        self, league: League | None = None, *, wait: bool = True
+    ) -> list[str]:
+        """Put the replay recordings of the league's 2026 weekly slices (games, lines, SP+ and
+        rankings) into the replay store, as a `REFRESH_WEEK` in replay mode would read them; returns
+        the slice keys. `league` defaults to the base league.
+        """
+        recordings = (league or _league(None)).replay_recordings()
+        for recording in recordings:
+            self.replay_area.write(recording)
+        keys = [recording.slice_key for recording in recordings]
+        if wait:
+            self.wait_for_files([self.replay_area.udf_file(key) for key in keys])
+        return keys
+
+    @contextmanager
+    def hold_run_lock(
+        self, kind: str = "RESTORE", args: str = "held by a test"
+    ) -> Iterator[HeldLock]:
+        """Hold the loader's run lock in a second owner session (another live session), so a
+        `DEPLOY`, `BACKFILL` or `REFRESH_WEEK` of the harness's owner session is refused naming the
+        run, until the block ends (the row ends `DONE`).
+
+        `kind` is a host kind (`DEPLOY`, `RESTORE`, `SNAPSHOT`): a script kind's row is stale as
+        soon as its session is idle, and this session is idle between statements.
+        """
+        with (
+            self.owner_session() as session,
+            run_lock(session, self.namespace, kind, args) as lock,
+        ):
+            yield lock
+
+    def seed_scaled_league(
+        self, *, force: bool = False, log: Callable[[str], None] | None = None
+    ) -> dict[str, int]:
+        """Build the `PERF_` namespace (`PERF_CFB_*`) and load the scaled league (about 250,000
+        games) into it as the owner; returns rows per table, empty when it was already stored.
+
+        Dropped with the rest of the harness's schemas at the start and the end of a session.
+        """
+        return model_support.seed_scaled_namespace(
+            self.owner, model_support.perf_namespace(), force=force, log=log or _no_log
+        )
+
     # --- the loader: plan variants, clock, scripts, logs ---------------------------------------
 
     @property
@@ -701,24 +821,29 @@ class Harness:
         for statement in statements:
             self.query(statement)
         self._plan = None
+        self._model_digest = None
         _deploy_namespace(self, self._owner_password, self._baseline or PlanState(BASE_VARIANT, ()))
 
-    def reset_state(self) -> list[str]:
+    def reset_state(self, *, keep_data: bool = False) -> list[str]:
         """Leave the database as the deployment left it; returns problems instead of raising.
 
         Restores properties, truncates every non-empty data table (`CFB_CORE`, `CFB_META`,
         `CFB_STAGE` and the infra schema's step-call table) except the plan tables, deletes the
         recordings (waiting until a UDF no longer sees them), puts the module's loader plan and
         clock back, and resets the mock if the test changed it without the `mock` fixture.
+        `TEST_CFB_MODEL` is never touched: its reference tables are seeded by the deploy.
+
+        With `keep_data` (read-only model modules, marker `model_readonly`) the tables, the loader
+        plan and the clock stay, so the league seeded once for the module survives every test.
         """
         problems: list[str] = []
-        steps = (
-            ("properties", self.reset_properties),
-            ("tables", self._truncate_dirty_tables),
-            ("recordings", self._clear_recordings),
-            ("loader plan", self._restore_plan),
-            ("mock", self._reset_changed_mock),
-        )
+        steps: list[tuple[str, Callable[[], object]]] = [("properties", self.reset_properties)]
+        if not keep_data:
+            steps.append(("tables", self._truncate_dirty_tables))
+        steps.append(("recordings", self._clear_recordings))
+        if not keep_data:
+            steps.append(("loader plan", self._restore_plan))
+        steps.append(("mock", self._reset_changed_mock))
         for label, step in steps:
             try:
                 step()
@@ -989,6 +1114,15 @@ def _deploy_namespace(harness: Harness, owner_password: str, plan: PlanState) ->
     harness.query(step.sql, user=SYS)
     assert_no_real_connection(harness.sys)
     harness.baseline_properties = harness.properties()
+
+
+def _league(variant: Callable[[League], League] | None) -> League:
+    league = base_league()
+    return variant(league) if variant is not None else league
+
+
+def _no_log(_: str) -> None:
+    return None
 
 
 def _identifier(value: str) -> str:

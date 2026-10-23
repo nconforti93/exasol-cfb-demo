@@ -8,6 +8,14 @@
 - `plan_variant` (module scope, autouse) deploys the loader plan a test module asks for with
   `PLAN_VARIANT = "<variant of tests/it/fixtures>"` and optionally `PLAN_CONFIG = {...}`
   (`LOADER_CONFIG` overrides); the default is the base plan. The per-test reset returns to it.
+- Model tests (`PLAN_VARIANT = "model"`): `model_deployed` (module scope) makes sure
+  `TEST_CFB_MODEL` holds the current `sql/model/` files. `league` (module scope) deploys the model
+  and seeds the base league once for a module of read-only tests, marked
+  `pytestmark = pytest.mark.model_readonly`: for those `clean_state` keeps the data, the loader plan
+  and the clock, so a test of such a module must not change data. The module's teardown empties the
+  data again. Modules that change data (variants, the refresh step) do not use `league`: they call
+  `harness.seed_league(variant)` in every test, which empties and re-seeds, and the normal
+  per-test reset cleans up.
 - `snapshot_dir` (opt-in) is an empty private (mode 0700) directory below pytest's tmp path.
 - `mock` (opt-in) resets the mock sidecar so a test counts its own hits and rules; a test that
   looks at the mock must request it.
@@ -25,9 +33,11 @@ import pytest
 
 from tests.it import guards, loader_support
 from tests.it.harness import Harness, Mock, build_harness
+from tests.synthetic.league import League
 
 IT_DIRECTORY = Path(__file__).parent
 FAILED_START = 2
+MODEL_READONLY = "model_readonly"
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -59,11 +69,12 @@ def harness() -> Iterator[Harness]:
 
 
 @pytest.fixture(autouse=True)
-def clean_state(harness: Harness) -> Iterator[None]:
+def clean_state(harness: Harness, request: pytest.FixtureRequest) -> Iterator[None]:
+    keep_data = request.node.get_closest_marker(MODEL_READONLY) is not None
     try:
         yield
     finally:
-        problems = harness.reset_state()
+        problems = harness.reset_state(keep_data=keep_data)
         if problems:
             pytest.fail("test cleanup incomplete:\n  " + "\n  ".join(problems), pytrace=False)
 
@@ -73,6 +84,22 @@ def plan_variant(request: pytest.FixtureRequest, harness: Harness) -> str:
     variant = str(getattr(request.module, "PLAN_VARIANT", loader_support.BASE_VARIANT))
     harness.use_plan(variant, getattr(request.module, "PLAN_CONFIG", None))
     return variant
+
+
+@pytest.fixture(scope="module")
+def model_deployed(harness: Harness) -> None:
+    harness.ensure_model()
+
+
+@pytest.fixture(scope="module")
+def league(harness: Harness, model_deployed: None) -> Iterator[League]:
+    seeded = harness.seed_league()
+    try:
+        yield seeded
+    finally:
+        problems = harness.reset_state()
+        if problems:
+            pytest.fail("league cleanup incomplete:\n  " + "\n  ".join(problems), pytrace=False)
 
 
 @pytest.fixture

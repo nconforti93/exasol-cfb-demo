@@ -27,6 +27,14 @@
 #                      the rehearsal reset). FORCE=yes accepts a snapshot of another catalog. 0 CFBD calls.
 #   snapshots          lists the snapshots. All three are scripts/snapshot.py; snapshot and restore
 #                      take the loader's run lock.
+#   model              lints sql/model/, then installs CFB_MODEL in one transaction under the loader's
+#                      run lock (kind DEPLOY; refused while a loader run, snapshot or restore holds it).
+#                      ARGS="--prefix TEST_" deploys another namespace. `make deploy` runs it last.
+#   model-check        SEASON=y WEEK=w [SEASON_TYPE=postseason]: prints MODEL_CHECKS for that point
+#                      (exit 1 when an ERROR check failed). No log, 0 calls.
+#   model-docs         regenerates docs/model-dictionary.md from sql/model/ (no database).
+#   model-perf         times the model on the scaled league (ARGS="--prefix PERF_"); task 3.7.
+#                      All four are scripts/model.py.
 
 TARGET ?= local
 export TARGET
@@ -42,7 +50,7 @@ NAME     ?=
 ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
-.PHONY: backfill refresh quota snapshot restore snapshots
+.PHONY: backfill refresh quota snapshot restore snapshots model model-check model-docs model-perf
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -109,3 +117,15 @@ restore: db-check
 
 snapshots:
 	$(PY) -m scripts.snapshot list
+
+model: db-check
+	$(PY) -m scripts.model deploy $(ARGS)
+
+model-check: db-check
+	$(PY) -m scripts.model check --season "$(SEASON)" --week "$(WEEK)" $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(ARGS)
+
+model-docs:
+	$(PY) -m scripts.model docs
+
+model-perf: db-check
+	$(PY) -m scripts.model perf $(ARGS)

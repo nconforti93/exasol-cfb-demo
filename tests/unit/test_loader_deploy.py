@@ -24,7 +24,14 @@ PROBE = Namespace("PROBE_LD_")
 PROJECT_PLAN = load_plan()
 PLANNED_TABLES = sorted({entry.table for entry in PROJECT_PLAN.entries})
 SEASON_COUNT = LAST_SEASON - FIRST_SEASON + 1
-LOG_TABLES = ("LOAD_LOG", "FETCH_LOG", "LOAD_RUN", "REFRESH_LOG", "LOAD_FAILURES")
+LOG_TABLES = (
+    "LOAD_LOG",
+    "FETCH_LOG",
+    "LOAD_RUN",
+    "REFRESH_LOG",
+    "LOAD_FAILURES",
+    "MODEL_CHECK_LOG",
+)
 
 
 class LoaderDatabase(FakeDatabase):

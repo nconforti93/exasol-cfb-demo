@@ -1,16 +1,21 @@
 from functools import partial
 from pathlib import Path
-from typing import Never
+from typing import Any, Never
 
 import pytest
 
+from loader.runlock import RunLockRefused
+from model import deploy as model_deploy
+from model.deploy import ModelLintError, ModelReport
 from scripts import deploy as deploy_cli
 from tests.unit.test_loader_deploy import LoaderDatabase
 from vs import bundle
 from vs.host import target
 from vs.host.deploy import DeployError
+from vs.host.namespace import Namespace
 
 SIZES = bundle.BundleSizes(1_534_511, 1_434_615)
+MODEL_LINE = "model deployed as DEPLOY run 42; 0 CFBD calls"
 
 
 class ClosableDatabase(LoaderDatabase):
@@ -25,6 +30,24 @@ class ClosableDatabase(LoaderDatabase):
 
 def written() -> bundle.BundleSizes:
     return SIZES
+
+
+class ModelCalls:
+    """Stands in for the model deploy, which needs the run lock script of a real database."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, str]] = []
+
+    def __call__(self, connection: Any, namespace: Namespace) -> ModelReport:
+        self.calls.append((connection, namespace.prefix))
+        return ModelReport(None, 42, False, ("model line", MODEL_LINE))  # type: ignore[arg-type]
+
+
+@pytest.fixture(autouse=True)
+def model_calls(monkeypatch: pytest.MonkeyPatch) -> ModelCalls:
+    calls = ModelCalls()
+    monkeypatch.setattr(model_deploy, "deploy_model", calls)
+    return calls
 
 
 def test_property_arguments_are_split_and_upper_cased() -> None:
@@ -80,6 +103,63 @@ def test_main_deploys_the_loader_after_the_virtual_schema(
     assert "load plan in PROBE_CFB_META" in out
     assert ("PROBE_CFB_META", "LOAD_PLAN") in db.tables
     assert db.closed
+
+
+def test_the_model_is_deployed_last_on_the_same_connection(
+    capsys: pytest.CaptureFixture[str], model_calls: ModelCalls
+) -> None:
+    db = ClosableDatabase()
+    code = deploy_cli.main(
+        ["--prefix", "PROBE_", "--dsn", "db:1", "--no-sync-api-features"],
+        connector=lambda _: db,
+        write_bundle=written,
+    )
+    out = capsys.readouterr().out
+    assert code == deploy_cli.EXIT_OK
+    assert model_calls.calls == [(db, "PROBE_")]
+    assert (
+        out.index("load plan in PROBE_CFB_META") < out.index("model line") < out.index(MODEL_LINE)
+    )
+    assert db.closed
+
+
+def test_a_refused_model_deploy_is_an_error_after_the_earlier_steps_printed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def refused(connection: Any, namespace: Namespace) -> ModelReport:
+        raise RunLockRefused("DEPLOY refused: BACKFILL run 7 is running")
+
+    db = ClosableDatabase()
+    code = deploy_cli.main(
+        ["--prefix", "PROBE_", "--dsn", "db:1", "--no-sync-api-features"],
+        connector=lambda _: db,
+        write_bundle=written,
+        deploy_model=refused,
+    )
+    captured = capsys.readouterr()
+    assert code == deploy_cli.EXIT_ERROR
+    assert "load plan in PROBE_CFB_META" in captured.out
+    assert "deploy failed: DEPLOY refused: BACKFILL run 7 is running" in captured.err
+    assert db.closed
+
+
+def test_a_model_lint_problem_is_refused_before_anything_is_built_or_sent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(namespace: Namespace) -> Never:
+        raise ModelLintError(["100_game.sql: GAME: grain: the comment must start with One row per"])
+
+    def never_connect(deployment: target.Target) -> ClosableDatabase:
+        raise AssertionError("must not connect")
+
+    def never_bundle() -> bundle.BundleSizes:
+        raise AssertionError("must not build")
+
+    monkeypatch.setattr(model_deploy, "prepare", broken)
+    code = deploy_cli.main(["--dsn", "db:1"], connector=never_connect, write_bundle=never_bundle)
+    err = capsys.readouterr().err
+    assert code == deploy_cli.EXIT_ERROR
+    assert "nothing was sent" in err and "100_game.sql" in err
 
 
 def test_loader_config_overrides_reach_the_deployed_settings(

@@ -1,4 +1,4 @@
-"""`make deploy`: build the bundle, then deploy the CFBD virtual schema and the loader as sys.
+"""`make deploy`: build the bundle, then deploy the CFBD virtual schema, the loader and the model.
 
 The real deployment is created and owned by `sys` ([20]); the password is read at run time from
 the secrets file of the selected Exasol Personal deployment (`--target local|aws` or `TARGET`, see
@@ -6,10 +6,12 @@ the secrets file of the selected Exasol Personal deployment (`--target local|aws
 a separate namespace beside it, with its own schemas, scripts and virtual schema, by default
 reading the mock connection `CFBD_API_MOCK`; it is refused together with the real connection.
 
-Steps and their rules are documented in `vs/host/deploy.py` (virtual schema) and
+Steps and their rules are documented in `vs/host/deploy.py` (virtual schema),
 `loader/deploy.py` (loader: plan tables, views, Lua scripts), which runs second on the same
-connection. The one thing to remember: the fetch UDF is replaced only when its body changed,
-because `CREATE OR REPLACE` drops its script-bound connection grant.
+connection, and `model/deploy.py` (`CFB_MODEL`: lint, then one transaction under the loader's run
+lock), which runs last. The model files are linted before any connection is made, so a lint
+problem changes nothing. The one thing to remember: the fetch UDF is replaced only when its body
+changed, because `CREATE OR REPLACE` drops its script-bound connection grant.
 
 `--loader-config "monthly_call_budget=400,refresh_reserve=50"` (make: `LOADER_CONFIG=...`)
 overrides loader settings of `loader/load-plan.yaml` until the next deploy.
@@ -23,6 +25,8 @@ from collections.abc import Callable
 from typing import Any
 
 from loader import deploy as loader_deploy
+from loader.runlock import RunLockError
+from model import deploy as model_deploy
 from vs import bundle
 from vs.cfbd_vs.catalog import CatalogError
 from vs.host import deploy, target
@@ -33,6 +37,7 @@ EXIT_ERROR = 2
 
 Connector = Callable[[target.Target], Any]
 BundleWriter = Callable[[], bundle.BundleSizes]
+ModelDeployer = Callable[[Any, Namespace], model_deploy.ModelReport]
 
 
 def connect_sys(deployment: target.Target) -> Any:
@@ -59,6 +64,7 @@ def main(
     *,
     connector: Connector = connect_sys,
     write_bundle: BundleWriter = bundle.write_bundle,
+    deploy_model: ModelDeployer | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -74,13 +80,20 @@ def main(
             config_overrides=loader_deploy.parse_overrides(args.loader_config)
         )
         loader_deploy.validate(namespace, loader_options)
+        model_deploy.prepare(namespace)
         deployment = target.resolve(args.target, dsn=args.dsn)
         sizes = write_bundle()
         print(
             f"bundle: adapter {sizes.adapter_chars:,} and fetch UDF {sizes.fetch_chars:,} "
             f"characters, written to {bundle.DEFAULT_OUT_DIR}"
         )
-        next_steps = _deploy(connector(deployment), namespace, options, loader_options)
+        next_steps = _deploy(
+            connector(deployment),
+            namespace,
+            options,
+            loader_options,
+            deploy_model or model_deploy.deploy_model,
+        )
     except (
         deploy.DeployError,
         bundle.BundleError,
@@ -100,15 +113,19 @@ def _deploy(
     namespace: Namespace,
     options: deploy.DeployOptions,
     loader_options: loader_deploy.LoaderOptions,
+    deploy_model: ModelDeployer,
 ) -> tuple[str, ...]:
-    """Deploy the virtual schema, then the loader, printing each report as it completes."""
+    """Deploy the virtual schema, the loader, then the model, printing each report as it ends."""
     try:
         report = deploy.deploy(connection, namespace, options)
         print("\n".join(report.lines))
         print("\n".join(loader_deploy.deploy(connection, namespace, loader_options).lines))
+        print("\n".join(deploy_model(connection, namespace).lines))
         return report.next_steps
     except deploy.DeployError:
         raise
+    except RunLockError as error:
+        raise deploy.DeployError(str(error)) from None
     except Exception as error:
         message = str(getattr(error, "message", error)).strip()
         first = message.splitlines()[0] if message else type(error).__name__

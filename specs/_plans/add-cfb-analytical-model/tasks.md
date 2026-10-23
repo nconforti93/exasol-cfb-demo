@@ -11,10 +11,10 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [x] 1.6 Scaled league `tests/synthetic/scaled_league.py` per Key Interfaces
 
 ## Group B
-- [ ] 2.1 Deploy part of `vs/host/sqlobjects.py` (`deploy`):
-- [ ] 2.2 `sql/meta/model_check_log.sql`, registered in `vs/host/metaddl.py`; unit test.
-- [ ] 2.3 `model/dictionary.py` and `make model-docs` → `docs/model-dictionary.md` (grain, columns, comments p
-- [ ] 2.4 Harness (`tests/it/harness.py`, `tests/it/conftest.py`):
+- [x] 2.1 Deploy part of `vs/host/sqlobjects.py` (`deploy`):
+- [x] 2.2 `sql/meta/model_check_log.sql`, registered in `vs/host/metaddl.py`; unit test.
+- [x] 2.3 `model/dictionary.py` and `make model-docs` → `docs/model-dictionary.md` (grain, columns, comments p
+- [x] 2.4 Harness (`tests/it/harness.py`, `tests/it/conftest.py`):
 
 ## Group C
 - [ ] 2.5 Deploy integration tests on fixture model directories (`tests/it/fixtures/model_sql/{valid,lint_erro

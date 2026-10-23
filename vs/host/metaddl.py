@@ -29,6 +29,7 @@ LOADER_META_DDL_NAMES = (
     "load_run",
     "refresh_log",
     "load_failures",
+    "model_check_log",
 )
 LOADER_VIEW_NAMES = (
     "loader_settings",

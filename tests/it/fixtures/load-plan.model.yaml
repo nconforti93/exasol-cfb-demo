@@ -1,0 +1,102 @@
+# Integration-test load plan for the model tests (deployed into the TEST_ namespace and, for the
+# performance smoke, the PERF_ namespace by tests/it/harness.py).
+# The entries, config and snapshot section are those of loader/load-plan.yaml, so the synthetic
+# league's slice keys (tests/synthetic/league.py, built from the real plan) are exactly the planned
+# keys: seasons 1869 to the current one, the gap 1871, the 2025 and 2026 affiliation slices.
+# tests/unit/test_model_plan_variant.py fails when this file drifts from the real plan.
+# Registered steps: the model step (step 100) and a recording step (step 200, created by the harness).
+version: 1
+
+config:
+  monthly_call_budget: 1000
+  refresh_reserve: 150
+  quarantine_after: 2
+  season_rollover: "08-01"
+  season_final_after: "02-15"
+  refresh_profiles: [demo]
+
+snapshot:
+  schemas: [CFB_CORE]
+  meta_tables: [LOAD_LOG, FETCH_LOG]
+
+refresh_steps:
+  - {step_no: 100, name: MODEL, script: TEST_CFB_INFRA.REFRESH_MODEL}
+  - {step_no: 200, name: PREDICT, script: TEST_CFB_INFRA.TEST_STEP_RECORD}
+
+entries:
+  # Reference data: one call each.
+  - table: TEAMS
+    profile: demo
+    priority: 1
+    slicing: none
+    refresh_class: static
+  - table: VENUES
+    profile: demo
+    priority: 1
+    slicing: none
+    refresh_class: static
+  - table: CONFERENCES
+    profile: demo
+    priority: 1
+    slicing: none
+    refresh_class: static
+
+  # Affiliations accept a year range: 1869-2025 in one call, then one call per season.
+  - table: CONFERENCES_AFFILIATIONS
+    profile: demo
+    priority: 1
+    slicing: season_range
+    seasons: {from: 1869, to: 2025}
+    refresh_class: static
+  - table: CONFERENCES_AFFILIATIONS
+    profile: demo
+    priority: 1
+    slicing: season
+    seasons: {from: 2026}
+    refresh_class: static
+
+  - table: CALENDAR
+    profile: demo
+    priority: 2
+    slicing: season
+    seasons: {from: 2013}
+    refresh_class: static
+
+  # Assumption A4: one `/games?seasonType=both&year=Y` call returns every division.
+  # If the live check (foundation task 9.3) shows that /games without `classification` returns
+  # FBS only, replace this entry by one entry per division. Each repeats the lines below and adds
+  # `params: {classification: <fbs|fcs|ii|iii>}`; the demo profile then grows by about 157
+  # calls per extra division.
+  - table: GAMES
+    profile: demo
+    priority: 3
+    slicing: season
+    seasons: {from: 1869}
+    gaps: [1871]
+    refresh_class: weekly
+    note: Elo and postgame win probability per game; the API has no games for 1871.
+
+  # The pregame win probability is derived from spreads, so it starts with the betting-line era.
+  # These three weekly entries have distinct priorities (4, 5, 6) on purpose: entries of equal
+  # priority load season by season, which would make 28 one-slice batches instead of 2 fan-outs.
+  - table: METRICS_WP_PREGAME
+    profile: demo
+    priority: 4
+    slicing: season
+    seasons: {from: 2013}
+    refresh_class: weekly
+  - table: RATINGS_SP
+    profile: demo
+    priority: 5
+    slicing: season
+    seasons: {from: 2013}
+    refresh_class: weekly
+
+  # Only the ranks child table: it carries SEASON, SEASON_TYPE, WEEK and POLL itself, so it loads
+  # without RANKINGS_POLLS. The CFP committee polls start in 2014.
+  - table: RANKINGS_POLLS_RANKS
+    profile: demo
+    priority: 6
+    slicing: season
+    seasons: {from: 2014}
+    refresh_class: weekly

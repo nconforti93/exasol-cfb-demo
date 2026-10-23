@@ -21,6 +21,7 @@ LOADER_TABLES = {
     "load_run": "LOAD_RUN",
     "refresh_log": "REFRESH_LOG",
     "load_failures": "LOAD_FAILURES",
+    "model_check_log": "MODEL_CHECK_LOG",
 }
 COLUMN = re.compile(
     r"^\s+([A-Z][A-Z0-9_]*) ((?:DECIMAL\(\d+,\d+\)|DOUBLE|BOOLEAN|TIMESTAMP|DATE"
@@ -160,6 +161,22 @@ def test_refresh_log_and_failures_have_the_contract_columns() -> None:
     ]
     ddl = metaddl.render_meta_ddl("load_failures", "CFB_META")
     assert "CONSTRAINT LOAD_FAILURES_PK PRIMARY KEY (TABLE_NAME, SLICE_KEY)" in ddl
+
+
+def test_model_check_log_has_the_contract_columns() -> None:
+    assert columns("model_check_log") == [
+        ("RUN_ID", "DECIMAL(18,0)", True),
+        ("AS_OF_SEASON", "DECIMAL(4,0)", False),
+        ("AS_OF_WEEK_SEQ", "DECIMAL(3,0)", False),
+        ("CHECK_NAME", "VARCHAR(64) UTF8", False),
+        ("SEVERITY", "VARCHAR(8) UTF8", False),
+        ("CHECK_SEASON", "DECIMAL(4,0)", False),
+        ("CHECK_WEEK_SEQ", "DECIMAL(3,0)", True),
+        ("CHECK_STATUS", "VARCHAR(4) UTF8", False),
+        ("OBSERVED", "DECIMAL(18,0)", False),
+        ("DETAIL", "VARCHAR(2000) UTF8", True),
+        ("CHECKED_AT", "TIMESTAMP", False),
+    ]
 
 
 def test_the_run_and_log_tables_match_the_foundation_log_conventions() -> None:

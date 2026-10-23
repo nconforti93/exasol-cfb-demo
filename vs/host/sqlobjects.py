@@ -4,8 +4,8 @@ A directory holds one object per file, `NNN_<object>.sql`: a reference table (it
 `INSERT` of its rows), a function (`CREATE FUNCTION ... /` plus `COMMENT ON FUNCTION`) or a view.
 `load` parses the files in name order, `lint` returns every problem as
 `"file: object: rule: detail"` (none stops at the first), and `render` fills the namespace
-placeholders (`{MODEL_SCHEMA}`, `{CORE_SCHEMA}`, `{META_SCHEMA}`, ...). Nothing here touches a
-database.
+placeholders (`{MODEL_SCHEMA}`, `{CORE_SCHEMA}`, `{META_SCHEMA}`, ...). None of these touches a
+database. `deploy` does, in one transaction (see its docstring).
 
 Conventions the parser relies on:
 
@@ -20,10 +20,14 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+from loader.runlock import HeldLock, first_line
+from vs.cfbd_vs.sqlrender import qualified_name, string_literal
+from vs.host.deploy import DeployError
 from vs.host.metaddl import fill_placeholders, placeholder_values
 from vs.host.namespace import Namespace
 
@@ -630,10 +634,305 @@ def _scan(clean: str) -> _Text:
     return _Text(clean=clean, code="".join(code), skeleton="".join(skeleton))
 
 
+@dataclass(frozen=True)
+class DeployReport:
+    """What `deploy` did: the objects in file order, what it dropped, counts and printable lines.
+
+    `retyped` names objects that existed with another kind and were dropped first (`GAME (was
+    TABLE)`); `dropped` names objects no file defines, `VIEW OLD_VIEW`. The comment counts are
+    those of the database after the compile pass.
+    """
+
+    schema: str
+    created: tuple[str, ...]
+    dropped: tuple[str, ...]
+    retyped: tuple[str, ...]
+    tables: int
+    views: int
+    functions: int
+    scripts: int
+    comments_found: int
+    comments_expected: int
+    extra_statements: int
+    lines: tuple[str, ...]
+
+    @property
+    def summary(self) -> str:
+        """One line for the run lock's `DETAIL`."""
+        return (
+            f"{self.schema}: {self.tables} tables, {self.views} views, {self.functions} "
+            f"functions; dropped {len(self.dropped)}; comments {self.comment_percent} %"
+        )
+
+    @property
+    def comment_percent(self) -> int:
+        if not self.comments_expected:
+            return 100
+        return self.comments_found * 100 // self.comments_expected
+
+
+_OBJECT_TYPES = ("TABLE", "VIEW", "FUNCTION", "SCRIPT")
+_DROP_ORDER = ("VIEW", "FUNCTION", "SCRIPT", "TABLE")
+
+
+def deploy(
+    connection: Any,
+    schema: str,
+    objects: Sequence[SqlObject],
+    *,
+    extra_statements: Sequence[str] = (),
+    lock: HeldLock,
+) -> DeployReport:
+    """Install rendered `objects` into `schema` in one transaction; `lock` is the held run lock.
+
+    The caller takes the loader's run lock first (`loader.runlock.run_lock`, kind `DEPLOY`), because
+    acquiring commits, and passes the `HeldLock`; the connection must be in autocommit mode. Then,
+    in one transaction:
+
+    1. `CREATE SCHEMA IF NOT EXISTS`, then one read of the schema's objects: an object that exists
+       with another kind than its file defines is dropped (a view that became a table), and so is
+       every table, view, function or script that no file defines (orphans, only in `schema`);
+    2. the statements of every object in file order (`FORCE` views may reference later files),
+       then `extra_statements` (for example a Lua script of another schema);
+    3. the compile pass: `SELECT 1 FROM <view> WHERE 1 = 0` for every view, in file order. A
+       `FORCE` view fails only at its first query, and the database lists a view's columns and
+       comments only once it compiled, and marks views of a replaced table `OUTDATED`;
+    4. the read-back: every object and column comment must equal the declared one, the columns of
+       a view must be its declared columns and not `OUTDATED`.
+
+    Any failure rolls the whole transaction back, so the previous schema stays as it was, and
+    raises `DeployError` naming file, object and the database's message. `lock.detail` gets the
+    summary. The report lines are returned, not printed.
+    """
+    _check_objects(schema, objects)
+    _check_autocommit(connection)
+    switch = getattr(connection, "set_autocommit", None)
+    if switch is not None:
+        switch(False)
+    try:
+        report = _Transaction(connection, schema, objects, extra_statements).run()
+        connection.execute("COMMIT")
+    except BaseException as error:
+        _roll_back(connection, error)
+        if isinstance(error, DeployError):
+            raise
+        if isinstance(error, Exception):
+            raise DeployError(f"{schema}: {first_line(error)}") from None
+        raise
+    finally:
+        if switch is not None:
+            switch(True)
+    lock.detail = report.summary
+    return report
+
+
+def _roll_back(connection: Any, error: BaseException) -> None:
+    try:
+        connection.execute("ROLLBACK")
+    except Exception as problem:
+        error.add_note(
+            f"ROLLBACK failed ({first_line(problem)}); the transaction ends with the session"
+        )
+
+
+def _check_objects(schema: str, objects: Sequence[SqlObject]) -> None:
+    problems = []
+    for obj in objects:
+        if not obj.kind:
+            problems.append(f"{obj.file}: defines no table, view, function or script")
+        elif obj.schema != schema:
+            problems.append(f"{obj.file}: {obj.name} is created in {obj.schema}, not {schema}")
+    if problems:
+        raise DeployError("nothing was sent:\n  " + "\n  ".join(problems))
+
+
+def _check_autocommit(connection: Any) -> None:
+    attributes = getattr(connection, "attr", None)
+    if isinstance(attributes, dict) and attributes.get("autocommit") is False:
+        raise DeployError(
+            "the deploy needs a connection in autocommit mode: it starts its own transaction "
+            "after the run lock was taken"
+        )
+
+
+class _Transaction:
+    def __init__(
+        self, connection: Any, schema: str, objects: Sequence[SqlObject], extra: Sequence[str]
+    ) -> None:
+        self._connection = connection
+        self._schema = schema
+        self._objects = objects
+        self._extra = extra
+
+    def run(self) -> DeployReport:
+        self._execute(f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
+        retyped, dropped = self._drop_stale()
+        for obj in self._objects:
+            self._create(obj)
+        for number, statement in enumerate(self._extra, start=1):
+            self._run_statement(statement, f"extra statement {number}")
+        views = [obj for obj in self._objects if obj.kind == "VIEW"]
+        for view in views:
+            self._compile(view)
+        found, expected = self._read_back()
+        return self._report(retyped, dropped, len(views), found, expected)
+
+    def _drop_stale(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        defined = {obj.name: obj.kind for obj in self._objects}
+        existing = self._existing()
+        retyped = [
+            (name, kind) for name, kind in existing if name in defined and defined[name] != kind
+        ]
+        orphans = [(name, kind) for name, kind in existing if name not in defined]
+        for name, kind in sorted([*retyped, *orphans], key=lambda item: _DROP_ORDER.index(item[1])):
+            self._run_statement(
+                f"DROP {kind} {qualified_name(self._schema, name)}", f"{kind} {name}"
+            )
+        return (
+            tuple(f"{name} (was {kind})" for name, kind in retyped),
+            tuple(f"{kind} {name}" for name, kind in orphans),
+        )
+
+    def _existing(self) -> list[tuple[str, str]]:
+        return [(name, kind) for name, kind, _ in self._catalog() if kind in _OBJECT_TYPES]
+
+    def _catalog(self) -> list[tuple[str, str, str | None]]:
+        rows = self._execute(
+            "SELECT OBJECT_NAME, OBJECT_TYPE, OBJECT_COMMENT FROM EXA_ALL_OBJECTS "
+            f"WHERE ROOT_NAME = {string_literal(self._schema)} ORDER BY OBJECT_NAME"
+        ).fetchall()
+        return [(str(row[0]), str(row[1]), row[2]) for row in rows]
+
+    def _create(self, obj: SqlObject) -> None:
+        for statement in obj.statements:
+            self._run_statement(statement, f"{obj.file}: {obj.kind} {obj.name}")
+
+    def _compile(self, view: SqlObject) -> None:
+        sql = f"SELECT 1 FROM {qualified_name(self._schema, view.name)} WHERE 1 = 0"
+        self._run_statement(sql, f"compile {view.file}: VIEW {view.name}")
+
+    def _run_statement(self, statement: str, label: str) -> None:
+        try:
+            self._connection.execute(statement)
+        except Exception as error:
+            raise DeployError(f"{label}: {first_line(error)}") from None
+
+    def _execute(self, sql: str) -> Any:
+        return self._connection.execute(sql)
+
+    def _read_back(self) -> tuple[int, int]:
+        actual_objects = {name: (kind, comment) for name, kind, comment in self._catalog()}
+        actual_columns = self._columns()
+        problems: list[str] = []
+        found = expected = 0
+        for obj in self._objects:
+            found_here, expected_here = _compare_object(
+                obj, actual_objects.get(obj.name), actual_columns.get(obj.name, []), problems
+            )
+            found += found_here
+            expected += expected_here
+        if problems:
+            raise DeployError(
+                f"{self._schema} read back from the database does not match the files:\n  "
+                + "\n  ".join(problems)
+            )
+        return found, expected
+
+    def _columns(self) -> dict[str, list[tuple[str, str | None, str | None]]]:
+        rows = self._execute(
+            "SELECT COLUMN_TABLE, COLUMN_NAME, COLUMN_COMMENT, COLUMN_ORDINAL_POSITION, STATUS "
+            f"FROM EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA = {string_literal(self._schema)} "
+            "ORDER BY COLUMN_TABLE, COLUMN_ORDINAL_POSITION"
+        ).fetchall()
+        columns: dict[str, list[tuple[str, str | None, str | None]]] = {}
+        for table, name, comment, _, status in rows:
+            columns.setdefault(str(table), []).append((str(name), comment, status))
+        return columns
+
+    def _report(
+        self,
+        retyped: tuple[str, ...],
+        dropped: tuple[str, ...],
+        views: int,
+        found: int,
+        expected: int,
+    ) -> DeployReport:
+        counts = {kind: sum(1 for o in self._objects if o.kind == kind) for kind in _OBJECT_TYPES}
+        percent = found * 100 // expected if expected else 100
+        lines = (
+            f"schema {self._schema}: ready",
+            f"objects in {self._schema}: {counts['TABLE']} tables, {counts['VIEW']} views, "
+            f"{counts['FUNCTION']} functions, {counts['SCRIPT']} scripts replaced",
+            *(f"retyped: {name}" for name in retyped),
+            f"dropped: {', '.join(dropped) if dropped else 'none'}",
+            f"extra statements: {len(self._extra)} run",
+            f"views compiled: {views}",
+            f"comments: {found} of {expected} ({percent} %)",
+        )
+        return DeployReport(
+            schema=self._schema,
+            created=tuple(obj.name for obj in self._objects),
+            dropped=dropped,
+            retyped=retyped,
+            tables=counts["TABLE"],
+            views=counts["VIEW"],
+            functions=counts["FUNCTION"],
+            scripts=counts["SCRIPT"],
+            comments_found=found,
+            comments_expected=expected,
+            extra_statements=len(self._extra),
+            lines=lines,
+        )
+
+
+def _compare_object(
+    obj: SqlObject,
+    actual: tuple[str, str | None] | None,
+    columns: list[tuple[str, str | None, str | None]],
+    problems: list[str],
+) -> tuple[int, int]:
+    if actual is None or actual[0] != obj.kind:
+        problems.append(
+            f"{obj.file}: {obj.kind} {obj.name} does not exist after the statements ran"
+        )
+        return 0, 1 + len(obj.columns)
+    found = 0
+    if _same_comment(obj.comment, actual[1]):
+        found += 1
+    else:
+        problems.append(f"{obj.file}: {obj.name}: the object comment differs from the file")
+    if obj.kind not in ("TABLE", "VIEW"):
+        return found, 1
+    if [name for name, _, _ in columns] != [column.name for column in obj.columns]:
+        problems.append(
+            f"{obj.file}: {obj.name}: columns in the database are "
+            f"{[name for name, _, _ in columns]}, the file declares "
+            f"{[column.name for column in obj.columns]}"
+        )
+    actual_by_name = {name: (comment, status) for name, comment, status in columns}
+    for column in obj.columns:
+        comment, status = actual_by_name.get(column.name, (None, None))
+        if status is not None:
+            problems.append(f"{obj.file}: {obj.name}.{column.name} is {status}")
+        elif _same_comment(column.comment, comment):
+            found += 1
+        else:
+            problems.append(
+                f"{obj.file}: {obj.name}.{column.name}: the comment differs from the file"
+            )
+    return found, 1 + len(obj.columns)
+
+
+def _same_comment(declared: str | None, actual: str | None) -> bool:
+    return bool(declared) and declared == actual
+
+
 __all__ = [
     "MODEL_ALLOWED_REFS",
     "Column",
+    "DeployReport",
     "SqlObject",
+    "deploy",
     "lint",
     "load",
     "load_reserved_keywords",
