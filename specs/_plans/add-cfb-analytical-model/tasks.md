@@ -58,6 +58,7 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [ ] 7.3 Performance and examples:
 - [ ] 7.4 Local:
 - [ ] 7.5 Zero-call proof and write-up:
+- Light pre-run of 7.1–7.3 on 2026-10-23, on the model through 3.8 (no as-of views, no `MODEL_CHECKS`): `make model` on AWS and local, real-data sanity checks, one bug fixed ([36]), `TEAM` columns for the app ([37]), observations ([38]). The full 7.x stays open.
 
 ## Cross-plan items (from the Phase 4 revision, 2026-10-22)
 - [x] X1 Restrict championship-game detection to weeks up to the season's power-conference championship week. In the stored 2026 schedule, Army–Navy is flagged as an AAC conference game alone in week 15. The current rule would mislabel it and would miss the real AAC title game in week 14, which then enters 2026 runs as a regular game and triggers CONFERENCE_PAIR_REPEATED from the week-13 point on (late November). Fold this into task 3.1 (`CONFERENCE_CHAMPIONSHIP_GAME`) and add a scenario plus a decision-log entry. Also take the Phase 2 `DEPLOY` lock kind in the model deploy (Phase 4 H1).

@@ -8,6 +8,12 @@ Conferences change over time: teams move, divisions come and go, and the set of 
   - It contains every team in the stored team list (`CFB_CORE.TEAMS`, deduplicated by team id, newest fetch wins), plus every team that appears only in stored games (historic programs), with `IS_IN_TEAM_LIST` FALSE and its name taken from its most recent game.
   - `CURRENT_CONFERENCE`, `CURRENT_DIVISION` and `CURRENT_CLASSIFICATION` are as of the last load of the team list. Their comments say so and point to `TEAM_SEASON` for any past season.
   - `HOME_VENUE_ID` is the team's current home venue.
+  - `COLOR`, `ALTERNATE_COLOR`, `LOGO_URL`, `LOGO_DARK_URL`, `LATITUDE` and `LONGITUDE` come from the team list, for the app's map and team pages:
+    - `LOGO_URL` is the first URL of the team's logo array, where CFBD lists the light 500 px logo;
+    - `LOGO_DARK_URL` is the second URL, the dark variant;
+    - `LATITUDE` and `LONGITUDE` are the location of the home venue.
+
+    All of them are NULL for a team that is not in the list, and a logo is NULL when the array has no URL at its position.
   - `FIRST_SEASON` and `LAST_SEASON` are the first and last season with a stored game.
 - `CONFERENCE`: one row per conference in `CFB_CORE.CONFERENCES`.
 - `TEAM_SEASON`: one row per team and season in which the team has a stored game or a conference membership.
@@ -116,6 +122,14 @@ Conferences change over time: teams move, divisions come and go, and the set of 
 * *WHEN* `CFB_MODEL.TEAM` is queried for Marston
 * *THEN* it MUST return one row named Marston with `IS_IN_TEAM_LIST` FALSE
 * *AND* `FIRST_SEASON` and `LAST_SEASON` MUST both be 1885
+
+### Scenario: A team carries its colors, logos and coordinates from the team list
+
+* *GIVEN* Carrow's newest team-list row has the logo array `["https://example.invalid/500/1.png","https://example.invalid/500-dark/1.png"]`, and Dunmore's has an empty array and no color
+* *WHEN* `CFB_MODEL.TEAM` is queried
+* *THEN* Carrow MUST have `LOGO_URL` `https://example.invalid/500/1.png` and `LOGO_DARK_URL` `https://example.invalid/500-dark/1.png`
+* *AND* Dunmore MUST have `LOGO_URL`, `LOGO_DARK_URL` and `COLOR` NULL and keep its `ALTERNATE_COLOR`
+* *AND* every listed team MUST have the color, alternate color and home-venue latitude and longitude of its team-list row, and Marston MUST have all six columns NULL
 
 ### Scenario: Divisions are kept per season
 

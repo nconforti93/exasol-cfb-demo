@@ -145,7 +145,7 @@ Signature: `GREAT_CIRCLE_KM (LAT1 IN DOUBLE, LON1 IN DOUBLE, LAT2 IN DOUBLE, LON
 
 *View, `sql/model/090_conference_championship_game.sql`.*
 
-One row per detected conference championship game. CFBD does not mark these games: inside a season range of conference C in CONFERENCE_CHAMPIONSHIP, a game is detected when it is a regular-season game between two teams recorded in C on the game, flagged as a conference game, played no later than the season's POWER_CHAMPIONSHIP_WEEK, C's only such game in its week, and that week is C's last week with such a game up to that limit. So a conference without a championship game in the season, a game not flagged as a conference game (Army-Navy in 2024) and a flagged game after the power conferences' championship week (Army-Navy in 2026) are never detected. The NOTES text is a cross-check only (MODEL_CHECKS: CONF_CHAMPIONSHIP_NOTES_MISMATCH, CONF_CHAMPIONSHIP_MISSING). Only FBS conferences are seeded; champions of conferences without a championship game come from the standings (Phase 4).
+One row per detected conference championship game. CFBD does not mark these games: inside a season range of conference C in CONFERENCE_CHAMPIONSHIP, a game is detected when it is a regular-season game between two teams recorded in C on the game, flagged as a conference game, played no later than the season's POWER_CHAMPIONSHIP_WEEK, C's only such game in its week, and that week is C's last week with such a game up to that limit. So a conference without a championship game in the season, a game not flagged as a conference game after a found title game (Army-Navy in 2024) and a flagged game after the power conferences' championship week (Army-Navy in 2026) are never detected. Fallback: when this finds no game for C in the season, the same rule runs over every game between two teams of C, flagged as a conference game or not, with the power week counted the same way; CFBD does not flag the 2025 title games. A season without power-conference games (before 1998) has no fallback. The NOTES text is a cross-check only (MODEL_CHECKS: CONF_CHAMPIONSHIP_NOTES_MISMATCH, CONF_CHAMPIONSHIP_MISSING). Only FBS conferences are seeded; champions of conferences without a championship game come from the standings (Phase 4).
 
 Reads: `CFB_CORE.GAMES`, `CFB_MODEL.CONFERENCE_TIER`, `CFB_MODEL.CONFERENCE_CHAMPIONSHIP`
 
@@ -164,7 +164,7 @@ Reads: `CFB_CORE.GAMES`, `CFB_MODEL.CONFERENCE_TIER`, `CFB_MODEL.CONFERENCE_CHAM
 | `IS_COMPLETED` | TRUE once CFBD reports the game as completed |
 | `WINNER_TEAM_ID` | Team id of the conference champion: the winner of the completed game; NULL while it is not played or after a tie |
 | `NOTES` | CFBD notes of the game as stored, for example SEC Championship; a cross-check only, MODEL_CHECKS warns when notes and detection disagree |
-| `POWER_CHAMPIONSHIP_WEEK` | The season's power-conference championship week: the last regular-season week in which a conference that CONFERENCE_TIER marks as power for the season plays a flagged conference game between two of its teams. Power conferences play no regular conference game after their title games, so once those are stored it is their week, and before that it is their last scheduled week. The rule looks only at weeks up to it; NULL in a season without such a game (before 1998), which has no limit |
+| `POWER_CHAMPIONSHIP_WEEK` | The season's power-conference championship week: the last regular-season week in which a conference that CONFERENCE_TIER marks as power for the season plays a flagged conference game between two of its teams. For a game found by the fallback (CFBD does not flag the 2025 title games), it counts that conference's games flagged or not. Power conferences play no regular conference game after their title games, so once those are stored it is their week, and before that it is their last scheduled week. The rule looks only at weeks up to it; NULL in a season without such a game (before 1998), which has no limit |
 
 ## GAME
 
@@ -329,6 +329,12 @@ Reads: `CFB_CORE.TEAMS`, `CFB_MODEL.GAME`
 | `CURRENT_DIVISION` | Division as of the last load of the team list; NULL when none or when the team is not in the list. Use TEAM_SEASON for past seasons |
 | `CURRENT_CLASSIFICATION` | Classification (fbs, fcs, ii or iii) as of the last load of the team list; NULL for a team that is not in the list. Use TEAM_SEASON for the classification of a past season |
 | `HOME_VENUE_ID` | CFBD id of the team's current home venue (VENUE.VENUE_ID); NULL for a team that is not in the list |
+| `COLOR` | Primary team color as the team list reports it, a hex code such as #9e1b32; NULL for a team that is not in the list |
+| `ALTERNATE_COLOR` | Alternate team color as the team list reports it, a hex code; NULL for a team that is not in the list |
+| `LOGO_URL` | URL of the team logo for light backgrounds: the first URL of the team list's logo array, where CFBD lists the 500 px logo. NULL when the array is empty or the team is not in the list. The model stores the URL only, not the image |
+| `LOGO_DARK_URL` | URL of the team logo for dark backgrounds: the second URL of the team list's logo array, where CFBD lists the 500 px dark variant. NULL when the array has fewer than two URLs or the team is not in the list |
+| `LATITUDE` | Latitude of the team's current home venue in degrees north (WGS 84), from the location in the team list; NULL when unknown or the team is not in the list |
+| `LONGITUDE` | Longitude of the team's current home venue in degrees east (WGS 84, negative in the Americas), from the location in the team list; NULL when unknown or the team is not in the list |
 | `IS_IN_TEAM_LIST` | TRUE when the team is in the stored team list (CFB_CORE.TEAMS); FALSE for a team that appears only in stored games |
 | `FIRST_SEASON` | First season with a stored game of the team; NULL when no stored game has it |
 | `LAST_SEASON` | Last season with a stored game of the team; NULL when no stored game has it |

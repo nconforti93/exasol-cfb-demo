@@ -9,6 +9,7 @@ scenarios (`200_team_game.sql`) sits in the same tests; the `MODEL_CHECKS` ones 
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -16,6 +17,7 @@ from typing import Any
 import pytest
 
 from model.deploy import MODEL_DIR
+from tests.it import mirror_edit
 from tests.it.harness import Harness, Mock
 from tests.synthetic import league_teams as lt
 from tests.synthetic.league import FETCHED_EARLY, League
@@ -32,6 +34,7 @@ BROOKVALE = lt.team("Brookvale").id
 NORTHAM = lt.team("Northam").id
 KINGSLEY = lt.team("Kingsley").id
 HEAD_TO_HEAD = MODEL_DIR / "examples" / "head_to_head.sql"
+UNFLAGGED_MARKER = "marker-games-it-unflagged"
 
 
 def game(harness: Harness, league: League, name: str) -> dict[str, Any]:
@@ -335,6 +338,45 @@ def test_conference_game_after_power_championship_week_not_marked(
     )
     assert {row["POWER_CHAMPIONSHIP_WEEK"] for row in found} == {14}
     assert {row["POWER_CHAMPIONSHIP_WEEK"] for row in championships(harness, 2023)} == {None}
+
+
+@pytest.fixture
+def unflagged_title(harness: Harness, league: League) -> Iterator[int]:
+    """The 2024 SEC title game stored again without its conference-game flag, as CFBD stores the
+    2025 title games; removed again afterwards."""
+    title_id = league.game_id("sec_championship_2024")
+    stored = mirror_edit.store_changed_copy(
+        harness,
+        "GAMES",
+        f"ID = {title_id}",
+        marker=UNFLAGGED_MARKER,
+        fetched_at="2030-01-01 00:00:00",
+        row_offset=1000,
+        changes={"CONFERENCE_GAME": "FALSE"},
+    )
+    assert stored == 1
+    yield title_id
+    mirror_edit.remove_copies(harness, "GAMES", UNFLAGGED_MARKER)
+
+
+def test_an_unflagged_title_game_is_found_by_the_fallback(
+    harness: Harness, league: League, unflagged_title: int
+) -> None:
+    """Scenario games: A championship game that CFBD does not flag as a conference game is
+    recognized (decision [36]: CFBD does not flag the 2025 title games)."""
+    title = game(harness, league, "sec_championship_2024")
+    assert title["IS_CONFERENCE_GAME"] is False
+    assert title["IS_CONF_CHAMPIONSHIP"] is True
+    assert title["PARTICIPANTS_RULE"] == "CONF_CHAMPIONSHIP"
+    found = {row["GAME_ID"]: row for row in championships(harness, 2024)}
+    assert found[unflagged_title]["CONFERENCE_NAME"] == "SEC"
+    assert found[unflagged_title]["POWER_CHAMPIONSHIP_WEEK"] == 15
+    rows = [
+        {**row, "CONFERENCE_GAME": False} if row["ID"] == unflagged_title else row
+        for row in league_games(league)
+    ]
+    expected = detect_championships(rows, championship_ranges(), power_conferences)
+    assert {row["GAME_ID"] for row in championships(harness)} == expected
 
 
 def test_missed_championship_reported(harness: Harness, league: League) -> None:

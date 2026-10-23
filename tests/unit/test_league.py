@@ -568,6 +568,29 @@ def test_a_flagged_conference_game_after_the_power_championship_week_is_not_a_ch
     assert league.game_id("aac_championship_2025") not in unlimited
 
 
+def test_an_unflagged_title_game_is_found_by_the_fallback(
+    league: League, tables: dict[str, list[Row]]
+) -> None:
+    """CFBD does not flag the 2025 title games as conference games (decision [36]): the 2024 SEC
+    title game without its flag is still found, by the fallback, and an unflagged lone game in a
+    season without a power limit is not."""
+    title_id = league.game_id("sec_championship_2024")
+    unflagged = [
+        {**row, "CONFERENCE_GAME": False} if row["ID"] == title_id else row
+        for row in games(tables, 2024)
+    ]
+    ranges = championship_ranges()
+    without_flag = detect_championships(unflagged, ranges, power_conferences)
+    assert title_id in without_flag
+    assert detect_championships(games(tables, 2024), ranges, power_conferences) == without_flag
+    rows_2023 = games(tables, 2023)
+    later = game(league, tables, "aac_week15_2023")
+    assert later["CONFERENCE_GAME"] is False
+    assert later["ID"] not in detect_championships(
+        rows_2023, championship_ranges(), lambda season: set()
+    )
+
+
 def test_the_missed_the_no_championship_and_the_non_conference_cases_exist(
     league: League, tables: dict[str, list[Row]]
 ) -> None:

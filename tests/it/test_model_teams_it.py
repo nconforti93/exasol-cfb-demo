@@ -67,6 +67,12 @@ def test_teams_that_appear_only_in_games_are_listed(harness: Harness, league: Le
         "HOME_VENUE_ID",
         "MASCOT",
         "ABBREVIATION",
+        "COLOR",
+        "ALTERNATE_COLOR",
+        "LOGO_URL",
+        "LOGO_DARK_URL",
+        "LATITUDE",
+        "LONGITUDE",
     ):
         assert marston[column] is None, column
 
@@ -113,6 +119,11 @@ def test_current_values_equal_the_stored_team_list(harness: Harness, league: Lea
         assert row["CURRENT_CLASSIFICATION"] == body["classification"], definition.name
         assert row["HOME_VENUE_ID"] == body["location"]["id"], definition.name
         assert (row["MASCOT"], row["ABBREVIATION"]) == (body["mascot"], body["abbreviation"])
+        assert (row["COLOR"], row["ALTERNATE_COLOR"]) == (body["color"], body["alternateColor"])
+        assert row["LOGO_URL"] == body["logos"][0], definition.name
+        assert row["LOGO_DARK_URL"] is None, definition.name
+        assert row["LATITUDE"] == pytest.approx(body["location"]["latitude"]), definition.name
+        assert row["LONGITUDE"] == pytest.approx(body["location"]["longitude"]), definition.name
         assert row["IS_IN_TEAM_LIST"] is True
     assert team_row(harness, "Fairhaven")["CURRENT_DIVISION"] == "West"
     assert team_row(harness, "Eastport")["CURRENT_DIVISION"] is None
@@ -148,6 +159,38 @@ def test_the_newest_fetch_of_a_team_wins(
     assert (rows[0]["CURRENT_CONFERENCE"], rows[0]["ABBREVIATION"]) == ("ACC", "NEW")
     assert rows[0]["HOME_VENUE_ID"] is None
     assert len(team_rows(harness)) == len(LISTED) + 1
+
+
+def test_logo_urls_come_from_the_logo_array(
+    harness: Harness, league: League, stored_twice: None
+) -> None:
+    """Scenario teams-conferences: A team carries its colors, logos and coordinates from the team
+    list (the logo part; the colors and coordinates are in the test of the current values)."""
+    logos = '\'["https://example.invalid/500/1.png","https://example.invalid/500-dark/1.png"]\''
+    mirror_edit.store_changed_copy(
+        harness,
+        "TEAMS",
+        "SCHOOL = 'Carrow'",
+        marker="marker-teams-it",
+        fetched_at=LATER_FETCH,
+        row_offset=1000,
+        changes={"LOGOS": logos},
+    )
+    mirror_edit.store_changed_copy(
+        harness,
+        "TEAMS",
+        "SCHOOL = 'Dunmore'",
+        marker="marker-teams-it",
+        fetched_at=LATER_FETCH,
+        row_offset=1000,
+        changes={"LOGOS": "'[]'", "COLOR": "NULL"},
+    )
+    carrow = team_row(harness, "Carrow")
+    assert carrow["LOGO_URL"] == "https://example.invalid/500/1.png"
+    assert carrow["LOGO_DARK_URL"] == "https://example.invalid/500-dark/1.png"
+    dunmore = team_row(harness, "Dunmore")
+    assert (dunmore["LOGO_URL"], dunmore["LOGO_DARK_URL"], dunmore["COLOR"]) == (None, None, None)
+    assert dunmore["ALTERNATE_COLOR"] == lt.team_body(lt.team("Dunmore"))["alternateColor"]
 
 
 def test_a_game_only_team_takes_its_name_from_its_most_recent_game(

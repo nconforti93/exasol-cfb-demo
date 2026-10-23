@@ -23,6 +23,7 @@ Every stored game since 1869 is one row with its result, its pregame Elo and, fr
     - The reference table `CONFERENCE_CHAMPIONSHIP` lists, per CFBD conference name, the season ranges in which the conference held a championship game: SEC from 1992, Western Athletic 1996–1998, Big 12 1996–2010 and from 2017, Mid-American from 1997, ACC and Conference USA from 2005, Big Ten from 2011, Pac-12 2011–2023, Mountain West from 2013, American Athletic from 2015, Sun Belt from 2018. It lists FBS conferences only.
     - `CONFERENCE_CHAMPIONSHIP_GAME`: one row per detected game. Inside a season range of conference C, a game is detected when it is a regular-season game between two teams recorded in C on the game, flagged as a conference game, played no later than the season's power-conference championship week, is C's only such game in its week, and that week is C's last regular-season week with such a game up to that limit.
     - The season's power-conference championship week (`POWER_CHAMPIONSHIP_WEEK`) is the last regular-season week in which a conference that `CONFERENCE_TIER` marks as power for the season plays a flagged conference game between two of its teams. Power conferences play no regular conference game after their title games, so once those are stored it is their week; before, it is their last scheduled week. A season without such a game (before 1998, when there are no tiers) has no limit. The limit keeps a flagged conference game after the championship weekend, such as Army–Navy in 2026, from being taken for a championship game.
+    - **Fallback** (CFBD does not flag the 2025 title games as conference games): when the rule finds no game for conference C in a season, it runs again over every regular-season game between two teams recorded in C, flagged or not. The limit is then the last regular-season week of any game between two teams of one power conference. The fallback never replaces a game the flagged rule found. A season without such a game (before 1998) has no fallback.
     - `GAME.IS_CONF_CHAMPIONSHIP` is TRUE for the detected games. The game's `NOTES` text is a cross-check only: `MODEL_CHECKS` reports `CONF_CHAMPIONSHIP_NOTES_MISMATCH` and `CONF_CHAMPIONSHIP_MISSING` as warnings (`model/refresh-step`).
     - Champions of conferences without a championship game come from the standings. That is Phase 4's job.
   - **Participants rule** (`PARTICIPANTS_RULE`, used by `model/as-of`): when the game's teams were known.
@@ -122,6 +123,13 @@ Every stored game since 1869 is one row with its result, its pregame Elo and, fr
 * *WHEN* `CFB_MODEL.CONFERENCE_CHAMPIONSHIP_GAME` and `CFB_MODEL.GAME` are queried for 2025
 * *THEN* Ivel against Kenning MUST be the American Athletic's 2025 championship game, with `PARTICIPANTS_RULE` `CONF_CHAMPIONSHIP` and `POWER_CHAMPIONSHIP_WEEK` 14
 * *AND* Marlow against Jessup MUST NOT be marked, and MUST have `PARTICIPANTS_RULE` `FIXED`
+
+### Scenario: A championship game that CFBD does not flag as a conference game is recognized
+
+* *GIVEN* the 2024 SEC schedule of the first scenario, with Ashford against Carrow in week 15 stored without the conference-game flag, as CFBD stores the 2025 title games
+* *WHEN* `CFB_MODEL.CONFERENCE_CHAMPIONSHIP_GAME` and `CFB_MODEL.GAME` are queried for 2024
+* *THEN* Ashford against Carrow MUST still be the SEC's 2024 championship game, with `IS_CONF_CHAMPIONSHIP` TRUE, `IS_CONFERENCE_GAME` FALSE, `PARTICIPANTS_RULE` `CONF_CHAMPIONSHIP` and `POWER_CHAMPIONSHIP_WEEK` 15
+* *AND* the detected games of every season MUST equal the rule restated in Python over the stored games
 
 ### Scenario: A championship game the rule misses is reported
 

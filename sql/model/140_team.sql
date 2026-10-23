@@ -5,6 +5,8 @@
 -- the later row). Games come from GAME, which is already deduplicated; FIRST_SEASON and LAST_SEASON are
 -- window values over every game side of the team, taken on the row of its most recent game
 -- (season, kickoff, game id; a missing kickoff counts as the oldest).
+-- Colors, logos and the home-venue coordinates come from the team list only: the stored logo array
+-- lists the 500 px logo first and its dark variant second (checked on all stored teams, 2026-10-23).
 CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.TEAM (
   TEAM_ID                COMMENT IS 'CFBD team id',
   SCHOOL                 COMMENT IS 'CFBD school name: the name in the stored team list, else the name on the team''s most recent stored game. SP+ ratings and games identify teams by this name',
@@ -15,6 +17,12 @@ CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.TEAM (
   CURRENT_DIVISION       COMMENT IS 'Division as of the last load of the team list; NULL when none or when the team is not in the list. Use TEAM_SEASON for past seasons',
   CURRENT_CLASSIFICATION COMMENT IS 'Classification (fbs, fcs, ii or iii) as of the last load of the team list; NULL for a team that is not in the list. Use TEAM_SEASON for the classification of a past season',
   HOME_VENUE_ID          COMMENT IS 'CFBD id of the team''s current home venue (VENUE.VENUE_ID); NULL for a team that is not in the list',
+  COLOR                  COMMENT IS 'Primary team color as the team list reports it, a hex code such as #9e1b32; NULL for a team that is not in the list',
+  ALTERNATE_COLOR        COMMENT IS 'Alternate team color as the team list reports it, a hex code; NULL for a team that is not in the list',
+  LOGO_URL               COMMENT IS 'URL of the team logo for light backgrounds: the first URL of the team list''s logo array, where CFBD lists the 500 px logo. NULL when the array is empty or the team is not in the list. The model stores the URL only, not the image',
+  LOGO_DARK_URL          COMMENT IS 'URL of the team logo for dark backgrounds: the second URL of the team list''s logo array, where CFBD lists the 500 px dark variant. NULL when the array has fewer than two URLs or the team is not in the list',
+  LATITUDE               COMMENT IS 'Latitude of the team''s current home venue in degrees north (WGS 84), from the location in the team list; NULL when unknown or the team is not in the list',
+  LONGITUDE              COMMENT IS 'Longitude of the team''s current home venue in degrees east (WGS 84, negative in the Americas), from the location in the team list; NULL when unknown or the team is not in the list',
   IS_IN_TEAM_LIST        COMMENT IS 'TRUE when the team is in the stored team list (CFB_CORE.TEAMS); FALSE for a team that appears only in stored games',
   FIRST_SEASON           COMMENT IS 'First season with a stored game of the team; NULL when no stored game has it',
   LAST_SEASON            COMMENT IS 'Last season with a stored game of the team; NULL when no stored game has it',
@@ -22,7 +30,8 @@ CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.TEAM (
 ) AS
 WITH listed AS (
   SELECT t."ID", t."SCHOOL", t."MASCOT", t."ABBREVIATION", t."ALTERNATE_NAMES", t."CONFERENCE",
-         t."DIVISION", t."CLASSIFICATION", t."LOCATION_ID", t."REQ_AT"
+         t."DIVISION", t."CLASSIFICATION", t."LOCATION_ID", t."COLOR", t."ALTERNATE_COLOR",
+         t."LOGOS", t."LOCATION_LATITUDE", t."LOCATION_LONGITUDE", t."REQ_AT"
     FROM {CORE_SCHEMA}."TEAMS" t
  QUALIFY ROW_NUMBER() OVER (
            PARTITION BY t."ID"
@@ -55,6 +64,12 @@ SELECT COALESCE(l."ID", s."TEAM_ID"),
        l."DIVISION",
        l."CLASSIFICATION",
        l."LOCATION_ID",
+       l."COLOR",
+       l."ALTERNATE_COLOR",
+       JSON_VALUE(l."LOGOS", '$[0]' RETURNING VARCHAR(2000) UTF8 NULL ON EMPTY NULL ON ERROR),
+       JSON_VALUE(l."LOGOS", '$[1]' RETURNING VARCHAR(2000) UTF8 NULL ON EMPTY NULL ON ERROR),
+       l."LOCATION_LATITUDE",
+       l."LOCATION_LONGITUDE",
        l."ID" IS NOT NULL,
        CAST(s."FIRST_SEASON" AS DECIMAL(4,0)),
        CAST(s."LAST_SEASON" AS DECIMAL(4,0)),

@@ -427,6 +427,39 @@ Coverage flags must say what is trustworthy per season.
 - **Alternatives:** two consecutive `DEPLOY` runs (Phase 2 block, then the model's own lock). That is simpler, but a loader run could start in the gap and refuse the model after the loader had changed.
 - **Promotes to ADR:** no
 
+### [36] Championship detection falls back to unflagged games (real data, AWS, 2026-10-23)
+
+- **Context:** on the real data, `CONFERENCE_CHAMPIONSHIP_GAME` had 0 rows for 2025. CFBD stores the nine 2025 title games (week 15) with `conferenceGame` FALSE, while it flagged them TRUE from 2022 to 2024 and in earlier seasons. Week 14 was then each conference's last flagged week, with several games in it, so no game was found. The power week was 14 and cut off week 15. The 2025 title games entered `GAME` as `FIXED` games.
+- **Decision:** the rule now has two passes:
+  - The flagged rule stays as it was.
+  - If it finds no game for a conference and season, the same rule runs over every game between two of the conference's teams, flagged or not. The power week for this pass counts unflagged power-conference games too.
+  - The fallback never replaces a game that the flagged rule found. A season without power-conference games (before 1998) has no fallback, so the synthetic "unflagged game after the title game" scenario (2023, no limit) keeps its meaning.
+- **Verified on AWS (all 158 stored seasons, `MINUS` both ways):** the new rule adds exactly the nine 2025 title games and changes no other row. Every winner matches the real result: Duke, Tulane, Texas Tech, Indiana, Kennesaw State, Western Michigan, Boise State, Georgia and James Madison. Army–Navy (week 16, unflagged) stays out, because the power week is 15.
+- **Alternatives:**
+  - Drop the flag inside the power limit. It gives the same result on the real data, but it breaks the scaled perf league. That league pairs non-title teams unflagged in title week, so some same-conference pairs share the title game's week.
+  - Use `NOTES` ("... Championship"). The notes exist only from 2022, and `MODEL_CHECKS` uses them as the independent cross-check.
+- **Tests:** a unit test of the Python oracle, and an IT that stores the 2024 SEC title game again without its flag (new scenario in `model/games`). `tests/synthetic/rules.py` restates both passes.
+- **Promotes to ADR:** no
+
+### [37] `TEAM` carries colors, logo URLs and home-venue coordinates (app need, 2026-10-23)
+
+- **Decision:** the new `TEAM` columns `COLOR`, `ALTERNATE_COLOR`, `LOGO_URL`, `LOGO_DARK_URL`, `LATITUDE` and `LONGITUDE` are read from the newest team-list row.
+  - The logo columns are `JSON_VALUE(LOGOS, '$[0]' / '$[1]')`. On all 1,933 stored teams, position 0 is CFBD's `/logos/500/` URL and position 1 is `/logos-dark/500/`.
+  - The coordinates are the team list's `LOCATION_LATITUDE` and `LOCATION_LONGITUDE`.
+  - On AWS, all six columns are set for all 138 current FBS teams.
+- **Alternatives:** have the app join `VENUE` via `HOME_VENUE_ID` for the coordinates. That is one more join per page, and the team list already has the values.
+- **Promotes to ADR:** no
+
+### [38] Real-data observations for the remaining tasks (light 7.1–7.3 on AWS, 2026-10-23)
+
+- No fix, recorded for 3.9–3.11 and Phase 4:
+  - **Weeks:**
+    - CFBD labels the 2025 lower-division playoff games (24 + 8 games on 22 and 29 November) as postseason weeks 13 and 14. `SEASON_WEEK` gives them `WEEK_SEQ` 113 and 114, after postseason week 1 (101, from 13 December): the sequence is not chronological there.
+    - 61 lower-division games of 2026 week 1 kick off before the calendar's week-1 start (27 August against 29 August). Army–Navy 2026 (regular week 15, 12 December 20:00 UTC) falls inside the calendar window of postseason week 1, which starts the same day at 08:00. None of these games is FBS except Army–Navy.
+  - **Results:** 6 lower-division games per season (2025, 2026) are completed ties, most of them 0–0 and probably cancelled games. 2 games of 2025 and 4 of 2026 are completed without points. None involves an FBS team.
+  - **Team list:** all 1,933 stored teams are in the team list, so `TEAM` has no game-only team on the real data. 138 teams are FBS in 2026, with the correct 2026 conference counts (Pac-12 8, Mountain West 10, FBS Independents 2).
+- **Promotes to ADR:** no
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. -->
