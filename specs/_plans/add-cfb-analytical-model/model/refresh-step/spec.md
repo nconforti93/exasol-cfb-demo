@@ -14,13 +14,14 @@ The weekly refresh is one call: fetch, merge, model, predictions, simulations. T
   | `DUPLICATE_SOURCE_ROW` | WARNING | a key of a season-scoped source (games, pregame lines, SP+, rankings, calendar) is stored in more than one fetched row; the model keeps the newest. `DETAIL` names the sources |
   | `CONF_CHAMPIONSHIP_MISSING` | WARNING | the season is not the current one, and a conference of `CONFERENCE_CHAMPIONSHIP` for the season has no detected championship game |
   | `CONF_CHAMPIONSHIP_NOTES_MISMATCH` | WARNING | an undetected regular-season game between two teams of one conference has notes that mention a championship, or a detected game has notes that do not |
-  | `CONFERENCE_GAME_MISMATCH` | WARNING | a game flagged as a conference game is between teams whose team-seasons have different conferences |
+  | `CONFERENCE_GAME_MISMATCH` | WARNING | a game with an FBS team, flagged as a conference game, is between teams whose team-seasons have different conferences |
   | `WEEK_NOT_COMPLETE` (per week) | WARNING | a game of the week is not completed |
   | `MEMBERSHIP_CONFLICT` | WARNING | a team-season has conflicting memberships |
   | `SP_TEAM_UNMATCHED` | WARNING | an SP+ row has no team |
   | `SP_PRIOR_NOT_FINAL` | WARNING | the season's SP+ priors come from a previous-season slice that is not final |
   | `POLL_UNKNOWN` | WARNING | a poll name is not in `POLL` |
   | `CONFERENCE_NAME_UNMATCHED` | WARNING | a conference recorded on a game is not in `CONFERENCE` |
+  | `WEEK_ORDER_MISMATCH` | WARNING | a week starts before a week earlier in the week order (`WEEK_SEQ`), or a game kicks off outside its week's stored calendar dates; as-of answers follow the week order |
   | `GAME_TEAM_NOT_IN_TEAM_LIST` | INFO | a team of a game is not in the stored team list |
   | `VENUE_WITHOUT_LOCATION` | INFO | a game's venue has no coordinates |
 

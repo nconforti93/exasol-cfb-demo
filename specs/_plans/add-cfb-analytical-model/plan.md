@@ -170,16 +170,17 @@ The as-of helpers are parameter-dimension views: `AS_OF_POINT` is joined to the 
 | 160 | `RATING_SP` | view | season and SP+-rated team | `RATINGS_SP`, `TEAMS` (decision [34]), `LOAD_SLICES` |
 | 170 | `RANKING` | view | poll, season, season type, week and ranked team | `RANKINGS_POLLS_RANKS`, `POLL`, `SEASON_WEEK` |
 | 200 | `TEAM_GAME` | view | game and named participating team | `GAME` |
-| 210 | `TEAM_SEASON` | view | team and season with a game or a membership | `CONFERENCES_AFFILIATIONS`, `TEAM_GAME`, `TEAMS` (decision [34]), `CONFERENCE_TIER`, `CLASSIFICATION_LABEL`, `CLASSIFICATION_TRANSITION`, `ERA`, `RATING_SP`, `RANKING` |
+| 205 | `TEAM_MEMBERSHIP` | view | team and season with a stored membership (games-free; decision [39]) | `CONFERENCES_AFFILIATIONS` |
+| 210 | `TEAM_SEASON` | view | team and season with a game or a membership | `TEAM_MEMBERSHIP`, `TEAM_GAME`, `TEAMS` (decision [34]), `CONFERENCE_TIER`, `CLASSIFICATION_LABEL`, `CLASSIFICATION_TRANSITION`, `ERA`, `RATING_SP`, `RANKING` |
 | 300 | `AS_OF_POINT` | view | season and as-of point (preseason + each week) | `SEASON_WEEK`, `SEASON` |
 | 310 | `CURRENT_AS_OF` | view | the current point (one row) | `AS_OF_POINT` |
 | 320 | `GAME_AS_OF` | view | as-of point and game of its season that is visible at the point | `AS_OF_POINT`, `GAME` |
 | 330 | `RANKING_AS_OF` | view | as-of point, poll and ranked team | `AS_OF_POINT`, `RANKING` |
-| 340 | `TEAM_SEASON_AS_OF` | view | as-of point and team-season of its season | `AS_OF_POINT`, `TEAM_SEASON`, `GAME_AS_OF`, `RANKING_AS_OF`, `RATING_SP` |
+| 340 | `TEAM_SEASON_AS_OF` | view | as-of point and team-season of its season | `AS_OF_POINT`, `TEAM_MEMBERSHIP`, `GAME_AS_OF`, `RANKING_AS_OF`, `RATING_SP`, `TEAMS` (not `TEAM_SEASON`: decision [39]) |
 | 400 | `SEASON_COVERAGE` | view | season and stored season-scoped dataset | `DATASET`, `SEASON`, `GAME`, `TEAM_SEASON`, `RATING_SP`, `LOAD_PLAN`, `LOAD_SLICES` |
 | 500 | `MODEL_CHECKS` | view | check and season (and week for week checks) | the model |
 
-Seven tables, one function, 18 views. The columns and rules are in the specs: `model/seasons-eras`, `model/teams-conferences`, `model/games`, `model/ratings-rankings`, `model/venues`, `model/coverage`, `model/as-of` and `model/refresh-step`. Outside the model:
+Seven tables, one function, 19 views (`TEAM_MEMBERSHIP` added in task 3.9, decision [39]). The columns and rules are in the specs: `model/seasons-eras`, `model/teams-conferences`, `model/games`, `model/ratings-rankings`, `model/venues`, `model/coverage`, `model/as-of` and `model/refresh-step`. Outside the model:
 - `CFB_META.MODEL_CHECK_LOG` (meta DDL);
 - `CFB_INFRA.REFRESH_MODEL` (Lua);
 - `sql/model/examples/*.sql`.

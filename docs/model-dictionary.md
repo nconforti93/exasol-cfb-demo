@@ -26,7 +26,15 @@ Every table and view comment starts with its grain, "One row per ...". `Reads` l
 | `RATING_SP` | view | `160_rating_sp.sql` | One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins) |
 | `RANKING` | view | `170_ranking.sql` | One row per poll, season, season type, week and ranked team of CFB_CORE.RANKINGS_POLLS_RANKS (stored from 2014; the newest fetch wins, ties within a fetch by the poll's position in the response) |
 | `TEAM_GAME` | view | `200_team_game.sql` | One row per game and named participating team, from that team's side: the game's keys and week, the team and its opponent with conference and classification, the site (HOME, AWAY or NEUTRAL), the result (W, L or T), points for and against and the margin, the game's conference, championship and postseason flags, pregame Elo of both teams, and the pregame spread and win probability from the team's side as fixed-scale DECIMAL |
+| `TEAM_MEMBERSHIP` | view | `205_team_membership.sql` | One row per team and season with a stored conference membership whose slice speaks for the season (CFB_CORE.CONFERENCES_AFFILIATIONS): the conference, division and classification of the winning spell, and whether the newest fetch held spells of different conferences |
 | `TEAM_SEASON` | view | `210_team_season.sql` | One row per team and season in which the team has a stored game or a conference membership |
+| `AS_OF_POINT` | view | `300_as_of_point.sql` | One row per season and as-of point: the preseason point (sequence 0) and every week of SEASON_WEEK |
+| `CURRENT_AS_OF` | view | `310_current_as_of.sql` | One row per current as-of point, so exactly one row: in the newest season with stored games, the latest week that is done while every earlier week of the season is done too (SEASON_WEEK.IS_DONE), else that season's preseason point |
+| `GAME_AS_OF` | view | `320_game_as_of.sql` | One row per as-of point and game of the point's season whose teams are known at the point (PARTICIPANTS_RULE: conference championship games from the point before their week, bowls and the first CFP round from the last regular week, later rounds and lower-division postseason games from their own week) |
+| `RANKING_AS_OF` | view | `330_ranking_as_of.sql` | One row per as-of point, poll and ranked team, from the latest week of each poll that is visible at the point: by the label rule (RANKING.VISIBLE_AT_WEEK_SEQ, so the AP poll labeled week 10 is visible after week 9, and the committee's selection ranking at the last regular week), or because it was fetched before the point's CUTOFF_AT (the live demo shows a Tuesday committee ranking at once) |
+| `TEAM_SEASON_AS_OF` | view | `340_team_season_as_of.sql` | One row per as-of point and team-season of the point's season with a membership or a game with FIXED participants |
+| `SEASON_COVERAGE` | view | `400_season_coverage.sql` | One row per season (1869 to the newest season with stored games) and stored, season-scoped dataset: whether CFBD declares the data, whether the load plan covers the season, whether it is stored and final, the measured share for SCORES, ELO, PREGAME_WP (completed FBS-vs-FBS games), SP_PLUS and CONFERENCE_MEMBERSHIP, and a TRUST_LEVEL with a one-sentence TRUST_NOTE (NOT_AVAILABLE, ON_DEMAND with the CFBD_VS table to query, MISSING, IN_PROGRESS, PARTIAL, COMPLETE) |
+| `MODEL_CHECKS` | view | `500_model_checks.sql` | One row per check and season, and per check and week for the week check WEEK_NOT_COMPLETE, from 1869 to the newest season with stored games: severity, CHECK_STATUS (PASS or FAIL), the number of offending rows (OBSERVED) and up to 10 of them (DETAIL) |
 
 ## ERA
 
@@ -252,7 +260,7 @@ Reads: `CFB_CORE.CALENDAR`, `CFB_CORE.GAMES`
 | `START_AT` | Start of the week in UTC: the stored calendar's start date when DATES_SOURCE is CALENDAR, else the first kickoff of the week's games |
 | `END_AT` | End of the week in UTC: the stored calendar's end date when DATES_SOURCE is CALENDAR, else the last kickoff of the week's games |
 | `DATES_SOURCE` | Where START_AT and END_AT come from: CALENDAR (CFB_CORE.CALENDAR has the week; stored from 2013) or GAMES (the week's kickoffs) |
-| `FIRST_GAME_AT` | First kickoff of the week in UTC: the calendar's first game start when stored, else the first kickoff of the week's games. The as-of cutoff of the week before (CUTOFF_AT) |
+| `FIRST_GAME_AT` | First kickoff of the week in UTC: the first kickoff of the week's games, else (a week without stored games) the stored calendar's first game start, which CFBD sets to the start of the week. The as-of cutoff of the week before (AS_OF_POINT.CUTOFF_AT) |
 | `GAME_COUNT` | Number of games of the week in GAME (0 for a calendar week without stored games) |
 | `COMPLETED_GAME_COUNT` | Number of those games that are completed |
 | `GAMES_FETCHED_AT` | When the season's games were last fetched (the newest GAME.FETCHED_AT of the season, UTC); NULL for a season without games |
@@ -470,13 +478,32 @@ Reads: `CFB_MODEL.GAME`
 | `TEAM_PREGAME_WIN_PROB` | Pregame win probability of the team, DECIMAL(5,4) (0 to 1): GAME.HOME_PREGAME_WIN_PROB for the home team, one minus it for the away team; the cast rounds, and an exact binary tie may land one last place off. NULL without a line |
 | `HAS_PREGAME_WP` | Coverage flag: TRUE when a pregame line is stored for the game (CFBD has them from 2013) |
 
+## TEAM_MEMBERSHIP
+
+*View, `sql/model/205_team_membership.sql`.*
+
+One row per team and season with a stored conference membership whose slice speaks for the season (CFB_CORE.CONFERENCES_AFFILIATIONS): the conference, division and classification of the winning spell, and whether the newest fetch held spells of different conferences. A spell speaks only for the seasons its request asked for, so the static range slice never claims a season after a move. No games are read: the conference of a team without a membership, and the classification the model uses, are in TEAM_SEASON.
+
+Reads: `CFB_CORE.CONFERENCES_AFFILIATIONS`
+
+| Column | Comment |
+|---|---|
+| `TEAM_ID` | CFBD team id (TEAM.TEAM_ID); with SEASON it identifies the row |
+| `SEASON` | Season the membership speaks for: inside the spell and inside the seasons its slice requested |
+| `SCHOOL` | CFBD school name as the membership reports it |
+| `CONFERENCE_NAME` | Conference of the winning spell (CFBD name) |
+| `CONFERENCE_DIVISION` | Division within the conference of the winning spell; NULL when the conference had no divisions |
+| `CLASSIFICATION` | Classification code of the winning spell as CFBD reports it (fbs, fcs, ii or iii); it may be the conference's code of today, so TEAM_SEASON prefers the team's games |
+| `HAS_MEMBERSHIP_CONFLICT` | TRUE when the newest membership fetch holds spells of different conferences for the season; the spell with the later start year won (MODEL_CHECKS: MEMBERSHIP_CONFLICT) |
+| `FETCHED_AT` | When the winning spell was fetched (REQ_AT, UTC) |
+
 ## TEAM_SEASON
 
 *View, `sql/model/210_team_season.sql`.*
 
 One row per team and season in which the team has a stored game or a conference membership. Membership spells speak only for the seasons their slice requested, the newest fetch wins, and same-fetch spells of different conferences are flagged. Without a membership the conference comes from the team's games with FIXED participants. Classification: CLASSIFICATION_TRANSITION, then those games, then the membership, with the division name of the time; the power tier of the era from CONFERENCE_TIER. Season records (all completed games) and conference records without championship games, points and CONF_POINT_DIFF, first pregame and last postgame Elo, SP+ of the season and the prior (SEASON - 1) as fixed-scale DECIMAL, and the final AP and committee ranks. Every column is the whole stored season; for the state as of a week use TEAM_SEASON_AS_OF. A conference season is a GROUP BY over this view.
 
-Reads: `CFB_CORE.CONFERENCES_AFFILIATIONS`, `CFB_MODEL.TEAM_GAME`, `CFB_CORE.TEAMS`, `CFB_MODEL.CLASSIFICATION_TRANSITION`, `CFB_MODEL.RANKING`, `CFB_MODEL.RATING_SP`, `CFB_MODEL.CONFERENCE_TIER`, `CFB_MODEL.ERA`, `CFB_MODEL.CLASSIFICATION_LABEL`
+Reads: `CFB_MODEL.TEAM_GAME`, `CFB_MODEL.TEAM_MEMBERSHIP`, `CFB_CORE.TEAMS`, `CFB_MODEL.CLASSIFICATION_TRANSITION`, `CFB_MODEL.RANKING`, `CFB_MODEL.RATING_SP`, `CFB_MODEL.CONFERENCE_TIER`, `CFB_MODEL.ERA`, `CFB_MODEL.CLASSIFICATION_LABEL`
 
 | Column | Comment |
 |---|---|
@@ -512,3 +539,206 @@ Reads: `CFB_CORE.CONFERENCES_AFFILIATIONS`, `CFB_MODEL.TEAM_GAME`, `CFB_CORE.TEA
 | `SP_PRIOR_IS_FINAL` | RATING_SP.IS_FINAL of the prior's row: FALSE when the previous season's slice is not final yet (MODEL_CHECKS: SP_PRIOR_NOT_FINAL); NULL without a prior |
 | `FINAL_AP_RANK` | Rank in the season's final AP poll (RANKING, IS_FINAL_POLL, the latest one); NULL when unranked or while the season runs |
 | `FINAL_CFP_RANK` | Rank in the committee's final ranking of the season (RANKING, IS_FINAL_POLL); NULL when unranked and for a season whose regular-season weeks are not all done |
+
+## AS_OF_POINT
+
+*View, `sql/model/300_as_of_point.sql`.*
+
+One row per season and as-of point: the preseason point (sequence 0) and every week of SEASON_WEEK. A point is everything known after the games of its week and before the first kickoff of the next week (CUTOFF_AT), and it is addressed exactly like REFRESH_WEEK(season, week, season_type): AS_OF_SEASON, AS_OF_WEEK and AS_OF_SEASON_TYPE. Join or filter GAME_AS_OF, TEAM_SEASON_AS_OF and RANKING_AS_OF on AS_OF_SEASON and AS_OF_WEEK_SEQ. IS_SEASON_COMPLETE and IS_CURRENT describe the point and change as later games complete; CURRENT_AS_OF is the current point.
+
+Reads: `CFB_MODEL.SEASON_WEEK`, `CFB_CORE.GAMES`
+
+| Column | Comment |
+|---|---|
+| `AS_OF_SEASON` | Season of the point; with AS_OF_WEEK_SEQ it identifies the row |
+| `AS_OF_WEEK` | Week of the point as REFRESH_WEEK(season, week, season_type) receives it: the CFBD week within AS_OF_SEASON_TYPE; 0 for the preseason point |
+| `AS_OF_SEASON_TYPE` | Season type of the point as REFRESH_WEEK receives it: regular or postseason; regular for the preseason point |
+| `AS_OF_WEEK_SEQ` | Week sequence of the point: 0 preseason, regular week n = n, postseason week n = 100 + n (SEASON_WEEK.WEEK_SEQ). The point is everything known after the games of that week and before CUTOFF_AT |
+| `AS_OF_LABEL` | Name of the point for pages and the chat, for example 2026, after week 9; 2026, preseason; 2024, after postseason week 1 |
+| `PREVIOUS_WEEK_SEQ` | Week sequence of the season's previous point (0 for the first week); NULL for the preseason point |
+| `NEXT_WEEK_SEQ` | Week sequence of the season's next week, whose games are NEXT in GAME_AS_OF; NULL at the last point |
+| `LAST_REGULAR_WEEK_SEQ` | Week sequence of the season's last regular-season week. From this point on, bowls and the first CFP round are rows of GAME_AS_OF (their participants are selected) |
+| `CUTOFF_AT` | Information horizon of the point in UTC: the first kickoff of the next week (SEASON_WEEK.FIRST_GAME_AT). Values that CFBD overwrites (current-season SP+, next-week lines, polls) are visible at the point only when fetched before it. NULL at the last point |
+| `IS_SEASON_COMPLETE` | Point metadata: TRUE at the season's last point when every week of the season is done (SEASON_WEEK.IS_DONE). It describes the point, not the world at the point, and changes when later games complete, so the three as-of views do not carry it |
+| `IS_CURRENT` | Point metadata: TRUE for exactly one point, the default of pages and the chat (CURRENT_AS_OF): in the newest season with stored games, the latest week that is done while every earlier week of the season is done too; the preseason point before that. A week whose Thursday game is played while its Saturday games are not stays open |
+
+## CURRENT_AS_OF
+
+*View, `sql/model/310_current_as_of.sql`.*
+
+One row per current as-of point, so exactly one row: in the newest season with stored games, the latest week that is done while every earlier week of the season is done too (SEASON_WEEK.IS_DONE), else that season's preseason point. The default point of pages and the chat; any other point is a row of AS_OF_POINT. Same columns as AS_OF_POINT.
+
+Reads: `CFB_MODEL.AS_OF_POINT`
+
+| Column | Comment |
+|---|---|
+| `AS_OF_SEASON` | Season of the current point: the newest season with stored games |
+| `AS_OF_WEEK` | Week of the current point as REFRESH_WEEK receives it; 0 before any week of the season is done |
+| `AS_OF_SEASON_TYPE` | Season type of the current point as REFRESH_WEEK receives it: regular or postseason |
+| `AS_OF_WEEK_SEQ` | Week sequence of the current point: 0 preseason, regular week n = n, postseason week n = 100 + n |
+| `AS_OF_LABEL` | Name of the current point, for example 2026, after week 9 |
+| `PREVIOUS_WEEK_SEQ` | Week sequence of the previous point (0 for the first week); NULL for the preseason point |
+| `NEXT_WEEK_SEQ` | Week sequence of the next week, whose games are NEXT in GAME_AS_OF; NULL at the last point |
+| `LAST_REGULAR_WEEK_SEQ` | Week sequence of the season's last regular-season week |
+| `CUTOFF_AT` | Information horizon of the current point in UTC: the first kickoff of the next week; NULL at the last point |
+| `IS_SEASON_COMPLETE` | TRUE when the current point is the last point of a season whose weeks are all done |
+| `IS_CURRENT` | Always TRUE (AS_OF_POINT.IS_CURRENT) |
+
+## GAME_AS_OF
+
+*View, `sql/model/320_game_as_of.sql`.*
+
+One row per as-of point and game of the point's season whose teams are known at the point (PARTICIPANTS_RULE: conference championship games from the point before their week, bowls and the first CFP round from the last regular week, later rounds and lower-division postseason games from their own week). Values not known at the point are NULL: results and postgame Elo after the point's week, pregame Elo after the next week, lines after the point's week unless a next-week line was fetched before CUTOFF_AT. GAME_STATUS_AS_OF says PLAYED, NOT_PLAYED, NEXT or REMAINING. The engine's game inputs (neutral site, conference flag, final conference-game margins, the games to simulate) come from here. Earlier seasons are fully known: use GAME.
+
+Reads: `CFB_MODEL.AS_OF_POINT`, `CFB_MODEL.GAME`
+
+| Column | Comment |
+|---|---|
+| `AS_OF_SEASON` | Season of the as-of point (AS_OF_POINT.AS_OF_SEASON); filter or join on it with AS_OF_WEEK_SEQ |
+| `AS_OF_WEEK_SEQ` | Week sequence of the point: 0 preseason, regular week n = n, postseason week n = 100 + n |
+| `CUTOFF_AT` | Information horizon of the point (AS_OF_POINT.CUTOFF_AT): the first kickoff of the next week, UTC; NULL at the last point |
+| `GAME_ID` | CFBD game id (GAME.GAME_ID); with the point it identifies the row |
+| `SEASON_TYPE` | CFBD season type of the game: regular or postseason |
+| `WEEK` | Week as CFBD labels it within the season type |
+| `WEEK_SEQ` | Week sequence of the game: regular week n = n, postseason week n = 100 + n |
+| `START_AT` | Kickoff in UTC as last fetched |
+| `HOME_TEAM_ID` | CFBD team id of the home (first-listed) team; NULL for a placeholder that CFBD lists before naming its teams |
+| `HOME_TEAM` | CFBD school name of the home team |
+| `HOME_CONFERENCE` | Conference recorded on the game for the home team (CFBD name) |
+| `HOME_CLASSIFICATION` | Classification of the home team on the game: fbs, fcs, ii or iii (GAME.HOME_CLASSIFICATION) |
+| `AWAY_TEAM_ID` | CFBD team id of the away team; NULL for a placeholder |
+| `AWAY_TEAM` | CFBD school name of the away team |
+| `AWAY_CONFERENCE` | Conference recorded on the game for the away team (CFBD name) |
+| `AWAY_CLASSIFICATION` | Classification of the away team on the game: fbs, fcs, ii or iii |
+| `HAS_TEAMS` | TRUE when both team ids are set; the engine simulates only games with teams |
+| `INVOLVES_FBS` | TRUE when at least one team is classified fbs on the game (GAME.INVOLVES_FBS) |
+| `IS_FBS_GAME` | TRUE when both teams are classified fbs on the game (GAME.IS_FBS_GAME) |
+| `VENUE_ID` | CFBD venue id (VENUE.VENUE_ID) |
+| `VENUE_NAME` | Venue name as recorded on the game |
+| `IS_NEUTRAL_SITE` | CFBD neutralSite: TRUE when neither team plays at home (engine input neutral) |
+| `IS_CONFERENCE_GAME` | CFBD conferenceGame (engine input conf_game); conference records leave out conference championship games |
+| `IS_CONF_CHAMPIONSHIP` | TRUE for a detected conference championship game (GAME.IS_CONF_CHAMPIONSHIP); a row from the point before its week on |
+| `POSTSEASON_KIND` | NULL outside the postseason; else CFP, BOWL (another postseason game with an FBS team) or NON_FBS (postseason game without an FBS team) |
+| `CFP_ROUND` | CFP games only: CFBD playoff round code, for example firstRound, quarterfinal, semifinal or championship |
+| `PARTICIPANTS_RULE` | When the teams were known, which decides from which point the game is a row: FIXED (always), CONF_CHAMPIONSHIP (from the point before its week), SELECTION (bowls and the first CFP round, from LAST_REGULAR_WEEK_SEQ) or PREVIOUS_ROUND (later CFP rounds and NON_FBS postseason games, from their own week) |
+| `GAME_STATUS_AS_OF` | Status at the point: PLAYED (week at most the point's and completed), NOT_PLAYED (week at most the point's, not completed), NEXT (in the next week) or REMAINING (later). The engine simulates NEXT and REMAINING games |
+| `HOME_POINTS` | Points of the home team; NULL unless the game is PLAYED with a result |
+| `AWAY_POINTS` | Points of the away team; NULL unless the game is PLAYED with a result |
+| `MARGIN` | Home minus away points (engine input margin of final conference games); NULL unless the game is PLAYED with a result |
+| `WINNER_TEAM_ID` | Team id of the winner; NULL unless the game is PLAYED with a result, and after a tie |
+| `IS_TIE` | TRUE for a PLAYED game that ended with equal points, FALSE for any other PLAYED result; NULL otherwise |
+| `HOME_PREGAME_ELO` | CFBD pregame Elo of the home team (integer); NULL for games after the next week, whose pregame Elo encodes later results |
+| `AWAY_PREGAME_ELO` | CFBD pregame Elo of the away team (integer); NULL for games after the next week |
+| `HOME_POSTGAME_ELO` | CFBD postgame Elo of the home team (integer); NULL unless the game's week is at most the point's |
+| `AWAY_POSTGAME_ELO` | CFBD postgame Elo of the away team (integer); NULL unless the game's week is at most the point's |
+| `PREGAME_SPREAD` | Pregame spread from the home side as CFBD reports it, DECIMAL(6,2) (GAME.PREGAME_SPREAD); NULL unless the game's week is at most the point's, or it is a NEXT game whose line was fetched before CUTOFF_AT. Historic lines are closing lines, known on game day |
+| `HOME_PREGAME_WIN_PROB` | Pregame win probability of the home team, DECIMAL(5,4) (GAME.HOME_PREGAME_WIN_PROB); visible exactly when PREGAME_SPREAD is |
+
+## RANKING_AS_OF
+
+*View, `sql/model/330_ranking_as_of.sql`.*
+
+One row per as-of point, poll and ranked team, from the latest week of each poll that is visible at the point: by the label rule (RANKING.VISIBLE_AT_WEEK_SEQ, so the AP poll labeled week 10 is visible after week 9, and the committee's selection ranking at the last regular week), or because it was fetched before the point's CUTOFF_AT (the live demo shows a Tuesday committee ranking at once). Historic seasons, fetched later, use the label rule alone. Earlier seasons are fully known: use RANKING. Under the label rule, a ranking that CFBD labels after the point it follows becomes visible one week late: the 2024 committee selection ranking only after the point that follows the selection (cross-plan X2).
+
+Reads: `CFB_MODEL.AS_OF_POINT`, `CFB_MODEL.RANKING`
+
+| Column | Comment |
+|---|---|
+| `AS_OF_SEASON` | Season of the as-of point (AS_OF_POINT.AS_OF_SEASON); filter or join on it with AS_OF_WEEK_SEQ |
+| `AS_OF_WEEK_SEQ` | Week sequence of the point: 0 preseason, regular week n = n, postseason week n = 100 + n |
+| `POLL_NAME` | CFBD poll name (RANKING.POLL_NAME) |
+| `POLL_CODE` | Code from the POLL seed: AP, COACHES, CFP, FCS_COACHES, D2_COACHES or D3_COACHES; OTHER for a poll that is not in the seed |
+| `SEASON_TYPE` | Season type of the poll's label: regular or postseason |
+| `WEEK` | Week of the poll's label as CFBD gives it. The label can run ahead of the games it reflects: the AP poll labeled week 10 follows the games of week 9 |
+| `WEEK_SEQ` | Week sequence of the label (RANKING.WEEK_SEQ): the latest label of the poll that is visible at the point |
+| `POLL_RANK` | Position in the poll (1 = best) |
+| `TEAM_ID` | CFBD team id of the ranked team |
+| `SCHOOL` | School name as the poll reports it |
+| `CONFERENCE` | Conference of the team as the poll reports it (CFBD name) |
+| `FIRST_PLACE_VOTES` | First-place votes as CFBD reports them; NULL for polls without votes, such as the committee |
+| `POINTS` | Poll points as CFBD reports them |
+
+## TEAM_SEASON_AS_OF
+
+*View, `sql/model/340_team_season_as_of.sql`.*
+
+One row per as-of point and team-season of the point's season with a membership or a game with FIXED participants. Conference, division, tier and classification are the season's (they are fixed before it starts, and equal TEAM_SEASON's); records, conference records without championship games, points, CONF_POINT_DIFF, the remaining and next games and ELO_AS_OF count only what GAME_AS_OF shows at the point; AP, Coaches and committee ranks are the latest visible (RANKING_AS_OF); SP_PRIOR_RATING is the previous season's SP+, SP_CURRENT_RATING the season's own only when visible. The engine's team inputs (team, conf, conf_tier, wins, losses, conf_wins, conf_losses, conf_pd, the SP+ prior and Elo for the rating) come from here, fixed-scale. Earlier seasons are fully known: use TEAM_SEASON.
+
+Reads: `CFB_MODEL.GAME_AS_OF`, `CFB_MODEL.AS_OF_POINT`, `CFB_MODEL.TEAM_MEMBERSHIP`, `CFB_CORE.TEAMS`, `CFB_MODEL.CLASSIFICATION_TRANSITION`, `CFB_MODEL.RANKING_AS_OF`, `CFB_MODEL.RATING_SP`, `CFB_MODEL.CONFERENCE_TIER`
+
+| Column | Comment |
+|---|---|
+| `AS_OF_SEASON` | Season of the as-of point (AS_OF_POINT.AS_OF_SEASON); the team-season's season |
+| `AS_OF_WEEK_SEQ` | Week sequence of the point: 0 preseason, regular week n = n, postseason week n = 100 + n |
+| `TEAM_ID` | CFBD team id; with the point it identifies the row (engine TEAM rows) |
+| `SCHOOL` | CFBD school name: the team-list name, else the name on the team's latest game with FIXED participants, else the membership's |
+| `CONFERENCE_NAME` | Conference in the season (CFBD name; engine input conf): the membership's, else the one recorded on most of the team's games with FIXED participants; NULL without either. Equal to TEAM_SEASON.CONFERENCE_NAME |
+| `CONFERENCE_DIVISION` | Division within the conference, from the membership; NULL without one |
+| `CONFERENCE_TIER` | Tier of the conference in the season (engine input conf_tier): AQ or NON_AQ (1998-2013), P5 or G5 (2014-2023), P4 or G6 (2024 on), INDEPENDENT for FBS Independents; NULL before 1998 and for lower divisions. Equal to TEAM_SEASON.CONFERENCE_TIER |
+| `IS_POWER_CONFERENCE` | TRUE for the tiers AQ, P5 and P4 |
+| `CLASSIFICATION` | Classification in the season: fbs, fcs, ii or iii (CLASSIFICATION_TRANSITION, then the FIXED games, then the membership); the engine's teams are the fbs rows. Equal to TEAM_SEASON.CLASSIFICATION |
+| `GAMES_PLAYED` | Games PLAYED at the point with a result (WINS + LOSSES + TIES) |
+| `WINS` | Games won up to the point, every opponent and the postseason included (engine input wins) |
+| `LOSSES` | Games lost up to the point (engine input losses) |
+| `TIES` | Games tied up to the point (possible at the FBS level before 1996) |
+| `CONF_WINS` | Conference games won up to the point (IS_CONFERENCE_GAME), without conference championship games (engine input conf_wins) |
+| `CONF_LOSSES` | Conference games lost up to the point, without conference championship games (engine input conf_losses) |
+| `CONF_TIES` | Conference games tied up to the point, without conference championship games |
+| `POINTS_FOR` | Points scored in the games PLAYED up to the point |
+| `POINTS_AGAINST` | Points allowed in the games PLAYED up to the point |
+| `CONF_POINT_DIFF` | Points for minus against in the conference games that CONF_WINS and CONF_LOSSES count (engine input conf_pd) |
+| `GAMES_REMAINING` | Games of the team that are NEXT or REMAINING at the point, counted over the rows of GAME_AS_OF only: a game whose participants are not known yet is not counted |
+| `NEXT_GAME_ID` | CFBD game id of the team's first NEXT or REMAINING game by kickoff; NULL when none is left |
+| `ELO_AS_OF` | Team Elo at the point (integer): the postgame Elo of its last PLAYED game that has one, else the pregame Elo of its first game of the season (which depends only on earlier seasons) when visible at the point; NULL otherwise |
+| `ELO_SOURCE` | Where ELO_AS_OF comes from: POSTGAME, PRESEASON or NONE |
+| `AP_RANK` | Rank in the latest AP poll visible at the point (RANKING_AS_OF); NULL when unranked |
+| `COACHES_RANK` | Rank in the latest Coaches poll visible at the point; NULL when unranked |
+| `CFP_RANK` | Rank in the latest committee ranking visible at the point; NULL when unranked or before the first one |
+| `SP_PRIOR_RATING` | SP+ rating of the previous season as last fetched, final or not (RATING_SP of AS_OF_SEASON - 1), DECIMAL(6,2): the prior of the score model; it is in the past at every point |
+| `SP_CURRENT_RATING` | SP+ rating of the season, DECIMAL(6,2), only when visible at the point: fetched before CUTOFF_AT, or at the last point of the season when its slice is final; NULL otherwise |
+| `SP_CURRENT_FETCHED_AT` | When SP_CURRENT_RATING was fetched (UTC); NULL when it is not visible |
+
+## SEASON_COVERAGE
+
+*View, `sql/model/400_season_coverage.sql`.*
+
+One row per season (1869 to the newest season with stored games) and stored, season-scoped dataset: whether CFBD declares the data, whether the load plan covers the season, whether it is stored and final, the measured share for SCORES, ELO, PREGAME_WP (completed FBS-vs-FBS games), SP_PLUS and CONFERENCE_MEMBERSHIP, and a TRUST_LEVEL with a one-sentence TRUST_NOTE (NOT_AVAILABLE, ON_DEMAND with the CFBD_VS table to query, MISSING, IN_PROGRESS, PARTIAL, COMPLETE). Datasets that are never stored have no rows here: DATASET is their whole coverage statement.
+
+Reads: `CFB_CORE.GAMES`, `CFB_MODEL.DATASET`, `CFB_META.LOAD_SLICES`, `CFB_META.LOAD_PLAN`, `CFB_MODEL.GAME`, `CFB_MODEL.TEAM_SEASON`
+
+| Column | Comment |
+|---|---|
+| `SEASON` | Season, 1869 to the newest season with stored games; with DATASET_CODE it identifies the row |
+| `DATASET_CODE` | Stored, season-scoped dataset (DATASET.DATASET_CODE): GAMES, SCORES, ELO, PREGAME_WP, SP_PLUS, POLLS, CALENDAR or CONFERENCE_MEMBERSHIP |
+| `CORE_TABLE` | CFB_CORE mirror that stores the dataset (DATASET.CORE_TABLE) |
+| `VS_TABLE` | CFBD_VS virtual table of the dataset, for seasons that are not stored (DATASET.VS_TABLE) |
+| `IS_DECLARED` | TRUE when CFBD declares data for the season: inside FIRST_SEASON to LAST_SEASON of DATASET and not a declared gap |
+| `IS_PLANNED` | TRUE when an entry of the load plan for CORE_TABLE covers the season (CFB_META.LOAD_PLAN, LOAD_SLICES), gaps included |
+| `IS_STORED` | TRUE when a planned slice that covers the season is stored (CFB_META.LOAD_SLICES.IS_STORED) |
+| `IS_FINAL` | TRUE when a stored slice that covers the season is final (loaded after 15 February of the following year, or static) |
+| `IS_GAP` | TRUE for a known hole: a gap season of DATASET or of the load plan (CFB_META.LOAD_PLAN_GAPS) |
+| `POPULATION` | What the measured share counts (DATASET.COVERAGE_POPULATION): COMPLETED_FBS_GAMES (completed games with an FBS team, or every completed game in a season without one), COMPLETED_FBS_VS_FBS_GAMES or FBS_TEAM_SEASONS; NULL when the dataset is not measured |
+| `POPULATION_COUNT` | Size of the population in the season (games from GAME, team-seasons from TEAM_SEASON); NULL when not measured |
+| `COVERED_COUNT` | Members of the population that have the data: games with a result (SCORES), with Elo (ELO) or with a pregame line (PREGAME_WP); team-seasons with an SP+ rating (SP_PLUS) or with a membership-based conference (CONFERENCE_MEMBERSHIP); NULL when not measured |
+| `MEASURED_SHARE` | COVERED_COUNT / POPULATION_COUNT, DECIMAL(5,4); NULL when the dataset is not measured, the season is not stored or the population is empty |
+| `COMPLETE_SHARE` | Share from which a stored, final season counts as COMPLETE (DATASET.COMPLETE_SHARE) |
+| `TRUST_LEVEL` | How far the season's data can be trusted, the first rule that applies: NOT_AVAILABLE (outside the declared seasons, or a gap), ON_DEMAND (no load-plan entry covers it: query CFBD_VS selectively), MISSING (planned, not loaded yet), IN_PROGRESS (stored, not final), PARTIAL (stored and final, MEASURED_SHARE below COMPLETE_SHARE), COMPLETE (stored and final, share at least COMPLETE_SHARE or not measured) |
+| `TRUST_NOTE` | One sentence that explains TRUST_LEVEL: it names the gap, the virtual-schema table to query, or the measured share |
+
+## MODEL_CHECKS
+
+*View, `sql/model/500_model_checks.sql`.*
+
+One row per check and season, and per check and week for the week check WEEK_NOT_COMPLETE, from 1869 to the newest season with stored games: severity, CHECK_STATUS (PASS or FAIL), the number of offending rows (OBSERVED) and up to 10 of them (DETAIL). ERROR checks (a game without a week, an FBS team-season without a conference, a power conference of CONFERENCE_TIER without team-seasons) stop the weekly refresh in its MODEL step; WARNING and INFO checks are logged. Filter on SEASON, and on WEEK_SEQ NULL or the point's week, as CFB_INFRA.REFRESH_MODEL and make model-check do.
+
+Reads: `CFB_CORE.GAMES`, `CFB_MODEL.SEASON_WEEK`, `CFB_CORE.CALENDAR`, `CFB_MODEL.GAME`, `CFB_MODEL.TEAM_SEASON`, `CFB_MODEL.CONFERENCE_TIER`, `CFB_CORE.TEAMS`, `CFB_MODEL.TEAM_GAME`, `CFB_MODEL.CONFERENCE`, `CFB_CORE.METRICS_WP_PREGAME`, `CFB_CORE.RATINGS_SP`, `CFB_CORE.RANKINGS_POLLS_RANKS`, `CFB_MODEL.CONFERENCE_CHAMPIONSHIP`, `CFB_MODEL.CONFERENCE_CHAMPIONSHIP_GAME`, `CFB_MODEL.TEAM_MEMBERSHIP`, `CFB_MODEL.RATING_SP`, `CFB_MODEL.POLL`
+
+| Column | Comment |
+|---|---|
+| `CHECK_NAME` | Check: GAME_WITHOUT_WEEK, FBS_TEAM_WITHOUT_CONFERENCE, POWER_CONFERENCE_MISSING (ERROR); DUPLICATE_SOURCE_ROW, CONF_CHAMPIONSHIP_MISSING, CONF_CHAMPIONSHIP_NOTES_MISMATCH, CONFERENCE_GAME_MISMATCH, WEEK_NOT_COMPLETE, MEMBERSHIP_CONFLICT, SP_TEAM_UNMATCHED, SP_PRIOR_NOT_FINAL, POLL_UNKNOWN, CONFERENCE_NAME_UNMATCHED, WEEK_ORDER_MISMATCH (WARNING); GAME_TEAM_NOT_IN_TEAM_LIST, VENUE_WITHOUT_LOCATION (INFO) |
+| `SEVERITY` | ERROR (a failure stops the weekly refresh in its MODEL step), WARNING or INFO |
+| `SEASON` | Season the check covers, 1869 to the newest season with stored games; filter on it (the refresh step evaluates one season) |
+| `WEEK_SEQ` | Week sequence for the week check WEEK_NOT_COMPLETE (regular week n = n, postseason week n = 100 + n); NULL for season checks |
+| `CHECK_STATUS` | PASS when OBSERVED is 0, else FAIL |
+| `OBSERVED` | Number of offending rows: games, team-seasons, conferences, keys, names, venues or weeks, as the check counts them |
+| `DETAIL` | Up to 10 offending items, then how many more; NULL when the check passes |
