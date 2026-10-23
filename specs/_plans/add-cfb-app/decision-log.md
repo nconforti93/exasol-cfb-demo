@@ -1,6 +1,6 @@
 # Decision Log: add-cfb-app
 
-Date: 2026-10-22 (planned); revised 2026-10-22/23 after the independent review (`review.md`)
+Date: 2026-10-22 (planned); revised 2026-10-22/23 after the independent review (`review.md`); revised 2026-10-23 for the owner's new UI (§ UI revision interview, [34]–[42])
 
 ## Interview
 
@@ -181,6 +181,30 @@ The owner (Nico) was away and delegated the decisions on the independent review 
 - `speq plan validate add-cfb-app` must pass with no warnings.
 - Append a "Review resolution" section to `review.md`.
 - Invoke `exasol:exasol-database` through the Skill tool first (the owner's standing rule); use the `dataviz` skill for the chart guidance.
+
+### UI revision (owner request and orchestrator brief, 2026-10-23)
+
+**Q (owner, after viewing `make app-preview` on sample data):** what should the UI be?
+**A (Nico, verbatim):** "it isn't that 'pretty' of a UI … I would really like where the opening screen has a map of the US and then each team has their logo geographically where they are (with filter by conference probably). Then when you click the team, it opens a page dedicated to them about record, odds, predictions, etc. Then a different tab(s) has the universal CFB predictions, matchups of the week, and those kinds of cool stats/info."
+
+**Q (owner, same day):** how heavy should the process be?
+**A (Nico):** "Let's do a lighter process moving forward, this is a demo, not a full-blown product offering. We also don't need a crazy amount of tests really. Ideally I could test the web app today."
+
+**Brief from the orchestrator** (decisions delegated to the planner, to log here):
+- **Information architecture.**
+  - Home: a US map of FBS teams with logos at their campus or stadium, a conference filter, probably a season selector and a search.
+  - Team page `/team/:id`: record and schedule, playoff odds and their movement, this week's prediction, SP+ and rankings, games to watch and the what-if, and head-to-head entry points.
+  - League tabs: predictions and matchups of the week, upsets, the odds board, and 3–5 cheap "cool stats" that show off Exasol.
+  - The inspector, the refresh and the spend gates stay. Reuse what works.
+- **Map tech:** offline at the demo, no CDN at runtime, bundled US geometry (for example `us-atlas` with `d3-geo` `geoAlbersUsa`), exact pinned versions, and a simple answer to logo overlap.
+- **Logos (already decided):**
+  - Download once from the `LOGOS` URLs into a cache outside the repository and outside OneDrive, with `make logos`. The app serves them; the browser never hotlinks ESPN.
+  - Never commit them (owner action U8: private media only). Use a fallback badge.
+  - Note that this is an external fetch, though not a CFBD call.
+- **Visual design:** team colors as accents, a clean sports-dashboard look, both themes, and concrete guidance so implementers don't each invent a style.
+- **API:** the endpoints the new pages need and the `CFB_API` views they read, with Phase 5 hand-offs. Build the frontend against fixtures generated from real data once the AWS backfill finishes.
+- **Sequencing:** a thin slice first (the map plus the team page's record, schedule and SP+ on real data from `CFB_MODEL`, which needs Phases 2–3 only), then odds and predictions after Phase 4. Say what is blocked on which phase.
+- **Output:** a compact revision of `plan.md` (a superseding section), minimal spec edits, `tasks.md`, this log, a validation run, no commit.
 
 ## Design Decisions
 
@@ -631,6 +655,181 @@ The owner (Nico) was away and delegated the decisions on the independent review 
 - **Rationale:** each closes a failure the review found: an error banner in replay, unbounded waits, stale responses, double polls, a route without validation.
 - **Promotes to ADR:** no
 
+### [34] Information architecture: a map home, a page per team, league tabs; the built pages are reused as tabs
+
+- **Decision:**
+  - **Routes:** `/` is the map (`app/map`); `/team/<id>` is the team page (`app/team`); `/league/week|odds|predictions|upsets|stats` are the league tabs (`app/league`); `/head-to-head` is unchanged.
+  - **Reuse:** the built Odds, Predictions and Upsets pages (5.2–5.4) become tabs unchanged, apart from team marks in their rows. The team page reuses `RootingGuide` and `WhatIfPanel` with the team as the focus team.
+  - **Old paths** redirect with `replaceState`.
+  - **Store:** `PageId` keeps its ids and adds `home`, `team`, `week` and `stats`. `focusTeam` is the team page's team. A new `mapConference` field is added.
+  - **Season selector:** the existing as-of picker. **Search:** a header combobox over `/api/teams`.
+  - **Cool stats:** four cards, each with its SQL one click away:
+    - road warriors (kilometres via `GREAT_CIRCLE_KM`, the geo story);
+    - SP+ movers against last season;
+    - conference strength (mean SP+, non-conference record);
+    - hottest active win streaks (window functions over all 157 stored seasons, the "history at 0 calls" story).
+- **Alternatives:**
+  - A separate team route state (`teamId`) next to `focusTeam`.
+  - Rewriting the built pages as team-scoped panels.
+  - A router library.
+  - Stats on home-field advantage by elevation, attendance or the excitement index, which have patchy data in older seasons.
+  - Point-differential "luck", which needs explanation on stage.
+- **Rationale:**
+  - **Reuse:** the built pages have 582 passing tests; making them tabs costs a prop.
+  - **One focus team:** sharing `focusTeam` keeps Phase 7's app-state tools working without a signature change, and "focus Brookvale" means the same thing everywhere.
+  - **Routing:** nine paths and one parameter still do not justify a router ([14]).
+  - **The stats:** each is one readable statement, cheap at 0 calls, and shows a different Exasol strength.
+- **Promotes to ADR:** no
+
+### [35] Map: `d3-geo` + `topojson-client` + `us-atlas` pre-projected, bundled; no tiles, no zoom or force library
+
+- **Decision:**
+  - **Packages:** `d3-geo` 3.1.1, `topojson-client` 3.1.0 and `us-atlas` 3.0.1 at runtime; `@types/d3-geo` 3.1.1 and `@types/topojson-client` 3.1.5 for development. All exact pins, all ISC or MIT, all older than the 7-day rule (npm registry, 2026-10-23).
+  - **Geometry:** `us-atlas`'s `states-albers-10m.json` is already projected with `geoAlbersUsa().scale(1300).translate([487.5, 305])` for 975 × 610 (README). The states render with `geoPath()` and no projection, and team points are projected with the same `geoAlbersUsa`, which places Hawaii and Alaska in their insets.
+  - **Offline:** the JSON is bundled by Vite into `dist/`.
+  - **Zoom** is a `viewBox` change.
+  - **This amends [14]:** runtime dependencies are now React, React DOM and these three.
+- **Alternatives:**
+  - Leaflet or MapLibre with raster or vector tiles: these need a tile server or CDN at runtime, and offline tiles are a large asset.
+  - A hand-drawn SVG of the states.
+  - Path strings generated at build time and committed (80 kB of generated code in git).
+  - `d3-zoom` for pan and zoom, `d3-force` for collision.
+  - A choropleth by conference instead of logos.
+- **Rationale:**
+  - The mission requires the demo to run offline with the same look (`specs/mission.md`).
+  - Pre-projected TopoJSON plus one projection function is the smallest correct way: about 35 kB of minified code and 30 kB of gzipped geometry.
+  - The atlas is public-domain Census geometry under ISC.
+  - A `viewBox` zoom and a 60-line relaxation are easier to test than two more libraries.
+- **Promotes to ADR:** yes. Maps are drawn from bundled, pre-projected geometry; tile maps and runtime CDNs are rejected because of the offline demo.
+
+### [36] Logo overlap: deterministic relaxation with leader lines, plus conference zoom; no clustering
+
+- **Decision:**
+  - **Markers** have a constant size on screen: 36 px nationally and 44 px zoomed.
+  - **Relaxation:** a pure layout function runs at most 80 passes, pushing overlapping pairs apart with a 10 % pull back toward each anchor. A marker moved by more than half its size gets a leader line to a dot at its true location.
+  - **Zoom:** a conference chip fits the view box to its teams, with a minimum box. "+", "−" and "Reset" buttons zoom; there is no wheel or drag pan.
+  - **List view:** the table view and keyboard path.
+- **Alternatives:**
+  - Clustering at low zoom (numbered bubbles).
+  - Smaller logos.
+  - Free wheel and drag pan and zoom.
+  - `d3-force`.
+  - Placing teams on a hex grid by state.
+- **Rationale:**
+  - Clusters hide the logos, which are the whole point of the home page.
+  - Leader lines keep the geography honest while making every logo clickable, and conference zoom is how a fan uses the map anyway.
+  - Determinism (sorting by team id, a fixed number of passes) makes the layout testable and stable between renders.
+  - Without free pan, the app avoids gesture handling and keyboard traps.
+- **Promotes to ADR:** no
+
+### [37] Logos: a private cache filled once by `make logos`, served by the app, with a badge fallback; never committed, never hotlinked
+
+- **Decision:** per `plan.md` § Logos:
+  - **Source:** the owner reads `CFB_CORE.TEAMS` (stored data, 0 CFBD calls).
+  - **Fetching:** https only, hosts under `espncdn.com` only, PNGs of at most 1 MB with the signature checked, into `~/.cfb-demo/logos/<id>.png` and `<id>-dark.png`.
+  - **Serving:** `/api/logos/{id}.png`, with an integer id, no database and a one-day cache. `has_logo` comes with every team.
+  - **Fallback:** a color badge with the abbreviation.
+  - **Switch:** `APP_LOGOS=off` for recordings.
+  - **CSP:** unchanged, so a hotlink cannot load.
+- **Alternatives:**
+  - Hotlinking the ESPN URLs: online only, a third-party request at the demo, and a CSP hole.
+  - Committing the logos: team marks in a public repo, against U8.
+  - Storing them in BucketFS or the database.
+  - Badges only.
+  - SVG logos from another source.
+- **Rationale:**
+  - The logos make the page; the cache makes them offline and keeps the marks out of the repo.
+  - The download is an external fetch (not CFBD, no quota), so it runs by hand, once, with tight rules, and is documented.
+  - Reading the URLs from `CFB_CORE` as the owner keeps logo URLs out of the serving layer, where no page needs them.
+- **Promotes to ADR:** yes. Third-party media (team marks) live only in a private cache outside the repository, are fetched by an explicit owner command, and are served by the app itself; never hotlinked or committed.
+
+### [38] A small design system: tokens, cards, team colors as accents only
+
+- **Decision:** `plan.md` § Visual design:
+  - spacing, type, radius and shadow tokens in `tokens.ts`, plus `--surface-raised` and `--border-subtle`, with contrast tests;
+  - a 12-column grid at most 1320 px wide, designed for a 1280 × 720 projector first;
+  - one `Card` anatomy with an "SQL" button;
+  - `teamColor.ts`, which picks the team color, else the alternate, else the app accent, by a 3:1 test against the surface. Team colors are never used for text or behind text, except the badge with computed ink;
+  - shared components in `src/ui/`.
+- **Alternatives:**
+  - A UI kit (MUI, Chakra) or Tailwind.
+  - Team colors as page themes (a full-bleed hero in the team color).
+  - Letting each page task style itself.
+- **Rationale:**
+  - **Team colors:** many are dark navy or near-black, which fail on a dark surface, and a few are pale yellow, which fail on light. Accents with a contrast fallback look good in both themes without a per-team review.
+  - **No UI kit:** it would bring a dependency set and a look to fight.
+  - **Fixed tokens** keep four parallel implementers consistent.
+- **Promotes to ADR:** no
+
+### [39] API: thin-slice endpoints separate from the outlook; every panel names its query
+
+- **Decision:**
+  - **Endpoints:** `/api/teams/map`, `/api/team/{id}`, `/api/team/{id}/outlook`, `/api/league/week`, `/api/league/stats` and `/api/logos/{id}.png`, all on the read path over `CFB_API` (table in `plan.md`).
+  - **The split:** the team's record, schedule and ratings (Phases 2–3) are separate from its outlook (Phases 4–5), and each outlook panel says `{available, reason}`.
+  - **`queries`:** each response maps its panels to query-log entry ids for the "SQL" buttons.
+  - **Source labels:** this week uses CFBD's stored pregame win probability and the line until our predictions exist.
+- **Alternatives:**
+  - One team endpoint that fails or blocks until Phase 4.
+  - Reading `CFB_MODEL` directly from the app as an interim (it breaks the serving-layer rule and its lint).
+  - Matching panels to the log by page name only.
+- **Rationale:**
+  - The thin slice must ship before Phase 4 exists.
+  - The panel-to-entry map is what makes "the SQL behind each panel", the Exasol story, one click.
+  - The stored pregame probability is real data that is already loaded, labeled by its source.
+- **Promotes to ADR:** no
+
+### [40] A real-data snapshot for the preview, kept outside the repository; synthetic fixtures stay the test contract
+
+- **Decision:**
+  - `make app-fixtures` reads the stored model and team list as the owner and writes response-shaped JSON to `~/.cfb-demo/fixtures/<target>-<season>/`. Every file is validated by the pydantic models, and no statement may name `CFBD_VS`.
+  - `make app-preview REAL=1` serves it ahead of the synthetic fixtures.
+  - Component tests keep the committed synthetic fixtures.
+- **Alternatives:**
+  - Committing real-data fixtures.
+  - Waiting for the backend (S2).
+  - Running tests against real data.
+- **Rationale:**
+  - **Outside the repository:** CFBD terms forbid raw data in git; derived data is fine, but the fixtures sit close to raw rows.
+  - **Today:** the owner wants to click real data today, and the export needs only the backfill and Phase 3's views.
+  - **Tests:** they must not depend on what was loaded on a given day.
+  - **Cost:** the export's SQL is a throwaway twin of 9.7's routes, which is acceptable for one day of lead time.
+- **Promotes to ADR:** no
+
+### [41] Sequencing: slices S0–S4, and Phase 5's thin views first
+
+- **Decision:**
+  - **S0 (today):** all new UI on synthetic fixtures.
+  - **S1 (today or tomorrow):** a real-data snapshot and real logos. It needs the backfill and Phase 3's views on the target, which is deploy only.
+  - **S2:** `make app-serve` over `CFB_API` for the map, the team record and the league stats. It needs Phase 2 merged and hand-offs P6-UI-b, c and d, and 2.2's gate moves up to this.
+  - **S3:** the outlook and the league tabs that depend on runs, after Phases 4–5.
+  - **S4:** refresh, console and preview, unchanged.
+  - **Hand-offs:** Phase 3 adds team colors to `TEAM` (P6-UI-a). Phase 5 extends `TEAMS` (P6-UI-b), adds `TEAM_TRAVEL` (P6-UI-c) and deploys the thin views first (P6-UI-d). Phase 4 needs nothing. Phase 7's P7-a gets the new page ids. Phase 8 opens the demo on the map.
+- **Alternatives:**
+  - Keep every route behind the full Phase 2–5 merge.
+  - Compute travel in the app's SQL (that needs `EXECUTE` on a `CFB_MODEL` function for `CFB_APP`, and venues outside `CFB_API`).
+  - Put coordinates in `CFB_MODEL.TEAM` instead of joining `VENUE`.
+- **Rationale:**
+  - "Ideally I could test the web app today" (owner).
+  - A view keeps the function call under the owner's rights and the app inside `CFB_API`.
+  - The venue join is the model's normal form, and the team list's location already maps to `HOME_VENUE_ID`.
+- **Promotes to ADR:** no
+
+### [42] The light process for the rest of Phase 6
+
+- **Decision:**
+  - Each UI task writes a few component tests (one per new scenario) and unit tests for its pure parts; only 9.7 and 9.8 add one integration file.
+  - Task 6.2's Playwright smoke becomes a manual walk in V.3, and Playwright is optional.
+  - V.2, the coverage audit, is dropped.
+  - Code review (R.1) only for risky code: spend, locks, the SQL guard and the logo fetcher.
+  - The security and spending scenarios are untouched.
+- **Alternatives:**
+  - Keep the full process.
+  - Drop tests for the new pages entirely.
+- **Rationale:**
+  - The owner: "this is a demo, not a full-blown product offering. We also don't need a crazy amount of tests really."
+  - The guard rails that protect quota and the database stay fully tested; the UI gets enough tests to keep refactors safe.
+- **Promotes to ADR:** no
+
 ## Open Questions (assumption + verify step)
 
 | # | Assumption | Verify step | If wrong |
@@ -657,6 +856,10 @@ The owner (Nico) was away and delegated the decisions on the independent review 
 | Q20 | The read user's 0-call `EXPLAIN VIRTUAL` of the preview statement yields the manifest's `fetch_mode` | Probe 1.10(b) | With the operator path on, read the virtual schema's `FETCH_MODE` property as the CLI does; with it off, show "mode unknown" and treat the quota badge as replay |
 | Q21 | The `stored` console query keeps the stored-only exemption with the `GROUP BY` around it, because the `REQ_SOURCE` filter is still pushed down | Task 1.7 (planning code) and probe 1.10(b) | Run the plain stored-only query and count per slice in the backend; the page shows the counts |
 | Q22 | `CFB_API.GAMES` (Phase 5's pass-through of `CFB_MODEL.GAME`) exposes each game's week, start time and completion | Task 4.2 reads the deployed view | Read the predicted games of the week from `CFB_API.PREDICTIONS` and say "N predicted games" in the plan; the outcome after the run still states whether the point moved |
+| Q23 | Each FBS row of `CFB_CORE.TEAMS` lists its logos as `http://a.espncdn.com/i/teamlogos/ncaa/500/<id>.png` and `…/500-dark/<id>.png`, and `https://` serves the same files | `make logos` summary (9.6 run): files, skipped hosts, failures | Teams without a usable logo get the badge; a new host is added to the allowlist only by a reviewed edit, never automatically |
+| Q24 | Every FBS team's `HOME_VENUE_ID` resolves to a `VENUE` row with coordinates | The "Not on the map" count of the 9.6 run | P6-UI-b falls back to the team list's own `LOCATION_LATITUDE` and `LOCATION_LONGITUDE` (through `CFB_MODEL.TEAM`, an addition to P6-UI-a) |
+| Q25 | CFBD's stored pregame win probability (`HOME_PREGAME_WIN_PROB`) exists for next week's games before kickoff, and the line (`PREGAME_SPREAD`) too | The 9.6 snapshot's `league-week` | "This week" shows the line alone, ordered by rank and line, labeled "no probability yet" |
+| Q26 | The relaxation separates the densest real cluster (Dallas–Fort Worth, Florida) at 36 px within 80 passes on a 1280-px-wide map | The 9.6 snapshot in the preview | Raise the passes or shrink national markers to 30 px; the conference zoom remains the real fix |
 
 ## Review Findings
 
