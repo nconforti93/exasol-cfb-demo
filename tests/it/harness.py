@@ -47,11 +47,12 @@ from typing import Any, NoReturn
 
 import pyexasol
 
+from engine import deploy as sim_deploy
 from loader import deploy as loader_deploy
 from loader.runlock import HeldLock, run_lock
 from model import deploy as model_deploy
 from scripts import grants
-from tests.it import guards, loader_support, model_support, step_scripts, support
+from tests.it import guards, loader_support, model_support, sim_support, step_scripts, support
 from tests.it.loader_support import BASE_VARIANT, PlanState
 from tests.it.support import HarnessError
 from tests.mock_cfbd import sidecar
@@ -181,6 +182,7 @@ def _namespace_schemas(namespace: Namespace) -> tuple[str, ...]:
         namespace.stage_schema,
         namespace.restore_schema,
         namespace.model_schema,
+        namespace.sim_schema,
         HARNESS_SCHEMA,
     )
 
@@ -303,8 +305,10 @@ class Harness:
         self._baseline: PlanState | None = None
         self._clock_dirty = False
         self._model_digest: str | None = None
+        self._sim_digest: str | None = None
         self.loader_report: loader_deploy.LoaderReport | None = None
         self.model_report: model_deploy.ModelReport | None = None
+        self.sim_report: sim_deploy.SimReport | None = None
 
     @property
     def vs(self) -> str:
@@ -329,6 +333,10 @@ class Harness:
     @property
     def model(self) -> str:
         return self.namespace.model_schema
+
+    @property
+    def sim(self) -> str:
+        return self.namespace.sim_schema
 
     @property
     def reader(self) -> Any:
@@ -571,6 +579,32 @@ class Harness:
         """
         if self._model_digest != model_support.directory_digest(model_deploy.MODEL_DIR):
             self.deploy_model()
+
+    def deploy_sim(self, options: sim_deploy.SimOptions | None = None) -> sim_deploy.SimReport:
+        """Lint and deploy `sql/sim/` (or another directory) and the engine script into
+        `TEST_CFB_SIM` as the owner, under the loader's `DEPLOY` run lock. Raises what
+        `engine.deploy.deploy_sim` raises (`SimLintError` before any statement, `RunLockRefused`,
+        `DeployError`); a failed deploy changes nothing, so the digest of what is deployed stays.
+        """
+        chosen = options or sim_deploy.SimOptions()
+        report = sim_deploy.deploy_sim(self.owner, self.namespace, chosen)
+        self._sim_digest = sim_support.deploy_digest(
+            chosen.directory, chosen.data_directory, chosen.engine_directory
+        )
+        self.sim_report = report
+        return report
+
+    def ensure_sim(self) -> None:
+        """Deploy `sql/sim/` unless exactly its current files and engine are deployed (once per
+        session). A test that deployed other files leaves a different digest, so the next call
+        installs the real files again; the data tables and their rows stay.
+        """
+        real = sim_deploy.SimOptions()
+        wanted = sim_support.deploy_digest(
+            real.directory, real.data_directory, real.engine_directory
+        )
+        if self._sim_digest != wanted:
+            self.deploy_sim()
 
     def seed_league(self, variant: Callable[[League], League] | None = None) -> League:
         """Store the synthetic league in `TEST_CFB_CORE` and `LOAD_LOG`, and set the test clock.
@@ -822,6 +856,7 @@ class Harness:
             self.query(statement)
         self._plan = None
         self._model_digest = None
+        self._sim_digest = None
         _deploy_namespace(self, self._owner_password, self._baseline or PlanState(BASE_VARIANT, ()))
 
     def reset_state(self, *, keep_data: bool = False) -> list[str]:
@@ -880,13 +915,14 @@ class Harness:
 
     def _truncate_dirty_tables(self) -> None:
         schemas = ", ".join(
-            f"'{schema}'" for schema in loader_support.cleanup_schemas(self.namespace)
+            f"'{schema}'" for schema in [*loader_support.cleanup_schemas(self.namespace), self.sim]
         )
         rows = self.query(
             "SELECT TABLE_SCHEMA, TABLE_NAME FROM EXA_ALL_TABLES "
             f"WHERE TABLE_SCHEMA IN ({schemas}) AND TABLE_ROW_COUNT > 0"
         )
-        for schema, name in loader_support.tables_to_truncate(rows, self.namespace):
+        dirty = sim_support.drop_reference_tables(rows, self.namespace)
+        for schema, name in loader_support.tables_to_truncate(dirty, self.namespace):
             self.query(f"TRUNCATE TABLE {_identifier(schema)}.{_identifier(name)}")
 
     def _restore_plan(self) -> None:

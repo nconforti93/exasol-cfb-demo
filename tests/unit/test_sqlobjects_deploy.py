@@ -369,3 +369,90 @@ def test_an_interrupt_rolls_back_too() -> None:
         run(connection, objects, lock)
     assert connection.statements[-1] == "ROLLBACK"
     assert connection.autocommit_calls == [False, True]
+
+
+# --- data tables and the keep list -------------------------------------------------------------
+
+DATA_FILE = """\
+CREATE TABLE IF NOT EXISTS {MODEL_SCHEMA}.RUN_LOG (
+  RUN_ID DECIMAL(18,0) NOT NULL COMMENT IS 'Run number',
+  NOTE VARCHAR(20) UTF8 COMMENT IS 'A note'
+) COMMENT IS 'One row per run.';
+"""
+
+
+def with_data_table(tmp_path: Path) -> list[SqlObject]:
+    (tmp_path / "run_log.sql").write_text(DATA_FILE, encoding="utf-8")
+    return [*objects_of(tmp_path), *objects_of(FIXTURES)]
+
+
+def test_a_data_table_that_exists_is_created_again_only_if_missing_and_reported_as_kept(
+    tmp_path: Path,
+) -> None:
+    objects = with_data_table(tmp_path)
+    connection, lock = deployed(objects)
+    report = run(connection, objects, lock)
+    create = next(s for s in connection.statements if "RUN_LOG" in s)
+    assert create.startswith("CREATE TABLE IF NOT EXISTS TEST_CFB_MODEL.RUN_LOG")
+    assert not any(s.startswith(("DROP", "TRUNCATE", "DELETE")) for s in connection.statements)
+    assert report.kept == ("RUN_LOG",)
+    assert report.differences == ()
+    assert "data tables: 1 kept as they were, 0 created (none)" in report.lines
+
+
+def test_a_data_table_that_is_new_is_reported_as_created(tmp_path: Path) -> None:
+    objects = with_data_table(tmp_path)
+    connection, lock = deployed(objects)
+    connection.catalog = [row for row in connection.catalog if row[0] != "RUN_LOG"]
+    connection.on_read = _create_run_log_after_first_read
+    report = run(connection, objects, lock)
+    assert report.kept == ()
+    assert "data tables: 0 kept as they were, 1 created (RUN_LOG)" in report.lines
+
+
+def _create_run_log_after_first_read(fake: FakeConnection) -> None:
+    reads = [s for s in fake.statements if "FROM EXA_ALL_OBJECTS" in s]
+    if len(reads) == 2:
+        fake.catalog = [*fake.catalog, ("RUN_LOG", "TABLE", "One row per run.")]
+
+
+def test_a_kept_data_table_that_differs_is_reported_not_failed(tmp_path: Path) -> None:
+    objects = with_data_table(tmp_path)
+    connection, lock = deployed(objects)
+    connection.columns = [
+        row for row in connection.columns if not (row[0] == "RUN_LOG" and row[1] == "NOTE")
+    ]
+    report = run(connection, objects, lock)
+    assert connection.statements[-1] == "COMMIT"
+    assert report.differences
+    assert all("RUN_LOG" in text for text in report.differences)
+    assert any("NOTE" in text for text in report.differences)
+    assert any(line.startswith("differs: ") for line in report.lines)
+
+
+def test_a_missing_comment_of_a_regular_object_still_fails_next_to_a_kept_table(
+    tmp_path: Path,
+) -> None:
+    objects = with_data_table(tmp_path)
+    connection, lock = deployed(objects)
+    connection.catalog = [
+        (name, kind, None if name == "GAME" else comment)
+        for name, kind, comment in connection.catalog
+    ]
+    with pytest.raises(DeployError, match="GAME"):
+        run(connection, objects, lock)
+    assert connection.statements[-1] == "ROLLBACK"
+
+
+def test_names_in_the_keep_list_are_never_dropped_as_orphans() -> None:
+    objects = objects_of(FIXTURES)
+    connection, lock = deployed(objects)
+    connection.catalog = [
+        *connection.catalog,
+        ("PREDICTION", "TABLE", "One row per prediction"),
+        ("OLD_TABLE", "TABLE", "One row per old"),
+    ]
+    report = deploy(connection, SCHEMA, objects, keep=("PREDICTION", "RUN_LOG"), lock=lock)
+    drops = [s for s in connection.statements if s.startswith("DROP")]
+    assert drops == [f'DROP TABLE "{SCHEMA}"."OLD_TABLE"']
+    assert report.dropped == ("TABLE OLD_TABLE",)

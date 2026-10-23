@@ -114,5 +114,6 @@ def test_fill_placeholders_keeps_comments_and_semicolons() -> None:
         "-- header TEST_CFB_MODEL\nSELECT 1 FROM TEST_CFB_MODEL.T;\n"
     )
     assert placeholder_values(Namespace(""))["{MODEL_SCHEMA}"] == "CFB_MODEL"
+    assert fill_placeholders("{SIM_SCHEMA}.T", Namespace("TEST_")) == "TEST_CFB_SIM.T"
     with pytest.raises(MetaDdlError, match=r"\{NOPE\}"):
         fill_placeholders("SELECT {NOPE}", Namespace(""))

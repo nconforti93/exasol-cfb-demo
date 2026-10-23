@@ -8,7 +8,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [44]). Details, files, test
 
 ### Group S1-A
 - [ ] 1.1 Engine core `engine/core.py` from the S3 prototype: fixed-shape draws, team offsets, 2026 rules, tagged stage frame with tallies [expert]
-- [ ] 1.2 Simulation schema, deploy (`make sim`) and the engine script (`engine/udf.py`, `engine/bundle.py`, data tables)
+- [x] 1.2 Simulation schema, deploy (`make sim`) and the engine script (`engine/udf.py`, `engine/bundle.py`, data tables)
 
 ### Group S1-B
 - [ ] 1.3 Score model, engine input views and the fit (`make sim-fit`, seed committed after one AWS fit)

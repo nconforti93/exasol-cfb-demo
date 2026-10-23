@@ -4,8 +4,8 @@ Two sets of tables: the foundation's (`meta_ddl_names`: `LOAD_LOG`, `FETCH_LOG`,
 deploy) and the loader's (`loader_meta_ddl_names`, created by the loader deploy). The loader's views
 (`sql/loader/*.sql`, `loader_view_names` in creation order) read those tables and each other. Any
 SQL file may use the placeholders `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`,
-`{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}`, `{MODEL_SCHEMA}` and `{VS_NAME}`; `render_namespace_sql`
-fills them from a `Namespace`.
+`{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}`, `{MODEL_SCHEMA}`, `{SIM_SCHEMA}` and `{VS_NAME}`;
+`render_namespace_sql` fills them from a `Namespace`.
 """
 
 from __future__ import annotations
@@ -92,6 +92,7 @@ def placeholder_values(namespace: Namespace) -> dict[str, str]:
         "{RESTORE_SCHEMA}": namespace.restore_schema,
         "{INFRA_SCHEMA}": namespace.infra_schema,
         "{MODEL_SCHEMA}": namespace.model_schema,
+        "{SIM_SCHEMA}": namespace.sim_schema,
         "{VS_NAME}": namespace.vs_name,
     }
 
@@ -114,8 +115,9 @@ def render_namespace_sql(text: str, namespace: Namespace) -> str:
     """`text` without whole-line comments and the trailing semicolon, placeholders filled.
 
     Fills `{META_SCHEMA}`, `{CORE_SCHEMA}`, `{STAGE_SCHEMA}`, `{RESTORE_SCHEMA}`, `{INFRA_SCHEMA}`,
-    `{MODEL_SCHEMA}` and `{VS_NAME}` with the names of `namespace`. An upper-case placeholder that
-    is not one of them is an error; lower-case braces (slice-key templates) are left alone.
+    `{MODEL_SCHEMA}`, `{SIM_SCHEMA}` and `{VS_NAME}` with the names of `namespace`. An upper-case
+    placeholder that is not one of them is an error; lower-case braces (slice-key templates) are
+    left alone.
     """
     statement = _SQL_COMMENT.sub("", text).strip().removesuffix(";")
     return fill_placeholders(statement, namespace) + "\n"

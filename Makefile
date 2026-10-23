@@ -35,6 +35,12 @@
 #   model-docs         regenerates docs/model-dictionary.md from sql/model/ (no database).
 #   model-perf         times the model on the scaled league (ARGS="--prefix PERF_"); task 3.7.
 #                      All four are scripts/model.py.
+#   sim                lints sql/sim/, then installs CFB_SIM and the engine script CFB_INFRA.SIM_ENGINE in
+#                      one transaction under the loader's run lock (kind DEPLOY; refused while a loader
+#                      run, snapshot or restore holds it). Data tables are created when missing and
+#                      never replaced, so a redeploy keeps every run. ARGS="--prefix TEST_" deploys
+#                      another namespace; ARGS="--lint-only" lints and builds without a connection.
+#                      scripts/sim.py; 0 CFBD calls.
 
 TARGET ?= local
 export TARGET
@@ -50,7 +56,7 @@ NAME     ?=
 ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
-.PHONY: backfill refresh quota snapshot restore snapshots model model-check model-docs model-perf
+.PHONY: backfill refresh quota snapshot restore snapshots model model-check model-docs model-perf sim
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -133,3 +139,6 @@ model-docs:
 
 model-perf: db-check
 	$(PY) -m scripts.model perf $(ARGS)
+
+sim: db-check
+	$(PY) -m scripts.sim deploy $(ARGS)
