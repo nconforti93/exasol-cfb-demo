@@ -1,0 +1,34 @@
+{
+  "teams": [
+    {
+      "team_id": 101,
+      "school": "Ashford",
+      "conference": "Atlantic"
+    },
+    {
+      "team_id": 102,
+      "school": "Brookvale",
+      "conference": "Atlantic"
+    },
+    {
+      "team_id": 103,
+      "school": "Carlton",
+      "conference": "Lakes"
+    },
+    {
+      "team_id": 104,
+      "school": "Dunmore",
+      "conference": "Lakes"
+    },
+    {
+      "team_id": 105,
+      "school": "Eastgate",
+      "conference": "Pacific"
+    },
+    {
+      "team_id": 106,
+      "school": "Fairhaven",
+      "conference": "Pacific"
+    }
+  ]
+}

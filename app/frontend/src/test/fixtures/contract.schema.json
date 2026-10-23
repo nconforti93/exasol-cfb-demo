@@ -1,0 +1,3806 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CFB app API contract (generated from src/api/types.ts by `npm run schema`)",
+  "$defs": {
+    "FetchMode": {
+      "enum": [
+        "LIVE",
+        "REPLAY"
+      ]
+    },
+    "SeasonType": {
+      "enum": [
+        "regular",
+        "postseason"
+      ]
+    },
+    "Population": {
+      "enum": [
+        "FBS_INVOLVED",
+        "FBS_VS_FBS"
+      ]
+    },
+    "FreezeKind": {
+      "enum": [
+        "IN_ADVANCE",
+        "RECONSTRUCTED",
+        "ALL"
+      ]
+    },
+    "Move": {
+      "enum": [
+        "UP",
+        "DOWN",
+        "SAME",
+        "NEW"
+      ]
+    },
+    "ProbSource": {
+      "enum": [
+        "LINE",
+        "ELO"
+      ]
+    },
+    "SiteKind": {
+      "enum": [
+        "HOME",
+        "AWAY",
+        "NEUTRAL"
+      ]
+    },
+    "SpendSourceKind": {
+      "enum": [
+        "LIVE",
+        "REPLAY",
+        "STORED",
+        "NONE"
+      ]
+    },
+    "RunStatus": {
+      "enum": [
+        "RUNNING",
+        "DONE",
+        "FAILED",
+        "ABANDONED"
+      ]
+    },
+    "StepStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "DONE",
+        "FAILED",
+        "SKIPPED"
+      ]
+    },
+    "Principal": {
+      "enum": [
+        "app",
+        "reader",
+        "chat"
+      ]
+    },
+    "ApiErrorCode": {
+      "enum": [
+        "bad_host",
+        "invalid_argument",
+        "condition_error",
+        "forbidden",
+        "operator_disabled",
+        "console_disabled",
+        "not_found",
+        "max_calls_exceeded",
+        "ledger_refused",
+        "quota_refused",
+        "live_busy",
+        "live_disabled",
+        "reconcile_pending",
+        "refresh_locked",
+        "refresh_running",
+        "whatif_run_changed",
+        "cfbd_failed",
+        "database_unreachable",
+        "busy"
+      ]
+    },
+    "ApiErrorBody": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ApiErrorCode"
+        },
+        "message": {
+          "type": "string"
+        },
+        "calls_charged": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "error",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "Notice": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "Capability": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "ChatConfig": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "enabled",
+        "reason",
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "LedgerConfig": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean"
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan_cap": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan_room": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "month": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "month_cap": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "month_room": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "on",
+        "plan",
+        "plan_cap",
+        "plan_room",
+        "month",
+        "month_cap",
+        "month_room"
+      ],
+      "additionalProperties": false
+    },
+    "LiveConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "enabled",
+        "reasons"
+      ],
+      "additionalProperties": false
+    },
+    "ConfigResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "dev": {
+          "type": "boolean"
+        },
+        "fetch_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FetchMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operator": {
+          "$ref": "#/$defs/Capability"
+        },
+        "console": {
+          "$ref": "#/$defs/Capability"
+        },
+        "ledger": {
+          "$ref": "#/$defs/LedgerConfig"
+        },
+        "live": {
+          "$ref": "#/$defs/LiveConfig"
+        },
+        "read_check_skipped": {
+          "type": "boolean"
+        },
+        "chat": {
+          "$ref": "#/$defs/ChatConfig"
+        }
+      },
+      "required": [
+        "version",
+        "target",
+        "dev",
+        "fetch_mode",
+        "operator",
+        "console",
+        "ledger",
+        "live",
+        "read_check_skipped",
+        "chat"
+      ],
+      "additionalProperties": false
+    },
+    "HealthResponse": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "CurrentPoint": {
+      "type": "object",
+      "properties": {
+        "as_of_season": {
+          "type": "number"
+        },
+        "as_of_week": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "as_of_season_type": {
+          "$ref": "#/$defs/SeasonType"
+        },
+        "as_of_week_seq": {
+          "type": "number"
+        },
+        "next_week_seq": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "as_of_label": {
+          "type": "string"
+        },
+        "publication_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "whatif_publication_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "whatif_run_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "whatif_as_of_week_seq": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "whatif_views_current": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "as_of_season",
+        "as_of_week",
+        "as_of_season_type",
+        "as_of_week_seq",
+        "next_week_seq",
+        "as_of_label",
+        "publication_id",
+        "whatif_publication_id",
+        "whatif_run_id",
+        "whatif_as_of_week_seq",
+        "whatif_views_current"
+      ],
+      "additionalProperties": false
+    },
+    "AsOfPoint": {
+      "type": "object",
+      "properties": {
+        "as_of_season": {
+          "type": "number"
+        },
+        "as_of_week": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "as_of_season_type": {
+          "$ref": "#/$defs/SeasonType"
+        },
+        "as_of_week_seq": {
+          "type": "number"
+        },
+        "next_week_seq": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "as_of_label": {
+          "type": "string"
+        },
+        "is_current": {
+          "type": "boolean"
+        },
+        "is_after_current": {
+          "type": "boolean"
+        },
+        "has_publication": {
+          "type": "boolean"
+        },
+        "has_predictions": {
+          "type": "boolean"
+        },
+        "has_grades": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "as_of_season",
+        "as_of_week",
+        "as_of_season_type",
+        "as_of_week_seq",
+        "next_week_seq",
+        "as_of_label",
+        "is_current",
+        "is_after_current",
+        "has_publication",
+        "has_predictions",
+        "has_grades"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedPoint": {
+      "type": "object",
+      "properties": {
+        "season": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "next_week_seq": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "is_current": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "season",
+        "week_seq",
+        "next_week_seq",
+        "label",
+        "is_current"
+      ],
+      "additionalProperties": false
+    },
+    "PointsResponse": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "$ref": "#/$defs/CurrentPoint"
+        },
+        "season": {
+          "type": "number"
+        },
+        "seasons": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AsOfPoint"
+          }
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "current",
+        "season",
+        "seasons",
+        "points",
+        "notice"
+      ],
+      "additionalProperties": false
+    },
+    "Team": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "number"
+        },
+        "school": {
+          "type": "string"
+        },
+        "conference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team_id",
+        "school",
+        "conference"
+      ],
+      "additionalProperties": false
+    },
+    "TeamsResponse": {
+      "type": "object",
+      "properties": {
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Team"
+          }
+        }
+      },
+      "required": [
+        "teams"
+      ],
+      "additionalProperties": false
+    },
+    "OddsRow": {
+      "type": "object",
+      "properties": {
+        "odds_rank": {
+          "type": "number"
+        },
+        "team_id": {
+          "type": "number"
+        },
+        "school": {
+          "type": "string"
+        },
+        "conference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "p_in_cfp": {
+          "type": "number"
+        },
+        "p_bye": {
+          "type": "number"
+        },
+        "p_quarterfinal": {
+          "type": "number"
+        },
+        "p_semifinal": {
+          "type": "number"
+        },
+        "p_final": {
+          "type": "number"
+        },
+        "p_champion": {
+          "type": "number"
+        },
+        "p_conf_champion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_wins": {
+          "type": "number"
+        },
+        "mean_seed": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prev_as_of_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prev_p_in_cfp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delta_p_in_cfp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delta_p_champion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rank_change": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "move": {
+          "$ref": "#/$defs/Move"
+        }
+      },
+      "required": [
+        "odds_rank",
+        "team_id",
+        "school",
+        "conference",
+        "p_in_cfp",
+        "p_bye",
+        "p_quarterfinal",
+        "p_semifinal",
+        "p_final",
+        "p_champion",
+        "p_conf_champion",
+        "expected_wins",
+        "mean_seed",
+        "prev_as_of_label",
+        "prev_p_in_cfp",
+        "delta_p_in_cfp",
+        "delta_p_champion",
+        "rank_change",
+        "move"
+      ],
+      "additionalProperties": false
+    },
+    "RunBanner": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "number"
+        },
+        "publication_id": {
+          "type": "number"
+        },
+        "run_origin": {
+          "type": "string"
+        },
+        "n_sims": {
+          "type": "number"
+        },
+        "seconds_total": {
+          "type": "number"
+        },
+        "sims_per_second": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nodes": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instances": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "published_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "publication_id",
+        "run_origin",
+        "n_sims",
+        "seconds_total",
+        "sims_per_second",
+        "nodes",
+        "instances",
+        "published_at"
+      ],
+      "additionalProperties": false
+    },
+    "WhatIfAvailability": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "const": "run_at_other_point"
+            },
+            {
+              "const": "regenerating"
+            },
+            {
+              "const": "no_run"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "message",
+        "run_id",
+        "run_label"
+      ],
+      "additionalProperties": false
+    },
+    "OddsResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OddsRow"
+          }
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunBanner"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "move_threshold": {
+          "type": "number"
+        },
+        "whatif": {
+          "$ref": "#/$defs/WhatIfAvailability"
+        }
+      },
+      "required": [
+        "point",
+        "notice",
+        "rows",
+        "run",
+        "move_threshold",
+        "whatif"
+      ],
+      "additionalProperties": false
+    },
+    "WhatIfRun": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "number"
+        },
+        "season": {
+          "type": "number"
+        },
+        "as_of_week_seq": {
+          "type": "number"
+        },
+        "as_of_label": {
+          "type": "string"
+        },
+        "n_sims": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "run_id",
+        "season",
+        "as_of_week_seq",
+        "as_of_label",
+        "n_sims"
+      ],
+      "additionalProperties": false
+    },
+    "WhatIfGame": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "season": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "is_next_week": {
+          "type": "boolean"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "home_team_id": {
+          "type": "number"
+        },
+        "home_school": {
+          "type": "string"
+        },
+        "away_team_id": {
+          "type": "number"
+        },
+        "away_school": {
+          "type": "string"
+        },
+        "home_win_prob": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "game_id",
+        "season",
+        "week_seq",
+        "is_next_week",
+        "start_at",
+        "home_team_id",
+        "home_school",
+        "away_team_id",
+        "away_school",
+        "home_win_prob"
+      ],
+      "additionalProperties": false
+    },
+    "WhatIfGamesResponse": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WhatIfRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "games": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WhatIfGame"
+          }
+        },
+        "max_conditions": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "run",
+        "games",
+        "max_conditions"
+      ],
+      "additionalProperties": false
+    },
+    "ConditionWinner": {
+      "enum": [
+        "home",
+        "away"
+      ]
+    },
+    "WhatIfCondition": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "winner": {
+          "$ref": "#/$defs/ConditionWinner"
+        }
+      },
+      "required": [
+        "game_id",
+        "winner"
+      ],
+      "additionalProperties": false
+    },
+    "WhatIfOddsRequest": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "number"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WhatIfCondition"
+          }
+        }
+      },
+      "required": [
+        "run_id",
+        "conditions"
+      ],
+      "additionalProperties": false
+    },
+    "WhatIfOddsRow": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "number"
+        },
+        "school": {
+          "type": "string"
+        },
+        "conference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "p_in_cfp": {
+          "type": "number"
+        },
+        "p_champion": {
+          "type": "number"
+        },
+        "base_p_in_cfp": {
+          "type": "number"
+        },
+        "base_p_champion": {
+          "type": "number"
+        },
+        "delta_p_in_cfp": {
+          "type": "number"
+        },
+        "delta_p_champion": {
+          "type": "number"
+        },
+        "low_sample": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "team_id",
+        "school",
+        "conference",
+        "p_in_cfp",
+        "p_champion",
+        "base_p_in_cfp",
+        "base_p_champion",
+        "delta_p_in_cfp",
+        "delta_p_champion",
+        "low_sample"
+      ],
+      "additionalProperties": false
+    },
+    "WhatIfOddsResponse": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "number"
+        },
+        "n_sims": {
+          "type": "number"
+        },
+        "effective_sample": {
+          "type": "number"
+        },
+        "low_sample": {
+          "type": "boolean"
+        },
+        "method": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WhatIfOddsRow"
+          }
+        }
+      },
+      "required": [
+        "run_id",
+        "n_sims",
+        "effective_sample",
+        "low_sample",
+        "method",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "GuideRow": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "season": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "is_next_week": {
+          "type": "boolean"
+        },
+        "guide_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next_week_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "home_team_id": {
+          "type": "number"
+        },
+        "home_school": {
+          "type": "string"
+        },
+        "away_team_id": {
+          "type": "number"
+        },
+        "away_school": {
+          "type": "string"
+        },
+        "root_for_team_id": {
+          "type": "number"
+        },
+        "root_for_school": {
+          "type": "string"
+        },
+        "p_if_home_win": {
+          "type": "number"
+        },
+        "p_if_away_win": {
+          "type": "number"
+        },
+        "leverage": {
+          "type": "number"
+        },
+        "low_sample": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "game_id",
+        "season",
+        "week_seq",
+        "is_next_week",
+        "guide_rank",
+        "next_week_rank",
+        "home_team_id",
+        "home_school",
+        "away_team_id",
+        "away_school",
+        "root_for_team_id",
+        "root_for_school",
+        "p_if_home_win",
+        "p_if_away_win",
+        "leverage",
+        "low_sample"
+      ],
+      "additionalProperties": false
+    },
+    "GuideResponse": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "team_id": {
+          "type": "number"
+        },
+        "conditional": {
+          "type": "boolean"
+        },
+        "top": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GuideRow"
+          }
+        },
+        "coming_week": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GuideRow"
+          }
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "run_id",
+        "team_id",
+        "conditional",
+        "top",
+        "coming_week",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "WhatIfGuideRequest": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "number"
+        },
+        "team_id": {
+          "type": "number"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WhatIfCondition"
+          }
+        }
+      },
+      "required": [
+        "run_id",
+        "team_id",
+        "conditions"
+      ],
+      "additionalProperties": false
+    },
+    "Grade": {
+      "enum": [
+        "CORRECT",
+        "WRONG",
+        "TIE",
+        "NO_PICK"
+      ]
+    },
+    "PredictionRow": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "season": {
+          "type": "number"
+        },
+        "season_type": {
+          "$ref": "#/$defs/SeasonType"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "home_team_id": {
+          "type": "number"
+        },
+        "home_school": {
+          "type": "string"
+        },
+        "away_team_id": {
+          "type": "number"
+        },
+        "away_school": {
+          "type": "string"
+        },
+        "pred_home_points": {
+          "type": "number"
+        },
+        "pred_away_points": {
+          "type": "number"
+        },
+        "pick_team_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pick_school": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pick_win_prob": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "freeze_kind": {
+          "$ref": "#/$defs/FreezeKind"
+        },
+        "freeze_label": {
+          "type": "string"
+        },
+        "is_rescheduled": {
+          "type": "boolean"
+        },
+        "home_points": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "away_points": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grade"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "game_id",
+        "season",
+        "season_type",
+        "week_seq",
+        "start_at",
+        "home_team_id",
+        "home_school",
+        "away_team_id",
+        "away_school",
+        "pred_home_points",
+        "pred_away_points",
+        "pick_team_id",
+        "pick_school",
+        "pick_win_prob",
+        "freeze_kind",
+        "freeze_label",
+        "is_rescheduled",
+        "home_points",
+        "away_points",
+        "grade"
+      ],
+      "additionalProperties": false
+    },
+    "PredictionsResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "this_week": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PredictionRow"
+          }
+        },
+        "last_week": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PredictionRow"
+          }
+        },
+        "has_predictions": {
+          "type": "boolean"
+        },
+        "has_grades": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "point",
+        "notice",
+        "this_week",
+        "last_week",
+        "has_predictions",
+        "has_grades"
+      ],
+      "additionalProperties": false
+    },
+    "ScorecardRow": {
+      "type": "object",
+      "properties": {
+        "population": {
+          "$ref": "#/$defs/Population"
+        },
+        "freeze_kind": {
+          "$ref": "#/$defs/FreezeKind"
+        },
+        "is_headline": {
+          "type": "boolean"
+        },
+        "games_graded": {
+          "type": "number"
+        },
+        "record_label": {
+          "type": "string"
+        },
+        "pick_accuracy": {
+          "type": "number"
+        },
+        "brier": {
+          "type": "number"
+        },
+        "mae_margin": {
+          "type": "number"
+        },
+        "line_correct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line_wrong": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line_brier": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model_brier_on_line_games": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "population",
+        "freeze_kind",
+        "is_headline",
+        "games_graded",
+        "record_label",
+        "pick_accuracy",
+        "brier",
+        "mae_margin",
+        "line_correct",
+        "line_wrong",
+        "line_brier",
+        "model_brier_on_line_games"
+      ],
+      "additionalProperties": false
+    },
+    "CalibrationBucket": {
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "type": "number"
+        },
+        "games_graded": {
+          "type": "number"
+        },
+        "mean_pick_win_prob": {
+          "type": "number"
+        },
+        "pick_win_share": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "bucket",
+        "games_graded",
+        "mean_pick_win_prob",
+        "pick_win_share"
+      ],
+      "additionalProperties": false
+    },
+    "ScorecardResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "population": {
+          "$ref": "#/$defs/Population"
+        },
+        "week": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScorecardRow"
+          }
+        },
+        "season": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScorecardRow"
+          }
+        },
+        "calibration": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CalibrationBucket"
+          }
+        }
+      },
+      "required": [
+        "point",
+        "notice",
+        "population",
+        "week",
+        "season",
+        "calibration"
+      ],
+      "additionalProperties": false
+    },
+    "UpsetRow": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "season": {
+          "type": "number"
+        },
+        "season_type": {
+          "$ref": "#/$defs/SeasonType"
+        },
+        "week": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "winner_team_id": {
+          "type": "number"
+        },
+        "winner_school": {
+          "type": "string"
+        },
+        "loser_team_id": {
+          "type": "number"
+        },
+        "loser_school": {
+          "type": "string"
+        },
+        "winner_points": {
+          "type": "number"
+        },
+        "loser_points": {
+          "type": "number"
+        },
+        "winner_site": {
+          "$ref": "#/$defs/SiteKind"
+        },
+        "prob_source": {
+          "$ref": "#/$defs/ProbSource"
+        },
+        "winner_pregame_win_prob": {
+          "type": "number"
+        },
+        "upset_magnitude": {
+          "type": "number"
+        },
+        "week_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "season_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "all_time_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "all_time_tied": {
+          "type": "boolean"
+        },
+        "all_time_from_season": {
+          "type": "number"
+        },
+        "line_era_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line_era_tied": {
+          "type": "boolean"
+        },
+        "model_winner_win_prob": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "game_id",
+        "season",
+        "season_type",
+        "week",
+        "week_seq",
+        "winner_team_id",
+        "winner_school",
+        "loser_team_id",
+        "loser_school",
+        "winner_points",
+        "loser_points",
+        "winner_site",
+        "prob_source",
+        "winner_pregame_win_prob",
+        "upset_magnitude",
+        "week_rank",
+        "season_rank",
+        "all_time_rank",
+        "all_time_tied",
+        "all_time_from_season",
+        "line_era_rank",
+        "line_era_tied",
+        "model_winner_win_prob"
+      ],
+      "additionalProperties": false
+    },
+    "UpsetsResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "week": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UpsetRow"
+          }
+        },
+        "all_time": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UpsetRow"
+          }
+        },
+        "line_era": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UpsetRow"
+          }
+        },
+        "all_time_from_season": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "point",
+        "notice",
+        "week",
+        "all_time",
+        "line_era",
+        "all_time_from_season"
+      ],
+      "additionalProperties": false
+    },
+    "MatchupSeries": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "number"
+        },
+        "opponent_team_id": {
+          "type": "number"
+        },
+        "school": {
+          "type": "string"
+        },
+        "opponent_school": {
+          "type": "string"
+        },
+        "meetings": {
+          "type": "number"
+        },
+        "wins": {
+          "type": "number"
+        },
+        "losses": {
+          "type": "number"
+        },
+        "ties": {
+          "type": "number"
+        },
+        "points_for": {
+          "type": "number"
+        },
+        "points_against": {
+          "type": "number"
+        },
+        "first_season": {
+          "type": "number"
+        },
+        "last_season": {
+          "type": "number"
+        },
+        "last_game_id": {
+          "type": "number"
+        },
+        "streak_kind": {
+          "enum": [
+            "W",
+            "L",
+            "T"
+          ]
+        },
+        "streak_length": {
+          "type": "number"
+        },
+        "wins_home": {
+          "type": "number"
+        },
+        "wins_away": {
+          "type": "number"
+        },
+        "wins_neutral": {
+          "type": "number"
+        },
+        "biggest_win_margin": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "biggest_win_season": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "biggest_loss_margin": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "biggest_loss_season": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team_id",
+        "opponent_team_id",
+        "school",
+        "opponent_school",
+        "meetings",
+        "wins",
+        "losses",
+        "ties",
+        "points_for",
+        "points_against",
+        "first_season",
+        "last_season",
+        "last_game_id",
+        "streak_kind",
+        "streak_length",
+        "wins_home",
+        "wins_away",
+        "wins_neutral",
+        "biggest_win_margin",
+        "biggest_win_season",
+        "biggest_loss_margin",
+        "biggest_loss_season"
+      ],
+      "additionalProperties": false
+    },
+    "MatchupGame": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "season": {
+          "type": "number"
+        },
+        "season_type": {
+          "$ref": "#/$defs/SeasonType"
+        },
+        "week": {
+          "type": "number"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "site": {
+          "$ref": "#/$defs/SiteKind"
+        },
+        "team_points": {
+          "type": "number"
+        },
+        "opponent_points": {
+          "type": "number"
+        },
+        "game_result": {
+          "enum": [
+            "W",
+            "L",
+            "T"
+          ]
+        },
+        "prob_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProbSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "team_pregame_win_prob": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "upset_magnitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "game_id",
+        "season",
+        "season_type",
+        "week",
+        "start_at",
+        "site",
+        "team_points",
+        "opponent_points",
+        "game_result",
+        "prob_source",
+        "team_pregame_win_prob",
+        "upset_magnitude"
+      ],
+      "additionalProperties": false
+    },
+    "MatchupNext": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "season": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "site": {
+          "$ref": "#/$defs/SiteKind"
+        },
+        "prediction_kind": {
+          "enum": [
+            "FROZEN",
+            "CURRENT"
+          ]
+        },
+        "team_win_prob": {
+          "type": "number"
+        },
+        "pred_team_points": {
+          "type": "number"
+        },
+        "pred_opponent_points": {
+          "type": "number"
+        },
+        "stakes_run_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "team_p_in_cfp_if_win": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "team_p_in_cfp_if_lose": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opponent_p_in_cfp_if_win": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opponent_p_in_cfp_if_lose": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "game_id",
+        "season",
+        "week_seq",
+        "start_at",
+        "site",
+        "prediction_kind",
+        "team_win_prob",
+        "pred_team_points",
+        "pred_opponent_points",
+        "stakes_run_id",
+        "team_p_in_cfp_if_win",
+        "team_p_in_cfp_if_lose",
+        "opponent_p_in_cfp_if_win",
+        "opponent_p_in_cfp_if_lose"
+      ],
+      "additionalProperties": false
+    },
+    "MatchupResponse": {
+      "type": "object",
+      "properties": {
+        "team": {
+          "$ref": "#/$defs/Team"
+        },
+        "opponent": {
+          "$ref": "#/$defs/Team"
+        },
+        "never_met": {
+          "type": "boolean"
+        },
+        "series": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MatchupSeries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "games": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MatchupGame"
+          }
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MatchupNext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next_as_of_label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "opponent",
+        "never_met",
+        "series",
+        "games",
+        "next",
+        "next_as_of_label"
+      ],
+      "additionalProperties": false
+    },
+    "SpendPlan": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SpendSourceKind"
+        },
+        "live_calls": {
+          "type": "number"
+        },
+        "fetch_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FetchMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "live_calls",
+        "fetch_mode"
+      ],
+      "additionalProperties": false
+    },
+    "CachedPreviewState": {
+      "type": "object",
+      "properties": {
+        "cached_at": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/SpendSourceKind"
+        },
+        "req_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cached_at",
+        "source",
+        "req_ms"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewPlanResponse": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "number"
+        },
+        "opponent_id": {
+          "type": "number"
+        },
+        "game_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "game_basis": {
+          "enum": [
+            "next",
+            "latest",
+            "none"
+          ]
+        },
+        "plan": {
+          "$ref": "#/$defs/SpendPlan"
+        },
+        "cached": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CachedPreviewState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "busy_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team_id",
+        "opponent_id",
+        "game_id",
+        "game_basis",
+        "plan",
+        "cached",
+        "disabled_reason",
+        "busy_reason"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewRequest": {
+      "type": "object",
+      "properties": {
+        "team": {
+          "type": "number"
+        },
+        "opponent": {
+          "type": "number"
+        },
+        "max_calls": {
+          "type": "number"
+        },
+        "force": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "team",
+        "opponent",
+        "max_calls",
+        "force"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewTeam": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "school": {
+          "type": "string"
+        },
+        "record": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sp_rating": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "srs_rating": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elo": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fpi": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "points": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team_id",
+        "school",
+        "record",
+        "sp_rating",
+        "srs_rating",
+        "elo",
+        "fpi",
+        "points"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewOdds": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spread": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "over_under": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "home_moneyline": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "away_moneyline": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "spread",
+        "over_under",
+        "home_moneyline",
+        "away_moneyline"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewResponse": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "cached": {
+          "type": "boolean"
+        },
+        "fetched_at": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/SpendSourceKind"
+        },
+        "calls_spent": {
+          "type": "number"
+        },
+        "req_source": {
+          "type": "string"
+        },
+        "req_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "venue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "home": {
+          "$ref": "#/$defs/PreviewTeam"
+        },
+        "away": {
+          "$ref": "#/$defs/PreviewTeam"
+        },
+        "odds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreviewOdds"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fetch_log_ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "game_id",
+        "cached",
+        "fetched_at",
+        "source",
+        "calls_spent",
+        "req_source",
+        "req_ms",
+        "venue",
+        "status",
+        "home",
+        "away",
+        "odds",
+        "fetch_log_ok"
+      ],
+      "additionalProperties": false
+    },
+    "QuotaResponse": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "live",
+            "replay"
+          ]
+        },
+        "read_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "age_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remaining_calls": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "used_calls": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project_budget": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refresh_spendable": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backfill_spendable": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "read_at",
+        "age_seconds",
+        "remaining_calls",
+        "used_calls",
+        "project_budget",
+        "refresh_spendable",
+        "backfill_spendable"
+      ],
+      "additionalProperties": false
+    },
+    "FollowKey": {
+      "type": "object",
+      "properties": {
+        "as_of_season": {
+          "type": "number"
+        },
+        "as_of_week_seq": {
+          "type": "number"
+        },
+        "publication_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "whatif_run_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "whatif_views_current": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "as_of_season",
+        "as_of_week_seq",
+        "publication_id",
+        "whatif_run_id",
+        "whatif_views_current"
+      ],
+      "additionalProperties": false
+    },
+    "FollowState": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/FollowKey"
+        },
+        "hold": {
+          "type": "boolean"
+        },
+        "stuck": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "hold",
+        "stuck"
+      ],
+      "additionalProperties": false
+    },
+    "TimelineStep": {
+      "type": "object",
+      "properties": {
+        "step_no": {
+          "type": "number"
+        },
+        "step_name": {
+          "type": "string"
+        },
+        "step_status": {
+          "$ref": "#/$defs/StepStatus"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "slices": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows_loaded": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calls": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "step_no",
+        "step_name",
+        "step_status",
+        "started_at",
+        "ended_at",
+        "seconds",
+        "slices",
+        "rows_loaded",
+        "calls",
+        "detail"
+      ],
+      "additionalProperties": false
+    },
+    "TimelineRun": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "number"
+        },
+        "run_kind": {
+          "type": "string"
+        },
+        "run_args": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_status": {
+          "$ref": "#/$defs/RunStatus"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TimelineStep"
+          }
+        }
+      },
+      "required": [
+        "run_id",
+        "run_kind",
+        "run_args",
+        "run_status",
+        "started_at",
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "FetchRow": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "string"
+        },
+        "table_name": {
+          "type": "string"
+        },
+        "slice_key": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requested_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "context",
+        "table_name",
+        "slice_key",
+        "source",
+        "status",
+        "attempts",
+        "ms",
+        "rows",
+        "requested_at"
+      ],
+      "additionalProperties": false
+    },
+    "TimelineResponse": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimelineRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fetches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FetchRow"
+          }
+        },
+        "follow": {
+          "$ref": "#/$defs/FollowState"
+        }
+      },
+      "required": [
+        "run",
+        "fetches",
+        "follow"
+      ],
+      "additionalProperties": false
+    },
+    "RefreshTarget": {
+      "type": "object",
+      "properties": {
+        "season": {
+          "type": "number"
+        },
+        "week": {
+          "type": "number"
+        },
+        "season_type": {
+          "$ref": "#/$defs/SeasonType"
+        }
+      },
+      "required": [
+        "season",
+        "week",
+        "season_type"
+      ],
+      "additionalProperties": false
+    },
+    "RefreshEstimate": {
+      "type": "object",
+      "properties": {
+        "total_calls": {
+          "type": "number"
+        },
+        "per_table": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "total_calls",
+        "per_table"
+      ],
+      "additionalProperties": false
+    },
+    "WeekCompleteness": {
+      "type": "object",
+      "properties": {
+        "games": {
+          "type": "number"
+        },
+        "completed": {
+          "type": "number"
+        },
+        "not_kicked_off": {
+          "type": "number"
+        },
+        "point_will_move": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "games",
+        "completed",
+        "not_kicked_off",
+        "point_will_move",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "RunningRun": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "number"
+        },
+        "run_kind": {
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "run_id",
+        "run_kind",
+        "started_at"
+      ],
+      "additionalProperties": false
+    },
+    "RefreshPlanResponse": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/RefreshTarget"
+        },
+        "mode": {
+          "$ref": "#/$defs/FetchMode"
+        },
+        "can_run": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "estimate": {
+          "$ref": "#/$defs/RefreshEstimate"
+        },
+        "needs_confirmation": {
+          "type": "boolean"
+        },
+        "plus_retries": {
+          "type": "boolean"
+        },
+        "quota": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuotaResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ledger": {
+          "$ref": "#/$defs/LedgerConfig"
+        },
+        "running": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunningRun"
+          }
+        },
+        "week": {
+          "$ref": "#/$defs/WeekCompleteness"
+        },
+        "dev_blocks_live": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target",
+        "mode",
+        "can_run",
+        "reasons",
+        "estimate",
+        "needs_confirmation",
+        "plus_retries",
+        "quota",
+        "ledger",
+        "running",
+        "week",
+        "dev_blocks_live"
+      ],
+      "additionalProperties": false
+    },
+    "RefreshRunRequest": {
+      "type": "object",
+      "properties": {
+        "season": {
+          "type": "number"
+        },
+        "week": {
+          "type": "number"
+        },
+        "season_type": {
+          "$ref": "#/$defs/SeasonType"
+        },
+        "max_calls": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "season",
+        "week",
+        "season_type",
+        "max_calls"
+      ],
+      "additionalProperties": false
+    },
+    "RefreshRunResponse": {
+      "type": "object",
+      "properties": {
+        "action_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_id"
+      ],
+      "additionalProperties": false
+    },
+    "ActionState": {
+      "enum": [
+        "RUNNING",
+        "DONE",
+        "FAILED"
+      ]
+    },
+    "PointRef": {
+      "type": "object",
+      "properties": {
+        "season": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "season",
+        "week_seq",
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "ActionResponse": {
+      "type": "object",
+      "properties": {
+        "action_id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "refresh",
+            "preview",
+            "console"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/ActionState"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calls_spent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "point_before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PointRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "point_after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PointRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "point_message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "action_id",
+        "kind",
+        "state",
+        "run_id",
+        "started_at",
+        "ended_at",
+        "error",
+        "calls_spent",
+        "point_before",
+        "point_after",
+        "point_message"
+      ],
+      "additionalProperties": false
+    },
+    "RequestLine": {
+      "type": "object",
+      "properties": {
+        "slice": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requested_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "slice",
+        "source",
+        "status",
+        "attempts",
+        "ms",
+        "rows",
+        "requested_at"
+      ],
+      "additionalProperties": false
+    },
+    "QueryLogEntry": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "string"
+        },
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        },
+        "user": {
+          "type": "string"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sql": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "ms": {
+          "type": "number"
+        },
+        "row_count": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RequestLine"
+          }
+        },
+        "calls_spent": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "entry_id",
+        "principal",
+        "user",
+        "page",
+        "sql",
+        "started_at",
+        "ms",
+        "row_count",
+        "error",
+        "requests",
+        "calls_spent"
+      ],
+      "additionalProperties": false
+    },
+    "InspectorResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QueryLogEntry"
+          }
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": false
+    },
+    "PlanManifest": {
+      "type": "object",
+      "properties": {
+        "table": {
+          "type": "string"
+        },
+        "fetch_mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "read_through": {
+          "type": "boolean"
+        },
+        "budget": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "planned_requests": {
+          "type": "number"
+        },
+        "slice_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "table",
+        "fetch_mode",
+        "read_through",
+        "budget",
+        "planned_requests",
+        "slice_keys",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "ExplainResponse": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "string"
+        },
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        },
+        "no_virtual_table": {
+          "type": "boolean"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "manifests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PlanManifest"
+          }
+        },
+        "spend": {
+          "$ref": "#/$defs/SpendPlan"
+        },
+        "refused": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "entry_id",
+        "principal",
+        "no_virtual_table",
+        "message",
+        "manifests",
+        "spend",
+        "refused"
+      ],
+      "additionalProperties": false
+    },
+    "ConsoleQueryId": {
+      "enum": [
+        "fan-out",
+        "contradiction",
+        "stored",
+        "over-budget"
+      ]
+    },
+    "ConsoleQuery": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ConsoleQueryId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "sql": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "summary",
+        "sql"
+      ],
+      "additionalProperties": false
+    },
+    "ConsoleResponse": {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        },
+        "user": {
+          "type": "string"
+        },
+        "help": {
+          "type": "string"
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConsoleQuery"
+          }
+        }
+      },
+      "required": [
+        "principal",
+        "user",
+        "help",
+        "queries"
+      ],
+      "additionalProperties": false
+    },
+    "ConsoleRunRequest": {
+      "type": "object",
+      "properties": {
+        "max_calls": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "max_calls"
+      ],
+      "additionalProperties": false
+    },
+    "ConsoleRunResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ConsoleQueryId"
+        },
+        "action_id": {
+          "type": "string"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {}
+          }
+        },
+        "row_count": {
+          "type": "number"
+        },
+        "calls_spent": {
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/$defs/SpendSourceKind"
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RequestLine"
+          }
+        },
+        "fetch_log_ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "action_id",
+        "columns",
+        "rows",
+        "row_count",
+        "calls_spent",
+        "source",
+        "requests",
+        "fetch_log_ok"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

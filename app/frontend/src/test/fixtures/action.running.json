@@ -1,0 +1,17 @@
+{
+  "action_id": "a-0001",
+  "kind": "refresh",
+  "state": "RUNNING",
+  "run_id": 41,
+  "started_at": "2026-10-23T09:10:00Z",
+  "ended_at": null,
+  "error": null,
+  "calls_spent": null,
+  "point_before": {
+    "season": 2026,
+    "week_seq": 9,
+    "label": "2026, after week 9"
+  },
+  "point_after": null,
+  "point_message": null
+}

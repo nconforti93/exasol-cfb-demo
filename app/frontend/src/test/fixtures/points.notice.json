@@ -1,0 +1,51 @@
+{
+  "current": {
+    "as_of_season": 2026,
+    "as_of_week": 8,
+    "as_of_season_type": "regular",
+    "as_of_week_seq": 8,
+    "next_week_seq": 9,
+    "as_of_label": "2026, after week 8",
+    "publication_id": 12,
+    "whatif_publication_id": 12,
+    "whatif_run_id": 7,
+    "whatif_as_of_week_seq": 9,
+    "whatif_views_current": true
+  },
+  "season": 2026,
+  "seasons": [
+    2026
+  ],
+  "points": [
+    {
+      "as_of_season": 2026,
+      "as_of_week": 8,
+      "as_of_season_type": "regular",
+      "as_of_week_seq": 8,
+      "next_week_seq": 9,
+      "as_of_label": "2026, after week 8",
+      "is_current": true,
+      "is_after_current": false,
+      "has_publication": true,
+      "has_predictions": true,
+      "has_grades": true
+    },
+    {
+      "as_of_season": 2026,
+      "as_of_week": 7,
+      "as_of_season_type": "regular",
+      "as_of_week_seq": 7,
+      "next_week_seq": 8,
+      "as_of_label": "2026, after week 7",
+      "is_current": false,
+      "is_after_current": false,
+      "has_publication": false,
+      "has_predictions": true,
+      "has_grades": false
+    }
+  ],
+  "notice": {
+    "code": "after_current",
+    "message": "Week 9 is after the current point; showing 2026, after week 8."
+  }
+}

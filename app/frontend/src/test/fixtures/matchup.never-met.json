@@ -1,0 +1,17 @@
+{
+  "team": {
+    "team_id": 105,
+    "school": "Eastgate",
+    "conference": "Pacific"
+  },
+  "opponent": {
+    "team_id": 103,
+    "school": "Carlton",
+    "conference": "Lakes"
+  },
+  "never_met": true,
+  "series": null,
+  "games": [],
+  "next": null,
+  "next_as_of_label": "2026, after week 9"
+}

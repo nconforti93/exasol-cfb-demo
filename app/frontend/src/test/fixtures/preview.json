@@ -1,0 +1,39 @@
+{
+  "game_id": 9003,
+  "cached": false,
+  "fetched_at": "2026-10-23T09:00:00Z",
+  "source": "LIVE",
+  "calls_spent": 1,
+  "req_source": "LIVE",
+  "req_ms": 412,
+  "venue": "Ashford Field",
+  "status": "scheduled",
+  "fetch_log_ok": true,
+  "home": {
+    "team_id": 101,
+    "school": "Ashford",
+    "record": "7–2",
+    "sp_rating": 14.2,
+    "srs_rating": 9.1,
+    "elo": 1710,
+    "fpi": 8.4,
+    "points": null
+  },
+  "away": {
+    "team_id": 102,
+    "school": "Brookvale",
+    "record": "8–1",
+    "sp_rating": 18.9,
+    "srs_rating": 12.3,
+    "elo": 1790,
+    "fpi": 12.1,
+    "points": null
+  },
+  "odds": {
+    "provider": "Sim Book",
+    "spread": 3.5,
+    "over_under": 51.5,
+    "home_moneyline": 135,
+    "away_moneyline": -155
+  }
+}

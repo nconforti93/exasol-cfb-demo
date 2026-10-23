@@ -1,0 +1,29 @@
+{
+  "entry_id": "q-0002",
+  "principal": "reader",
+  "no_virtual_table": false,
+  "message": null,
+  "refused": null,
+  "spend": {
+    "source": "LIVE",
+    "live_calls": 3,
+    "fetch_mode": "LIVE"
+  },
+  "manifests": [
+    {
+      "table": "GAMES_TEAMS",
+      "fetch_mode": "LIVE",
+      "read_through": true,
+      "budget": 10,
+      "planned_requests": 3,
+      "slice_keys": [
+        "/games/teams?seasonType=both&team=Michigan&year=2022",
+        "/games/teams?seasonType=both&team=Michigan&year=2023",
+        "/games/teams?seasonType=both&team=Michigan&year=2024"
+      ],
+      "sources": [
+        "LIVE"
+      ]
+    }
+  ]
+}

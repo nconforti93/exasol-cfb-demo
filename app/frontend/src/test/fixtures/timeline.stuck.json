@@ -1,0 +1,35 @@
+{
+  "run": {
+    "run_id": 41,
+    "run_kind": "REFRESH_WEEK",
+    "run_args": null,
+    "run_status": "RUNNING",
+    "started_at": "2026-10-23T08:00:00Z",
+    "steps": [
+      {
+        "step_no": 2,
+        "step_name": "FETCH",
+        "step_status": "RUNNING",
+        "started_at": "2026-10-23T09:10:00Z",
+        "ended_at": null,
+        "seconds": null,
+        "slices": null,
+        "rows_loaded": null,
+        "calls": 0,
+        "detail": null
+      }
+    ]
+  },
+  "fetches": [],
+  "follow": {
+    "key": {
+      "as_of_season": 2026,
+      "as_of_week_seq": 9,
+      "publication_id": 12,
+      "whatif_run_id": 7,
+      "whatif_views_current": true
+    },
+    "hold": false,
+    "stuck": true
+  }
+}

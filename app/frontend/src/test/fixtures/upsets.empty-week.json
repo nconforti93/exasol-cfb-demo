@@ -1,0 +1,40 @@
+{
+  "point": {
+    "season": 2026,
+    "week_seq": 3,
+    "next_week_seq": 4,
+    "label": "2026, after week 3",
+    "is_current": false
+  },
+  "notice": null,
+  "all_time_from_season": 1978,
+  "week": [],
+  "all_time": [
+    {
+      "game_id": 6001,
+      "season": 2026,
+      "season_type": "regular",
+      "week": 1,
+      "week_seq": 1,
+      "winner_team_id": 103,
+      "winner_school": "Carlton",
+      "loser_team_id": 105,
+      "loser_school": "Eastgate",
+      "winner_points": 21,
+      "loser_points": 20,
+      "winner_site": "AWAY",
+      "prob_source": "LINE",
+      "winner_pregame_win_prob": 0.05,
+      "upset_magnitude": 0.95,
+      "week_rank": 1,
+      "season_rank": 1,
+      "all_time_rank": 1,
+      "all_time_tied": false,
+      "all_time_from_season": 1978,
+      "line_era_rank": 1,
+      "line_era_tied": false,
+      "model_winner_win_prob": 0.07
+    }
+  ],
+  "line_era": []
+}

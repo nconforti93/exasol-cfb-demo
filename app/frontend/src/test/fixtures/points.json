@@ -1,0 +1,75 @@
+{
+  "current": {
+    "as_of_season": 2026,
+    "as_of_week": 9,
+    "as_of_season_type": "regular",
+    "as_of_week_seq": 9,
+    "next_week_seq": 10,
+    "as_of_label": "2026, after week 9",
+    "publication_id": 12,
+    "whatif_publication_id": 12,
+    "whatif_run_id": 7,
+    "whatif_as_of_week_seq": 9,
+    "whatif_views_current": true
+  },
+  "season": 2026,
+  "seasons": [
+    2026,
+    2025
+  ],
+  "notice": null,
+  "points": [
+    {
+      "as_of_season": 2026,
+      "as_of_week": 9,
+      "as_of_season_type": "regular",
+      "as_of_week_seq": 9,
+      "next_week_seq": 10,
+      "as_of_label": "2026, after week 9",
+      "is_current": true,
+      "is_after_current": false,
+      "has_publication": true,
+      "has_predictions": true,
+      "has_grades": true
+    },
+    {
+      "as_of_season": 2026,
+      "as_of_week": 8,
+      "as_of_season_type": "regular",
+      "as_of_week_seq": 8,
+      "next_week_seq": 9,
+      "as_of_label": "2026, after week 8",
+      "is_current": false,
+      "is_after_current": false,
+      "has_publication": true,
+      "has_predictions": true,
+      "has_grades": true
+    },
+    {
+      "as_of_season": 2026,
+      "as_of_week": 7,
+      "as_of_season_type": "regular",
+      "as_of_week_seq": 7,
+      "next_week_seq": 8,
+      "as_of_label": "2026, after week 7",
+      "is_current": false,
+      "is_after_current": false,
+      "has_publication": false,
+      "has_predictions": true,
+      "has_grades": false
+    },
+    {
+      "as_of_season": 2026,
+      "as_of_week": 3,
+      "as_of_season_type": "regular",
+      "as_of_week_seq": 3,
+      "next_week_seq": 4,
+      "as_of_label": "2026, after week 3",
+      "is_current": false,
+      "is_after_current": false,
+      "has_publication": false,
+      "has_predictions": true,
+      "has_grades": false
+    }
+  ]
+}

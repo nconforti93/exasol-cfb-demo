@@ -1,0 +1,14 @@
+{
+  "team_id": 101,
+  "opponent_id": 102,
+  "game_id": 9003,
+  "game_basis": "next",
+  "plan": {
+    "source": "REPLAY",
+    "live_calls": 0,
+    "fetch_mode": "REPLAY"
+  },
+  "cached": null,
+  "disabled_reason": null,
+  "busy_reason": null
+}

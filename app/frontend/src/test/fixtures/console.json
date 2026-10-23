@@ -1,0 +1,31 @@
+{
+  "principal": "reader",
+  "user": "CFB_CONSOLE_WEB",
+  "help": "Four curated queries over the virtual schema. Stored history on the pages, such as a head-to-head series since 1897, reads \"no virtual table: 0 calls\".",
+  "queries": [
+    {
+      "id": "fan-out",
+      "title": "Fan-out",
+      "summary": "One team over 2022–2024: 3 slices in parallel",
+      "sql": "SELECT * FROM \"CFBD_VS\".\"GAMES_TEAMS\" WHERE \"P_YEAR\" BETWEEN 2022 AND 2024 AND \"P_TEAM\" = 'Michigan'"
+    },
+    {
+      "id": "contradiction",
+      "title": "Contradiction",
+      "summary": "A filter that cannot be true: 0 slices, 0 calls",
+      "sql": "SELECT * FROM \"CFBD_VS\".\"GAMES_TEAMS\" WHERE \"P_YEAR\" = 2023 AND \"P_YEAR\" = 2024 AND \"P_TEAM\" = 'Michigan'"
+    },
+    {
+      "id": "stored",
+      "title": "Stored history",
+      "summary": "157 stored seasons, 0 calls",
+      "sql": "SELECT \"REQ_SLICE\", COUNT(*) AS \"REQ_ROWS\" FROM \"CFBD_VS\".\"GAMES\" WHERE \"P_YEAR\" BETWEEN 1869 AND 2025 AND \"REQ_SOURCE\" = 'STORED' GROUP BY \"REQ_SLICE\" ORDER BY \"REQ_SLICE\""
+    },
+    {
+      "id": "over-budget",
+      "title": "Over budget",
+      "summary": "15 slices: refused at plan time",
+      "sql": "SELECT * FROM \"CFBD_VS\".\"GAMES_TEAMS\" WHERE \"P_YEAR\" BETWEEN 2010 AND 2024 AND \"P_TEAM\" = 'Michigan'"
+    }
+  ]
+}

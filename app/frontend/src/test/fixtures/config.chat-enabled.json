@@ -1,0 +1,34 @@
+{
+  "version": "0.1.0",
+  "target": "local",
+  "dev": true,
+  "fetch_mode": "REPLAY",
+  "operator": {
+    "enabled": true,
+    "reason": null
+  },
+  "console": {
+    "enabled": true,
+    "reason": null
+  },
+  "ledger": {
+    "on": true,
+    "plan": "app",
+    "plan_cap": 20,
+    "plan_room": 20,
+    "month": "2026-10",
+    "month_cap": 20,
+    "month_room": 20
+  },
+  "live": {
+    "enabled": true,
+    "reasons": []
+  },
+  "read_check_skipped": false,
+  "chat": {
+    "available": true,
+    "enabled": true,
+    "reason": null,
+    "model": "test-model"
+  }
+}

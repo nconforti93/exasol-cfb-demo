@@ -1,0 +1,10 @@
+{
+  "mode": "live",
+  "read_at": "2026-10-23T08:58:00Z",
+  "age_seconds": 120,
+  "remaining_calls": 640,
+  "used_calls": 360,
+  "project_budget": 1000,
+  "refresh_spendable": 600,
+  "backfill_spendable": 500
+}

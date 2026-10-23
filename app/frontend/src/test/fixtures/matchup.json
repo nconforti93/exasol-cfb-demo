@@ -1,0 +1,84 @@
+{
+  "team": {
+    "team_id": 101,
+    "school": "Ashford",
+    "conference": "Atlantic"
+  },
+  "opponent": {
+    "team_id": 102,
+    "school": "Brookvale",
+    "conference": "Atlantic"
+  },
+  "never_met": false,
+  "next_as_of_label": "2026, after week 9",
+  "series": {
+    "team_id": 101,
+    "opponent_team_id": 102,
+    "school": "Ashford",
+    "opponent_school": "Brookvale",
+    "meetings": 6,
+    "wins": 3,
+    "losses": 2,
+    "ties": 1,
+    "points_for": 150,
+    "points_against": 131,
+    "first_season": 1950,
+    "last_season": 1995,
+    "last_game_id": 5105,
+    "streak_kind": "L",
+    "streak_length": 1,
+    "wins_home": 2,
+    "wins_away": 1,
+    "wins_neutral": 0,
+    "biggest_win_margin": 21,
+    "biggest_win_season": 1985,
+    "biggest_loss_margin": 10,
+    "biggest_loss_season": 1995
+  },
+  "games": [
+    {
+      "game_id": 5105,
+      "season": 1995,
+      "season_type": "regular",
+      "week": 11,
+      "start_at": null,
+      "site": "AWAY",
+      "team_points": 17,
+      "opponent_points": 27,
+      "game_result": "L",
+      "prob_source": "ELO",
+      "team_pregame_win_prob": 0.5,
+      "upset_magnitude": null
+    },
+    {
+      "game_id": 5101,
+      "season": 1950,
+      "season_type": "regular",
+      "week": 9,
+      "start_at": null,
+      "site": "HOME",
+      "team_points": 14,
+      "opponent_points": 14,
+      "game_result": "T",
+      "prob_source": null,
+      "team_pregame_win_prob": null,
+      "upset_magnitude": null
+    }
+  ],
+  "next": {
+    "game_id": 9003,
+    "season": 2026,
+    "week_seq": 12,
+    "start_at": "2026-11-21T17:00:00Z",
+    "site": "HOME",
+    "prediction_kind": "FROZEN",
+    "team_win_prob": 0.41,
+    "pred_team_points": 24.1,
+    "pred_opponent_points": 27.3,
+    "stakes_run_id": 31,
+    "team_p_in_cfp_if_win": 0.7,
+    "team_p_in_cfp_if_lose": 0.3,
+    "opponent_p_in_cfp_if_win": 0.93,
+    "opponent_p_in_cfp_if_lose": 0.6
+  }
+}

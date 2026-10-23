@@ -1,0 +1,14 @@
+{
+  "team_id": 101,
+  "opponent_id": 102,
+  "game_id": 9003,
+  "game_basis": "next",
+  "plan": {
+    "source": "LIVE",
+    "live_calls": 1,
+    "fetch_mode": "LIVE"
+  },
+  "cached": null,
+  "disabled_reason": null,
+  "busy_reason": "a refresh is running (run 41)"
+}

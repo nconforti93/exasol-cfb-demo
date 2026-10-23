@@ -1,0 +1,201 @@
+.chart-frame {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+}
+
+.chart-title {
+  font-weight: 600;
+  color: var(--ink-primary);
+}
+
+.chart-toggle {
+  float: right;
+  background: transparent;
+  color: var(--accent-text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.15rem 0.6rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chart-note,
+.chart-table {
+  color: var(--ink-secondary);
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 0.2rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--grid);
+}
+
+.icon {
+  stroke: currentColor;
+  vertical-align: -3px;
+}
+
+.bar-track,
+.waterfall-strip .grid,
+.timeline-strip .grid {
+  fill: var(--seq-track);
+}
+
+.bar-fill,
+.bar-base {
+  fill: var(--seq-bar);
+}
+
+.timeline-strip .grid,
+.waterfall-strip .grid {
+  stroke: var(--grid);
+  fill: none;
+}
+
+.move {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--ink-primary);
+}
+
+.move-up .icon {
+  color: var(--move-up);
+}
+
+.move-down .icon {
+  color: var(--move-down);
+}
+
+.badge-new {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  color: var(--ink-primary);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--ink-primary);
+}
+
+.status-done .icon {
+  color: var(--status-good);
+}
+
+.status-running .icon {
+  color: var(--accent);
+}
+
+.status-failed .icon {
+  color: var(--status-critical);
+}
+
+.status-pending .icon,
+.status-skipped .icon,
+.status-abandoned .icon {
+  color: var(--ink-muted);
+}
+
+.dot-plot .grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.dot-plot .tick,
+.dot-plot .axis-label,
+.waterfall-axis .tick {
+  fill: var(--ink-secondary);
+  font-size: 12px;
+}
+
+.dot-plot .reference {
+  stroke: var(--ink-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.dot-plot .dot {
+  fill: var(--seq-bar);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.timeline,
+.waterfall,
+.legend {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+}
+
+.timeline-row,
+.waterfall-row {
+  display: grid;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.25rem 0;
+}
+
+.timeline-row {
+  grid-template-columns: 9rem 8rem 1fr;
+}
+
+.waterfall-row {
+  grid-template-columns: 9rem 1fr 6rem;
+}
+
+.timeline-bar.bar-done {
+  fill: var(--status-good);
+}
+
+.timeline-bar.bar-running {
+  fill: var(--accent);
+}
+
+.timeline-bar.bar-failed {
+  fill: var(--status-critical);
+}
+
+.waterfall-bar.source-live,
+.swatch.source-live {
+  fill: var(--series-live);
+  background: var(--series-live);
+}
+
+.waterfall-bar.source-replay,
+.swatch.source-replay {
+  fill: var(--series-replay);
+  background: var(--series-replay);
+}
+
+.waterfall-bar.source-stored,
+.swatch.source-stored {
+  fill: var(--series-stored);
+  background: var(--series-stored);
+}
+
+.legend {
+  display: flex;
+  gap: 1rem;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-primary);
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+}

@@ -1,0 +1,45 @@
+{
+  "run_id": 7,
+  "n_sims": 2000,
+  "effective_sample": 612,
+  "low_sample": true,
+  "method": "conditioning: the simulated seasons in which these results happened",
+  "rows": [
+    {
+      "team_id": 102,
+      "school": "Brookvale",
+      "conference": "Atlantic",
+      "p_in_cfp": 0.91,
+      "p_champion": 0.15166666666666667,
+      "base_p_in_cfp": 0.8123,
+      "base_p_champion": 0.13538333333333333,
+      "delta_p_in_cfp": 0.09770000000000001,
+      "delta_p_champion": 0.016283333333333334,
+      "low_sample": true
+    },
+    {
+      "team_id": 101,
+      "school": "Ashford",
+      "conference": "Atlantic",
+      "p_in_cfp": 0.55,
+      "p_champion": 0.09166666666666667,
+      "base_p_in_cfp": 0.6211,
+      "base_p_champion": 0.10351666666666666,
+      "delta_p_in_cfp": -0.07109999999999994,
+      "delta_p_champion": -0.01184999999999999,
+      "low_sample": true
+    },
+    {
+      "team_id": 103,
+      "school": "Carlton",
+      "conference": "Lakes",
+      "p_in_cfp": 0.34,
+      "p_champion": 0.05666666666666667,
+      "base_p_in_cfp": 0.3402,
+      "base_p_champion": 0.0567,
+      "delta_p_in_cfp": -0.00019999999999997797,
+      "delta_p_champion": -0.00003333333333332966,
+      "low_sample": true
+    }
+  ]
+}

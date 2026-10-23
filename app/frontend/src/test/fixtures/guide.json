@@ -1,0 +1,46 @@
+{
+  "run_id": 31,
+  "team_id": 102,
+  "conditional": false,
+  "message": null,
+  "top": [
+    {
+      "game_id": 9003,
+      "season": 2026,
+      "week_seq": 12,
+      "is_next_week": false,
+      "guide_rank": 1,
+      "next_week_rank": null,
+      "home_team_id": 101,
+      "home_school": "Ashford",
+      "away_team_id": 102,
+      "away_school": "Brookvale",
+      "root_for_team_id": 102,
+      "root_for_school": "Brookvale",
+      "p_if_home_win": 0.7,
+      "p_if_away_win": 0.93,
+      "leverage": 0.23,
+      "low_sample": false
+    }
+  ],
+  "coming_week": [
+    {
+      "game_id": 9001,
+      "season": 2026,
+      "week_seq": 10,
+      "is_next_week": true,
+      "guide_rank": 4,
+      "next_week_rank": 1,
+      "home_team_id": 103,
+      "home_school": "Carlton",
+      "away_team_id": 104,
+      "away_school": "Dunmore",
+      "root_for_team_id": 104,
+      "root_for_school": "Dunmore",
+      "p_if_home_win": 0.77,
+      "p_if_away_win": 0.85,
+      "leverage": 0.08,
+      "low_sample": false
+    }
+  ]
+}

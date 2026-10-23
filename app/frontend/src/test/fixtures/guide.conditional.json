@@ -1,0 +1,27 @@
+{
+  "run_id": 7,
+  "team_id": 102,
+  "conditional": true,
+  "message": null,
+  "top": [],
+  "coming_week": [
+    {
+      "game_id": 9002,
+      "season": 2026,
+      "week_seq": 10,
+      "is_next_week": true,
+      "guide_rank": null,
+      "next_week_rank": 1,
+      "home_team_id": 105,
+      "home_school": "Eastgate",
+      "away_team_id": 106,
+      "away_school": "Fairhaven",
+      "root_for_team_id": 106,
+      "root_for_school": "Fairhaven",
+      "p_if_home_win": 0.8,
+      "p_if_away_win": 0.88,
+      "leverage": 0.08,
+      "low_sample": false
+    }
+  ]
+}

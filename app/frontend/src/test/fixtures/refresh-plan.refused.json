@@ -1,0 +1,45 @@
+{
+  "target": {
+    "season": 2026,
+    "week": 10,
+    "season_type": "regular"
+  },
+  "mode": "LIVE",
+  "can_run": false,
+  "reasons": [
+    "a refresh is already running (run 40)"
+  ],
+  "estimate": {
+    "total_calls": 4,
+    "per_table": {
+      "GAMES": 4
+    }
+  },
+  "needs_confirmation": true,
+  "plus_retries": true,
+  "quota": null,
+  "ledger": {
+    "on": true,
+    "plan": "app",
+    "plan_cap": 20,
+    "plan_room": 20,
+    "month": "2026-10",
+    "month_cap": 20,
+    "month_room": 20
+  },
+  "running": [
+    {
+      "run_id": 40,
+      "run_kind": "REFRESH_WEEK",
+      "started_at": "2026-10-23T09:05:00Z"
+    }
+  ],
+  "week": {
+    "games": 62,
+    "completed": 62,
+    "not_kicked_off": 0,
+    "point_will_move": true,
+    "message": "week 10 is complete"
+  },
+  "dev_blocks_live": true
+}

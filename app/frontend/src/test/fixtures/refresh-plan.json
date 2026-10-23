@@ -1,0 +1,38 @@
+{
+  "target": {
+    "season": 2026,
+    "week": 10,
+    "season_type": "regular"
+  },
+  "mode": "REPLAY",
+  "can_run": true,
+  "reasons": [],
+  "estimate": {
+    "total_calls": 0,
+    "per_table": {
+      "GAMES": 0,
+      "TEAMS": 0
+    }
+  },
+  "needs_confirmation": false,
+  "plus_retries": false,
+  "quota": null,
+  "ledger": {
+    "on": true,
+    "plan": "app",
+    "plan_cap": 20,
+    "plan_room": 20,
+    "month": "2026-10",
+    "month_cap": 20,
+    "month_room": 20
+  },
+  "running": [],
+  "week": {
+    "games": 62,
+    "completed": 62,
+    "not_kicked_off": 0,
+    "point_will_move": true,
+    "message": "week 10 is complete: the point will move to week 10"
+  },
+  "dev_blocks_live": false
+}

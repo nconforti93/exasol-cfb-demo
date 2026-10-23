@@ -1,0 +1,21 @@
+{
+  "action_id": "a-0002",
+  "kind": "refresh",
+  "state": "FAILED",
+  "run_id": 42,
+  "started_at": "2026-10-23T09:12:00Z",
+  "ended_at": "2026-10-23T09:12:05Z",
+  "error": "step PUBLISH failed: simulated failure",
+  "calls_spent": 0,
+  "point_before": {
+    "season": 2026,
+    "week_seq": 9,
+    "label": "2026, after week 9"
+  },
+  "point_after": {
+    "season": 2026,
+    "week_seq": 9,
+    "label": "2026, after week 9"
+  },
+  "point_message": "the point stayed at week 9"
+}

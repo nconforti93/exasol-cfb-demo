@@ -1,0 +1,48 @@
+{
+  "run": {
+    "run_id": 7,
+    "season": 2026,
+    "as_of_week_seq": 9,
+    "as_of_label": "2026, after week 9",
+    "n_sims": 2000
+  },
+  "games": [
+    {
+      "game_id": 9001,
+      "season": 2026,
+      "week_seq": 10,
+      "is_next_week": true,
+      "start_at": "2026-11-07T17:00:00Z",
+      "home_team_id": 103,
+      "home_school": "Carlton",
+      "away_team_id": 104,
+      "away_school": "Dunmore",
+      "home_win_prob": 0.55
+    },
+    {
+      "game_id": 9002,
+      "season": 2026,
+      "week_seq": 10,
+      "is_next_week": true,
+      "start_at": "2026-11-07T17:00:00Z",
+      "home_team_id": 105,
+      "home_school": "Eastgate",
+      "away_team_id": 106,
+      "away_school": "Fairhaven",
+      "home_win_prob": 0.62
+    },
+    {
+      "game_id": 9003,
+      "season": 2026,
+      "week_seq": 12,
+      "is_next_week": false,
+      "start_at": "2026-11-07T17:00:00Z",
+      "home_team_id": 101,
+      "home_school": "Ashford",
+      "away_team_id": 102,
+      "away_school": "Brookvale",
+      "home_win_prob": 0.41
+    }
+  ],
+  "max_conditions": 16
+}

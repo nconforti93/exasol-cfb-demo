@@ -1,0 +1,89 @@
+{
+  "point": {
+    "season": 2026,
+    "week_seq": 10,
+    "next_week_seq": 10,
+    "label": "2026, after week 10",
+    "is_current": true
+  },
+  "notice": null,
+  "population": "FBS_INVOLVED",
+  "week": [
+    {
+      "population": "FBS_INVOLVED",
+      "freeze_kind": "IN_ADVANCE",
+      "is_headline": true,
+      "games_graded": 50,
+      "record_label": "41–9",
+      "pick_accuracy": 0.82,
+      "brier": 0.151,
+      "mae_margin": 10.4,
+      "line_correct": 39,
+      "line_wrong": 11,
+      "line_brier": 0.143,
+      "model_brier_on_line_games": 0.153
+    },
+    {
+      "population": "FBS_INVOLVED",
+      "freeze_kind": "ALL",
+      "is_headline": false,
+      "games_graded": 50,
+      "record_label": "44–12",
+      "pick_accuracy": 0.82,
+      "brier": 0.151,
+      "mae_margin": 10.4,
+      "line_correct": 39,
+      "line_wrong": 11,
+      "line_brier": 0.143,
+      "model_brier_on_line_games": 0.153
+    }
+  ],
+  "season": [
+    {
+      "population": "FBS_INVOLVED",
+      "freeze_kind": "IN_ADVANCE",
+      "is_headline": true,
+      "games_graded": 50,
+      "record_label": "240–80",
+      "pick_accuracy": 0.82,
+      "brier": 0.151,
+      "mae_margin": 10.4,
+      "line_correct": 39,
+      "line_wrong": 11,
+      "line_brier": 0.143,
+      "model_brier_on_line_games": 0.153
+    }
+  ],
+  "calibration": [
+    {
+      "bucket": 0,
+      "games_graded": 10,
+      "mean_pick_win_prob": 0.1,
+      "pick_win_share": 0.060000000000000005
+    },
+    {
+      "bucket": 1,
+      "games_graded": 11,
+      "mean_pick_win_prob": 0.3,
+      "pick_win_share": 0.35
+    },
+    {
+      "bucket": 2,
+      "games_graded": 12,
+      "mean_pick_win_prob": 0.5,
+      "pick_win_share": 0.46
+    },
+    {
+      "bucket": 3,
+      "games_graded": 13,
+      "mean_pick_win_prob": 0.7,
+      "pick_win_share": 0.75
+    },
+    {
+      "bucket": 4,
+      "games_graded": 14,
+      "mean_pick_win_prob": 0.9,
+      "pick_win_share": 0.86
+    }
+  ]
+}
