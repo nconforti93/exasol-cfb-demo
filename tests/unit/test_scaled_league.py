@@ -11,7 +11,7 @@ from tests.synthetic import fake
 from tests.synthetic import scaled_league as sl
 from tests.synthetic.league import FETCHED_2026, FETCHED_EARLY, season_key
 from tests.synthetic.rules import detect_championships
-from tests.synthetic.seed_sql import championship_ranges
+from tests.synthetic.seed_sql import championship_ranges, power_conferences
 from tests.synthetic.slices import Slice, mirror_columns, slice_rows
 
 Row = dict[str, Any]
@@ -240,7 +240,7 @@ def test_conference_championship_games_exist_only_inside_the_seeded_seasons() ->
     seeded = championship_ranges()
     for season, expected_conferences in ((1985, 0), (1995, 1), (2012, 6), (2024, 9)):
         rows = games_of(season)
-        found = detect_championships(rows, seeded)
+        found = detect_championships(rows, seeded, power_conferences)
         assert len(found) == expected_conferences, (season, len(found))
         for row in rows:
             if row["ID"] in found:
@@ -250,7 +250,7 @@ def test_conference_championship_games_exist_only_inside_the_seeded_seasons() ->
 
 def test_the_championship_game_is_alone_in_its_week_for_each_seeded_conference() -> None:
     rows = games_of(2024)
-    found = detect_championships(rows, championship_ranges())
+    found = detect_championships(rows, championship_ranges(), power_conferences)
     weeks = {r["WEEK"] for r in rows if r["ID"] in found}
     assert weeks == {13}
 

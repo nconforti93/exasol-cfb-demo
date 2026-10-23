@@ -4,7 +4,8 @@ Proves what the unit tests can only fake: the transaction, the compile pass, the
 orphan drop and the run lock of `vs/host/sqlobjects.py` / `model/deploy.py`; seeding the synthetic
 league by CSV import (types, NULLs, booleans, the loader's views over it); the replay recordings;
 `hold_run_lock`; and the `PERF_` namespace without a virtual schema. The deploy scenarios of the
-specs on fixture directories are task 2.5; the model objects have their own test files.
+specs run on the fixture directories of `tests/it/fixtures/model_sql/` (`valid`, `later_file`,
+`db_error`, `orphan`, `lint_errors`); the model objects have their own test files.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import pytest
 from loader.runlock import RunLockRefused
 from model import deploy as model_deploy
 from tests.it import model_support
-from tests.it.harness import Harness
+from tests.it.harness import SYS, Harness, Mock
 from tests.synthetic import league as league_module
 from tests.synthetic import scaled_league
 from tests.synthetic.league import League
@@ -30,6 +31,9 @@ from vs.host.namespace import Namespace
 
 PLAN_VARIANT = "model"
 pytestmark = pytest.mark.it
+
+FIXTURES = Path(__file__).parent / "fixtures" / "model_sql"
+ALLOWED_META_OBJECTS = frozenset({"LOAD_PLAN", "LOAD_PLAN_GAPS", "LOAD_SLICES"})
 
 SEEDS = {
     "ERA": "010_era.sql",
@@ -49,16 +53,6 @@ CREATE OR REPLACE TABLE {MODEL_SCHEMA}.KEYED (
 
 INSERT INTO {MODEL_SCHEMA}.KEYED VALUES (1, 'a'), (2, 'b');
 """
-
-VIEW_OVER_TABLE = """\
-CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.KEYED_VIEW (
-  K COMMENT IS 'Key',
-  V COMMENT IS 'Value'
-) AS
-SELECT "K", "V" FROM {MODEL_SCHEMA}."KEYED"
-COMMENT IS 'One row per key of the table.';
-"""
-
 
 KEYED_AS_VIEW = """\
 CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.KEYED (
@@ -90,6 +84,69 @@ def model_objects(harness: Harness) -> dict[str, str]:
         f"WHERE ROOT_NAME = '{harness.model}' ORDER BY OBJECT_NAME"
     )
     return {str(name): str(kind) for name, kind in rows}
+
+
+def fixture_directory(name: str) -> Path:
+    return FIXTURES / name
+
+
+def copy_fixture(name: str, destination: Path, *, without: tuple[str, ...] = ()) -> Path:
+    destination.mkdir(parents=True)
+    for file in fixture_directory(name).glob("*.sql"):
+        if file.name not in without:
+            (destination / file.name).write_text(file.read_text(encoding="utf-8"), encoding="utf-8")
+    return destination
+
+
+def counted_report_line(harness: Harness) -> str:
+    """The `DETAIL` the DEPLOY run of the deployed `sql/model/` carries."""
+    kinds = list(model_objects(harness).values())
+    return (
+        f"{harness.model}: {kinds.count('TABLE')} tables, {kinds.count('VIEW')} views, "
+        f"{kinds.count('FUNCTION')} functions"
+    )
+
+
+def model_state(harness: Harness) -> dict[str, Any]:
+    """Everything a deploy can change: objects, comments, columns with comments, view texts and
+    the rows of every table of the model schema."""
+    schema = harness.model
+    objects = harness.query(
+        "SELECT OBJECT_NAME, OBJECT_TYPE, OBJECT_COMMENT FROM EXA_ALL_OBJECTS "
+        f"WHERE ROOT_NAME = '{schema}' ORDER BY OBJECT_NAME"
+    )
+    columns = harness.query(
+        "SELECT COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE, COLUMN_COMMENT, STATUS "
+        "FROM EXA_ALL_COLUMNS "
+        f"WHERE COLUMN_SCHEMA = '{schema}' ORDER BY COLUMN_TABLE, COLUMN_ORDINAL_POSITION"
+    )
+    views = harness.query(
+        f"SELECT VIEW_NAME, VIEW_TEXT FROM EXA_ALL_VIEWS WHERE VIEW_SCHEMA = '{schema}' "
+        "ORDER BY VIEW_NAME"
+    )
+    rows = {
+        str(name): sorted(
+            (
+                tuple(plain(cell) for cell in row)
+                for row in harness.query(f"SELECT * FROM {schema}.{name}")
+            ),
+            key=repr,
+        )
+        for name, kind, _ in objects
+        if kind == "TABLE"
+    }
+    return {"objects": objects, "columns": columns, "views": views, "rows": rows}
+
+
+def model_dependencies(harness: Harness) -> list[tuple[str, str, str, str]]:
+    return [
+        (str(a), str(b), str(c), str(d))
+        for a, b, c, d in harness.query(
+            "SELECT OBJECT_NAME, REFERENCED_OBJECT_SCHEMA, REFERENCED_OBJECT_NAME, "
+            "REFERENCED_OBJECT_TYPE FROM EXA_ALL_DEPENDENCIES "
+            f"WHERE OBJECT_SCHEMA = '{harness.model}' AND OBJECT_TYPE = 'VIEW' ORDER BY 1, 2, 3"
+        )
+    ]
 
 
 @pytest.fixture(autouse=True)
@@ -138,70 +195,81 @@ def test_a_second_deploy_keeps_the_same_rows_without_duplicates(harness: Harness
     assert report.objects.dropped == ()
 
 
-def test_a_view_over_a_table_deploys_compiles_and_survives_the_tables_replacement(
-    harness: Harness, tmp_path: Path
+def test_a_valid_directory_deploys_and_a_second_deploy_changes_nothing(
+    harness: Harness,
 ) -> None:
-    folder = write(
-        tmp_path / "m", {"100_keyed.sql": GOOD_TABLE, "200_keyed_view.sql": VIEW_OVER_TABLE}
-    )
+    folder = fixture_directory("valid")
     harness.deploy_model(folder)
-    harness.deploy_model(folder)
-    assert harness.query(f"SELECT K, V FROM {harness.model}.KEYED_VIEW ORDER BY K") == [
-        (1, "a"),
-        (2, "b"),
+    first = model_state(harness)
+    assert harness.query(f"SELECT K, DOUBLE_K FROM {harness.model}.KEYED_VIEW ORDER BY K") == [
+        (1, 2),
+        (2, 4),
+        (3, 6),
     ]
-    status = harness.query(
-        "SELECT DISTINCT STATUS FROM EXA_ALL_COLUMNS "
-        f"WHERE COLUMN_SCHEMA = '{harness.model}' AND COLUMN_TABLE = 'KEYED_VIEW'"
-    )
-    assert status == [(None,)]
+    assert {name: kind for name, kind, _ in first["objects"]} == {
+        "KEYED": "TABLE",
+        "DOUBLE_IT": "FUNCTION",
+        "KEYED_VIEW": "VIEW",
+    }
+    assert {status for *_, status in first["columns"]} == {None}
+    assert [(c[1], c[3]) for c in first["columns"] if c[0] == "KEYED_VIEW"] == [
+        ("K", "Key of the row"),
+        ("DOUBLE_K", "Twice the key"),
+    ]
+    harness.deploy_model(folder)
+    assert model_state(harness) == first
+    assert first["rows"] == {"KEYED": [(1, "a"), (2, "b"), (3, None)]}
 
 
 def test_a_view_in_an_earlier_file_may_read_a_later_one(harness: Harness, tmp_path: Path) -> None:
-    folder = write(
-        tmp_path / "m", {"100_keyed_view.sql": VIEW_OVER_TABLE, "200_keyed.sql": GOOD_TABLE}
-    )
-    harness.deploy_model(folder)
-    assert harness.query(f"SELECT COUNT(*) FROM {harness.model}.KEYED_VIEW") == [(2,)]
+    harness.deploy_model(fixture_directory("later_file"))
+    assert harness.query(f"SELECT K, V FROM {harness.model}.VIEW_A ORDER BY K") == [
+        (1, "A"),
+        (2, "B"),
+    ]
+    assert harness.query(f"SELECT COUNT(*) FROM {harness.model}.VIEW_B") == [(2,)]
     comments = harness.query(
-        "SELECT COLUMN_NAME, COLUMN_COMMENT FROM EXA_ALL_COLUMNS "
-        f"WHERE COLUMN_SCHEMA = '{harness.model}' AND COLUMN_TABLE = 'KEYED_VIEW' "
-        "ORDER BY COLUMN_ORDINAL_POSITION"
+        "SELECT COLUMN_TABLE, COLUMN_NAME, COLUMN_COMMENT FROM EXA_ALL_COLUMNS "
+        f"WHERE COLUMN_SCHEMA = '{harness.model}' AND COLUMN_TABLE LIKE 'VIEW_%' "
+        "ORDER BY COLUMN_TABLE, COLUMN_ORDINAL_POSITION"
     )
-    assert comments == [("K", "Key"), ("V", "Value")]
+    assert comments == [
+        ("VIEW_A", "K", "Key of the row"),
+        ("VIEW_A", "V", "Value of the row, upper case"),
+        ("VIEW_B", "K", "Key of the row"),
+        ("VIEW_B", "V", "Value of the row"),
+    ]
+    assert harness.query(
+        "SELECT REFERENCED_OBJECT_NAME FROM EXA_ALL_DEPENDENCIES "
+        f"WHERE OBJECT_SCHEMA = '{harness.model}' AND OBJECT_NAME = 'VIEW_A'"
+    ) == [("VIEW_B",)]
 
 
 def test_a_view_that_only_fails_at_its_first_query_fails_the_deploy_and_changes_nothing(
-    harness: Harness, tmp_path: Path
+    harness: Harness,
 ) -> None:
     harness.deploy_model()
-    before = model_objects(harness)
-    rows_before = harness.query(f"SELECT COUNT(*) FROM {harness.model}.ERA")
-    folder = write(
-        tmp_path / "m",
-        {
-            "100_keyed.sql": GOOD_TABLE,
-            "200_broken_view.sql": VIEW_OVER_TABLE.replace("KEYED_VIEW", "BROKEN_VIEW").replace(
-                'SELECT "K", "V"', 'SELECT "K", "NO_SUCH_COLUMN"'
-            ),
-        },
-    )
-    with pytest.raises(DeployError, match=r"compile 200_broken_view\.sql: VIEW BROKEN_VIEW"):
-        harness.deploy_model(folder)
-    assert model_objects(harness) == before
-    assert harness.query(f"SELECT COUNT(*) FROM {harness.model}.ERA") == rows_before
-    assert "KEYED" not in model_objects(harness)
+    before = model_state(harness)
+    with pytest.raises(
+        DeployError, match=r"compile 300_third_view\.sql: VIEW THIRD_VIEW: .*NO_SUCH_COLUMN"
+    ):
+        harness.deploy_model(fixture_directory("db_error"))
+    assert model_state(harness) == before
+    assert not {"FIRST_VIEW", "SECOND_VIEW", "THIRD_VIEW"} & set(model_objects(harness))
+    assert harness.runs()[-1]["RUN_STATUS"] == "FAILED"
 
 
 def test_objects_that_no_file_defines_are_dropped(harness: Harness, tmp_path: Path) -> None:
-    folder = write(
-        tmp_path / "m", {"100_keyed.sql": GOOD_TABLE, "200_keyed_view.sql": VIEW_OVER_TABLE}
-    )
-    harness.deploy_model(folder)
-    assert {"KEYED", "KEYED_VIEW"} <= set(model_objects(harness))
-    report = harness.deploy_model()
-    assert {"TABLE KEYED", "VIEW KEYED_VIEW"} <= set(report.objects.dropped)
-    assert not {"KEYED", "KEYED_VIEW"} & set(model_objects(harness))
+    harness.deploy_model(fixture_directory("orphan"))
+    assert {"KEPT", "OLD_VIEW"} <= set(model_objects(harness))
+    smaller = copy_fixture("orphan", tmp_path / "m", without=("200_old_view.sql",))
+    report = harness.deploy_model(smaller)
+    assert "VIEW OLD_VIEW" in report.objects.dropped
+    assert "OLD_VIEW" not in model_objects(harness)
+    assert "dropped: VIEW OLD_VIEW" in "\n".join(report.lines)
+    assert harness.query(f"SELECT COUNT(*) FROM {harness.model}.KEPT") == [(1,)]
+    harness.deploy_model()
+    assert "KEPT" not in model_objects(harness)
 
 
 def test_an_object_that_changes_its_kind_is_replaced(harness: Harness, tmp_path: Path) -> None:
@@ -213,12 +281,23 @@ def test_an_object_that_changes_its_kind_is_replaced(harness: Harness, tmp_path:
     assert model_objects(harness)["KEYED"] == "VIEW"
 
 
-def test_a_lint_problem_sends_nothing(harness: Harness, tmp_path: Path) -> None:
-    harness.deploy_model()
-    folder = write(tmp_path / "m", {"100_bad.sql": GOOD_TABLE.replace("One row per key", "Keys")})
-    with pytest.raises(model_deploy.ModelLintError, match="nothing was sent"):
-        harness.deploy_model(folder)
-    assert "KEYED" not in model_objects(harness)
+def test_lint_problems_are_listed_one_per_rule_and_nothing_is_sent(harness: Harness) -> None:
+    harness.deploy_model(fixture_directory("valid"))
+    before = model_state(harness)
+    runs_before = harness.runs()
+    with pytest.raises(model_deploy.ModelLintError, match="nothing was sent") as caught:
+        harness.deploy_model(fixture_directory("lint_errors"))
+    problems = caught.value.problems
+    assert [problem.split(": ")[:3] for problem in problems] == [
+        ["100_game_a.sql", "GAME_A", "comment"],
+        ["110_b.sql", "B", "grain"],
+        ["120_c.sql", "C", "reserved-word"],
+        ["130_game_list.sql", "game_list", "ddl-name"],
+        ["140_d.sql", "D", "reference"],
+    ]
+    assert model_state(harness) == before
+    assert harness.runs() == runs_before
+    assert not {"GAME_A", "B", "C", "D"} & set(model_objects(harness))
 
 
 def test_a_deploy_is_refused_while_a_loader_run_holds_the_lock(harness: Harness) -> None:
@@ -240,7 +319,7 @@ def test_a_deploy_is_refused_while_a_loader_run_holds_the_lock(harness: Harness)
         ("DEPLOY", "DONE"),
     ]
     assert runs[-1]["RUN_ARGS"] == "make model"
-    assert runs[-1]["DETAIL"].startswith(f"{harness.model}: 7 tables, 0 views, 0 functions")
+    assert runs[-1]["DETAIL"].startswith(counted_report_line(harness))
 
 
 def test_the_deploy_run_is_logged_failed_when_the_deploy_fails(
@@ -254,6 +333,36 @@ def test_the_deploy_run_is_logged_failed_when_the_deploy_fails(
     last = harness.runs()[-1]
     assert (last["RUN_KIND"], last["RUN_STATUS"]) == ("DEPLOY", "FAILED")
     assert "100_keyed.sql" in last["DETAIL"]
+
+
+def test_the_model_never_reads_the_virtual_schema(harness: Harness, mock: Mock) -> None:
+    harness.ensure_model()
+    harness.seed_league()
+    harness.set_property("FETCH_MODE", "live")
+    fetches = harness.query(f"SELECT COUNT(*) FROM {harness.meta}.FETCH_LOG")
+    views = [
+        str(name)
+        for (name,) in harness.query(
+            f"SELECT VIEW_NAME FROM EXA_ALL_VIEWS WHERE VIEW_SCHEMA = '{harness.model}' "
+            "ORDER BY VIEW_NAME"
+        )
+    ]
+    assert views
+    for view in views:
+        harness.query(f"SELECT * FROM {harness.model}.{view}")
+    assert harness.mock_hits() == 0
+    assert harness.query(f"SELECT COUNT(*) FROM {harness.meta}.FETCH_LOG") == fetches
+    allowed_schemas = {harness.model, harness.core, harness.meta}
+    for view, schema, name, _kind in model_dependencies(harness):
+        assert schema in allowed_schemas, (view, schema, name)
+        if schema == harness.meta:
+            assert name in ALLOWED_META_OBJECTS, (view, name)
+    reached = harness.query(
+        "SELECT DISTINCT REFERENCED_OBJECT_SCHEMA FROM EXA_DBA_DEPENDENCIES_RECURSIVE "
+        f"WHERE OBJECT_SCHEMA = '{harness.model}' AND OBJECT_TYPE = 'VIEW'",
+        user=SYS,
+    )
+    assert harness.vs not in {str(schema) for (schema,) in reached}
 
 
 # --- the league -----------------------------------------------------------------------------

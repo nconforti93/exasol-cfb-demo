@@ -14,6 +14,7 @@ from tests.synthetic.league import (
     FETCHED_2026,
     FETCHED_2026_RANKINGS,
     FETCHED_EARLY,
+    FETCHED_LATER,
     STORED_SEASONS,
     League,
     base_league,
@@ -57,6 +58,13 @@ def games(tables: dict[str, list[Row]], season: int) -> list[Row]:
 def game(league: League, tables: dict[str, list[Row]], name: str) -> Row:
     identifier = league.game_id(name)
     return next(row for row in tables["GAMES"] if row["ID"] == identifier)
+
+
+def base_lines(league: League) -> list[Row]:
+    return [
+        dict(zip(mirror_columns("METRICS_WP_PREGAME"), r, strict=True))
+        for r in league.rows("METRICS_WP_PREGAME")
+    ]
 
 
 def fbs_pairs(rows: list[Row]) -> list[Row]:
@@ -519,12 +527,45 @@ def test_the_team_list_shows_current_conferences(tables: dict[str, list[Row]]) -
 def test_the_rule_finds_exactly_the_intended_championship_games(
     league: League, tables: dict[str, list[Row]]
 ) -> None:
-    detected = detect_championships(tables["GAMES"], championship_ranges())
+    detected = detect_championships(tables["GAMES"], championship_ranges(), power_conferences)
     expected = {
         league.game_id(name)
-        for name in ("sec_championship_2014", "aac_championship_2023", "sec_championship_2024")
+        for name in (
+            "sec_championship_2014",
+            "aac_championship_2023",
+            "sec_championship_2024",
+            "sec_championship_2025",
+            "aac_championship_2025",
+        )
     }
     assert detected == expected
+
+
+def test_a_flagged_conference_game_after_the_power_championship_week_is_not_a_championship(
+    league: League, tables: dict[str, list[Row]]
+) -> None:
+    """The stored 2026 Army-Navy shape (cross-plan X1): an American Athletic game flagged as a
+    conference game, alone in the week after the power conferences' championship week."""
+    rows = games(tables, 2025)
+    late = game(league, tables, "aac_week15_2025")
+    assert late["CONFERENCE_GAME"] and late["WEEK"] == 15
+    assert late["HOME_CONFERENCE"] == late["AWAY_CONFERENCE"] == "American Athletic"
+    aac = Counter(
+        r["WEEK"]
+        for r in rows
+        if r["CONFERENCE_GAME"] and r["HOME_CONFERENCE"] == "American Athletic"
+    )
+    sec = Counter(r["WEEK"] for r in rows if r["CONFERENCE_GAME"] and r["HOME_CONFERENCE"] == "SEC")
+    assert aac == {13: 2, 14: 1, 15: 1}
+    assert sec == {13: 2, 14: 1}
+    limited = detect_championships(rows, championship_ranges(), power_conferences)
+    assert limited == {
+        league.game_id("sec_championship_2025"),
+        league.game_id("aac_championship_2025"),
+    }
+    unlimited = detect_championships(rows, championship_ranges(), lambda season: set())
+    assert league.game_id("aac_week15_2025") in unlimited
+    assert league.game_id("aac_championship_2025") not in unlimited
 
 
 def test_the_missed_the_no_championship_and_the_non_conference_cases_exist(
@@ -713,7 +754,11 @@ def test_the_base_league_has_no_duplicates_and_the_variant_adds_them(league: Lea
         dict(zip(mirror_columns("METRICS_WP_PREGAME"), r, strict=True))
         for r in changed.rows("METRICS_WP_PREGAME")
     ]
-    assert [r["SPREAD"] for r in lines if r["GAME_ID"] == target] == [-3.5]
+    assert sorted((r["REQ_AT"], r["SPREAD"]) for r in lines if r["GAME_ID"] == target) == [
+        (FETCHED_2026, -3.0),
+        (FETCHED_LATER, -3.5),
+    ]
+    assert not [r for r in base_lines(league) if r["GAME_ID"] == target]
     sp = [
         dict(zip(mirror_columns("RATINGS_SP"), r, strict=True)) for r in changed.rows("RATINGS_SP")
     ]

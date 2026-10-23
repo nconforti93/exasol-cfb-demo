@@ -15,6 +15,12 @@ Every table and view comment starts with its grain, "One row per ...". `Reads` l
 | `POLL` | table | `014_poll.sql` | One row per CFBD poll name: its code, the first season with data, the label lead in weeks and whether its final ranking comes before the postseason |
 | `DATASET` | table | `015_dataset.sql` | One row per CFBD dataset: how it is stored or fetched, its declared seasons and gaps, and how its coverage is measured |
 | `CLASSIFICATION_TRANSITION` | table | `016_classification_transition.sql` | One row per team (CFBD school name) and season range whose classification differs from the code CFBD records on its games |
+| `GREAT_CIRCLE_KM` | function | `020_great_circle_km.sql` | Great-circle (haversine) distance in kilometres between two WGS 84 points given as latitude and longitude in degrees, on a sphere with the mean Earth radius of 6,371.0088 km |
+| `CONFERENCE_CHAMPIONSHIP_GAME` | view | `090_conference_championship_game.sql` | One row per detected conference championship game |
+| `GAME` | view | `100_game.sql` | One row per game of CFB_CORE.GAMES (1869 on), deduplicated by game id with the newest fetch winning: keys and week sequence, teams with the conference and classification of the game, site and conference flags, the result (completed games only), CFBD Elo, the pregame line from 2013 as fixed-scale DECIMAL, the postseason kind and CFP round, the detected conference championship flag, PARTICIPANTS_RULE (when the teams were known, which the as-of views use to hide result-dependent games) and coverage flags that say which facts the row has |
+| `SEASON_WEEK` | view | `110_season_week.sql` | One row per season, season type and week that has games or a stored calendar week (regular and postseason only) |
+| `SEASON` | view | `120_season.sql` | One row per season from 1869 to the newest season with stored games, including seasons without games (a gap such as 1871 has HAS_GAMES FALSE) |
+| `VENUE` | view | `130_venue.sql` | One row per venue, as CFBD stored it in CFB_CORE.VENUES (newest fetch wins) |
 
 ## ERA
 
@@ -120,3 +126,180 @@ One row per team (CFBD school name) and season range whose classification differ
 | `LAST_SEASON` | Last season of the range; ranges of one team do not overlap |
 | `CLASSIFICATION` | Classification the team had in the range: fbs, fcs, ii or iii |
 | `NOTE` | Why the row exists, for example the transition seasons of a move up to FBS |
+
+## GREAT_CIRCLE_KM
+
+*Function, `sql/model/020_great_circle_km.sql`.*
+
+Great-circle (haversine) distance in kilometres between two WGS 84 points given as latitude and longitude in degrees, on a sphere with the mean Earth radius of 6,371.0088 km. Arguments are LAT1, LON1, LAT2, LON2. NULL when any argument is NULL. Use it instead of ST_DISTANCE, which on SRID 4326 returns planar degrees.
+
+Signature: `GREAT_CIRCLE_KM (LAT1 IN DOUBLE, LON1 IN DOUBLE, LAT2 IN DOUBLE, LON2 IN DOUBLE) RETURN DOUBLE`
+
+## CONFERENCE_CHAMPIONSHIP_GAME
+
+*View, `sql/model/090_conference_championship_game.sql`.*
+
+One row per detected conference championship game. CFBD does not mark these games: inside a season range of conference C in CONFERENCE_CHAMPIONSHIP, a game is detected when it is a regular-season game between two teams recorded in C on the game, flagged as a conference game, played no later than the season's POWER_CHAMPIONSHIP_WEEK, C's only such game in its week, and that week is C's last week with such a game up to that limit. So a conference without a championship game in the season, a game not flagged as a conference game (Army-Navy in 2024) and a flagged game after the power conferences' championship week (Army-Navy in 2026) are never detected. The NOTES text is a cross-check only (MODEL_CHECKS: CONF_CHAMPIONSHIP_NOTES_MISMATCH, CONF_CHAMPIONSHIP_MISSING). Only FBS conferences are seeded; champions of conferences without a championship game come from the standings (Phase 4).
+
+Reads: `CFB_CORE.GAMES`, `CFB_MODEL.CONFERENCE_TIER`, `CFB_MODEL.CONFERENCE_CHAMPIONSHIP`
+
+| Column | Comment |
+|---|---|
+| `GAME_ID` | CFBD game id (GAME.GAME_ID) |
+| `SEASON` | Season of the game |
+| `CONFERENCE_NAME` | CFBD name of the conference whose championship game it is; both teams are recorded in it on the game |
+| `WEEK` | Regular-season week of the game as CFBD labels it |
+| `WEEK_SEQ` | Week sequence of the game (SEASON_WEEK.WEEK_SEQ); equal to WEEK, because championship games are regular-season games in CFBD |
+| `START_AT` | Kickoff in UTC |
+| `HOME_TEAM_ID` | CFBD team id of the home (first-listed) team |
+| `HOME_TEAM` | CFBD school name of the home team |
+| `AWAY_TEAM_ID` | CFBD team id of the away team |
+| `AWAY_TEAM` | CFBD school name of the away team |
+| `IS_COMPLETED` | TRUE once CFBD reports the game as completed |
+| `WINNER_TEAM_ID` | Team id of the conference champion: the winner of the completed game; NULL while it is not played or after a tie |
+| `NOTES` | CFBD notes of the game as stored, for example SEC Championship; a cross-check only, MODEL_CHECKS warns when notes and detection disagree |
+| `POWER_CHAMPIONSHIP_WEEK` | The season's power-conference championship week: the last regular-season week in which a conference that CONFERENCE_TIER marks as power for the season plays a flagged conference game between two of its teams. Power conferences play no regular conference game after their title games, so once those are stored it is their week, and before that it is their last scheduled week. The rule looks only at weeks up to it; NULL in a season without such a game (before 1998), which has no limit |
+
+## GAME
+
+*View, `sql/model/100_game.sql`.*
+
+One row per game of CFB_CORE.GAMES (1869 on), deduplicated by game id with the newest fetch winning: keys and week sequence, teams with the conference and classification of the game, site and conference flags, the result (completed games only), CFBD Elo, the pregame line from 2013 as fixed-scale DECIMAL, the postseason kind and CFP round, the detected conference championship flag, PARTICIPANTS_RULE (when the teams were known, which the as-of views use to hide result-dependent games) and coverage flags that say which facts the row has. CFBD fits Elo and win probabilities on all seasons, so historic values may embed later methodology. Earlier seasons are fully known; for a state as of a week use GAME_AS_OF.
+
+Reads: `CFB_CORE.GAMES`, `CFB_CORE.METRICS_WP_PREGAME`, `CFB_CORE.VENUES`, `CFB_MODEL.CLASSIFICATION_TRANSITION`, `CFB_MODEL.CONFERENCE_CHAMPIONSHIP_GAME`, `CFB_MODEL.DATASET`
+
+| Column | Comment |
+|---|---|
+| `GAME_ID` | CFBD game id; unique in this view (a game stored more than once appears once, from its newest fetch) |
+| `SEASON` | Season of the game |
+| `SEASON_TYPE` | CFBD season type: regular or postseason; any other type has no week (WEEK_SEQ NULL), which MODEL_CHECKS reports |
+| `WEEK` | Week as CFBD labels it within the season type |
+| `WEEK_SEQ` | Week sequence (SEASON_WEEK.WEEK_SEQ): regular week n = n, postseason week n = 100 + n; NULL for other season types |
+| `START_AT` | Kickoff in UTC as stored; historic games often carry a date with a nominal time |
+| `IS_START_TIME_TBD` | TRUE when CFBD says the kickoff time is not yet set (start time TBD) |
+| `FETCHED_AT` | When the game row shown was fetched from CFBD (REQ_AT, UTC) |
+| `HOME_TEAM_ID` | CFBD team id of the home (first-listed) team; NULL while CFBD lists the game without teams |
+| `HOME_TEAM` | CFBD school name of the home team |
+| `HOME_CONFERENCE` | Conference recorded on the game for the home team (CFBD name); NULL for independents of early eras and placeholders |
+| `HOME_CLASSIFICATION` | Classification of the home team: fbs, fcs, ii or iii. The CLASSIFICATION_TRANSITION row of the team and season if there is one, else the code CFBD records on the game |
+| `AWAY_TEAM_ID` | CFBD team id of the away team; NULL while CFBD lists the game without teams |
+| `AWAY_TEAM` | CFBD school name of the away team |
+| `AWAY_CONFERENCE` | Conference recorded on the game for the away team (CFBD name) |
+| `AWAY_CLASSIFICATION` | Classification of the away team: fbs, fcs, ii or iii, as for HOME_CLASSIFICATION |
+| `HAS_TEAMS` | TRUE when both team ids are set; FALSE for a placeholder that CFBD lists before naming its teams (no TEAM_GAME rows, PARTICIPANTS_RULE FIXED) |
+| `VENUE_ID` | CFBD venue id (VENUE.VENUE_ID) |
+| `VENUE_NAME` | Venue name as recorded on the game |
+| `IS_NEUTRAL_SITE` | CFBD neutralSite: TRUE when neither team plays at home (engine input neutral) |
+| `IS_CONFERENCE_GAME` | CFBD conferenceGame: TRUE when the game counts as a conference game (engine input conf_game). Non-counting games between members, such as Army-Navy in 2024, are FALSE |
+| `IS_COMPLETED` | TRUE once CFBD reports the game as completed |
+| `HOME_POINTS` | Points of the home team; NULL unless the game is completed |
+| `AWAY_POINTS` | Points of the away team; NULL unless the game is completed |
+| `MARGIN` | Home minus away points; NULL without a result |
+| `TOTAL_POINTS` | Home plus away points; NULL without a result |
+| `WINNER_TEAM_ID` | Team id of the winner; NULL without a result or after a tie |
+| `LOSER_TEAM_ID` | Team id of the loser; NULL without a result or after a tie |
+| `IS_TIE` | TRUE when a completed game ended with equal points (possible at the FBS level before 1996), FALSE for any other result, NULL without a result |
+| `HAS_RESULT` | Coverage flag: TRUE when the game is completed with both scores |
+| `HOME_PREGAME_ELO` | CFBD pregame Elo of the home team (integer). CFBD fits its Elo model on all seasons, so historic values may embed later methodology; that is not a fact leak |
+| `AWAY_PREGAME_ELO` | CFBD pregame Elo of the away team (integer) |
+| `HOME_POSTGAME_ELO` | CFBD postgame Elo of the home team (integer); set for completed games |
+| `AWAY_POSTGAME_ELO` | CFBD postgame Elo of the away team (integer); set for completed games |
+| `HAS_ELO` | Coverage flag: TRUE when both pregame Elo values are stored (CFBD has Elo from 1890) |
+| `HOME_POSTGAME_WIN_PROB` | CFBD postgame win probability of the home team, DOUBLE as CFBD reports it (fitted on all seasons, like Elo); not an engine input |
+| `AWAY_POSTGAME_WIN_PROB` | CFBD postgame win probability of the away team, DOUBLE as CFBD reports it |
+| `ATTENDANCE` | Attendance as CFBD reports it |
+| `EXCITEMENT_INDEX` | CFBD excitement index, DOUBLE as CFBD reports it |
+| `PREGAME_SPREAD` | Pregame spread from METRICS_WP_PREGAME, from the home team's side as CFBD reports it (negative when the home team is favored), DECIMAL(6,2); the cast rounds, and an exact binary tie may land one last place off. Historic spreads are closing lines, known only on game day. NULL without a line |
+| `HOME_PREGAME_WIN_PROB` | Pregame win probability of the home team from METRICS_WP_PREGAME, DECIMAL(5,4) (0 to 1); the cast rounds, and an exact binary tie may land one last place off. NULL without a line |
+| `PREGAME_WP_FETCHED_AT` | When the pregame line shown was fetched (REQ_AT, UTC); the as-of views compare it with the cutoff |
+| `HAS_PREGAME_WP` | Coverage flag: TRUE when a pregame line is stored for the game (CFBD has them from 2013 and omits games without a spread) |
+| `POSTSEASON_KIND` | NULL outside the postseason; else CFP (College Football Playoff: CFBD playoff competition cfp), BOWL (any other postseason game with an FBS team) or NON_FBS (postseason game without an FBS team: lower-division playoffs and bowls) |
+| `CFP_ROUND` | CFP games only: CFBD playoff round code, for example firstRound, quarterfinal, semifinal or championship |
+| `CFP_ROUND_NAME` | CFP games only: CFBD name of the round, for example Quarterfinal |
+| `CFP_ROUND_SEQ` | CFP games only: 1 for the season's first CFP round, 2 for the next and so on, ordered by each round's first kickoff |
+| `CFP_HOME_SEED` | CFP games only: playoff seed of the home team |
+| `CFP_AWAY_SEED` | CFP games only: playoff seed of the away team |
+| `BOWL_NAME` | Bowl of a CFP or BOWL game: the playoff bowl name of a CFP game (NULL for a campus game), the CFBD notes of a BOWL game; NULL otherwise |
+| `IS_CONF_CHAMPIONSHIP` | TRUE for a conference championship game detected by CONFERENCE_CHAMPIONSHIP_GAME (CFBD does not mark them) |
+| `PARTICIPANTS_RULE` | When the teams of the game were known (model/as-of hides the game until then): CONF_CHAMPIONSHIP (detected championship games; from the point before their week), SELECTION (BOWL games and the first CFP round; from the last regular week), PREVIOUS_ROUND (later CFP rounds and NON_FBS games; from their own week) or FIXED (every other game, placeholders included; always) |
+| `NOTES` | CFBD notes of the game as stored, for example a bowl name or a championship title; free text |
+| `HAS_LINE_SCORES` | Coverage flag: TRUE when both teams have points per period stored |
+| `HAS_VENUE_LOCATION` | Coverage flag: TRUE when the game's venue has both coordinates in CFB_CORE.VENUES |
+| `INVOLVES_FBS` | Coverage flag: TRUE when at least one team is classified fbs (HOME_CLASSIFICATION, AWAY_CLASSIFICATION) |
+| `IS_FBS_GAME` | Coverage flag: TRUE when both teams are classified fbs |
+| `PLAYS_ACCESS` | Plays are never stored: ON_DEMAND in seasons in which CFBD has plays (DATASET PLAYS, from 2001; fetch them for one game through CFBD_VS.PLAYS) or NOT_AVAILABLE before |
+
+## SEASON_WEEK
+
+*View, `sql/model/110_season_week.sql`.*
+
+One row per season, season type and week that has games or a stored calendar week (regular and postseason only). WEEK_SEQ orders the regular season before the postseason and matches the (season, week, season type) arguments of REFRESH_WEEK. Dates come from the stored calendar when it has the week, else from the kickoffs. IS_DONE says whether the week is over, which decides the current as-of point.
+
+Reads: `CFB_CORE.CALENDAR`, `CFB_MODEL.GAME`
+
+| Column | Comment |
+|---|---|
+| `SEASON` | Season |
+| `SEASON_TYPE` | regular or postseason; the only season types with weeks |
+| `WEEK` | Week as CFBD labels it within the season type |
+| `WEEK_SEQ` | Week sequence: regular week n = n, postseason week n = 100 + n, so the postseason follows the regular season and (season, week, season type) of REFRESH_WEEK maps to one row; 0 is reserved for the preseason point of the as-of helpers |
+| `START_AT` | Start of the week in UTC: the stored calendar's start date when DATES_SOURCE is CALENDAR, else the first kickoff of the week's games |
+| `END_AT` | End of the week in UTC: the stored calendar's end date when DATES_SOURCE is CALENDAR, else the last kickoff of the week's games |
+| `DATES_SOURCE` | Where START_AT and END_AT come from: CALENDAR (CFB_CORE.CALENDAR has the week; stored from 2013) or GAMES (the week's kickoffs) |
+| `FIRST_GAME_AT` | First kickoff of the week in UTC: the calendar's first game start when stored, else the first kickoff of the week's games. The as-of cutoff of the week before (CUTOFF_AT) |
+| `GAME_COUNT` | Number of games of the week in GAME (0 for a calendar week without stored games) |
+| `COMPLETED_GAME_COUNT` | Number of those games that are completed |
+| `GAMES_FETCHED_AT` | When the season's games were last fetched (the newest GAME.FETCHED_AT of the season, UTC); NULL for a season without games |
+| `IS_DONE` | TRUE when the week has games and all of them are completed, or when the season's games were last fetched at least one day after END_AT (so a postponed or cancelled game does not keep a past week open). A week whose Thursday game is played while its Saturday games are not stays open |
+
+## SEASON
+
+*View, `sql/model/120_season.sql`.*
+
+One row per season from 1869 to the newest season with stored games, including seasons without games (a gap such as 1871 has HAS_GAMES FALSE). Each row carries one era per kind from ERA (division structure, postseason format, champion selection, overtime), CFP_TEAMS and TIES_POSSIBLE, the season's game and FBS-team counts, its first and last kickoff, and IS_CURRENT_SEASON for the newest season.
+
+Reads: `CFB_CORE.GAMES`, `CFB_MODEL.GAME`, `CFB_MODEL.ERA`
+
+| Column | Comment |
+|---|---|
+| `SEASON` | Season (the year in which it starts), 1869 to the newest season with stored games |
+| `DIVISION_ERA_CODE` | Division era (ERA kind DIVISION): PRE_NCAA, NCAA_UNDIVIDED, UNIVERSITY_COLLEGE, DIVISION_I_II_III, I_A_I_AA or FBS_FCS |
+| `POSTSEASON_ERA_CODE` | Postseason era (ERA kind POSTSEASON): NO_BOWLS, BOWLS, BOWL_COALITION, BOWL_ALLIANCE, BCS, CFP_4 or CFP_12 |
+| `CHAMPION_ERA_CODE` | How the national champion was decided (ERA kind CHAMPION): SELECTORS, POLLS, BCS_GAME or CFP |
+| `OVERTIME_ERA_CODE` | Overtime era (ERA kind OVERTIME, FBS level): TIES or OVERTIME |
+| `CFP_TEAMS` | Number of teams in the College Football Playoff: 0 before 2014, 4 in 2014-2023, 12 from 2024. The seeding rules of the 12-team playoff (byes for the top conference champions in 2024, straight seeding from 2025) are Phase 4's selection configuration |
+| `TIES_POSSIBLE` | TRUE when a game could end in a tie (the TIES era, before 1996). It describes the FBS level: lower divisions adopted overtime in 1981 |
+| `HAS_GAMES` | TRUE when the season has stored games; FALSE for a gap such as 1871 |
+| `GAME_COUNT` | Number of games of the season in GAME (every division, every season type) |
+| `COMPLETED_GAME_COUNT` | Number of those games that are completed |
+| `FBS_TEAM_COUNT` | Number of teams classified fbs on the season's games (GAME.HOME_CLASSIFICATION, GAME.AWAY_CLASSIFICATION) |
+| `FIRST_GAME_AT` | First kickoff of the season in UTC; NULL without games |
+| `LAST_GAME_AT` | Last kickoff of the season in UTC; NULL without games |
+| `IS_CURRENT_SEASON` | TRUE for the newest season with stored games only |
+
+## VENUE
+
+*View, `sql/model/130_venue.sql`.*
+
+One row per venue, as CFBD stored it in CFB_CORE.VENUES (newest fetch wins). It carries the venue address, surface and capacity, and its location as a GEOMETRY(4326) point.
+
+Reads: `CFB_CORE.VENUES`
+
+| Column | Comment |
+|---|---|
+| `VENUE_ID` | CFBD venue id |
+| `VENUE_NAME` | Venue name as CFBD spells it; the name that games carry as their venue |
+| `CITY` | City of the venue as CFBD reports it |
+| `STATE_CODE` | State or province code as CFBD reports it (the mirror column STATE_) |
+| `ZIP` | Postal code as CFBD reports it |
+| `COUNTRY_CODE` | Country code as CFBD reports it |
+| `TIME_ZONE` | IANA time zone name of the venue as CFBD reports it |
+| `LATITUDE` | Latitude in degrees north (WGS 84) as CFBD reports it; NULL when unknown |
+| `LONGITUDE` | Longitude in degrees east (WGS 84, negative in the Americas) as CFBD reports it; NULL when unknown |
+| `ELEVATION` | Elevation exactly as CFBD reports it, as text and without a stated unit; NULL when unknown |
+| `CAPACITY` | Seating capacity as CFBD reports it |
+| `CONSTRUCTION_YEAR` | Year the venue was built, as CFBD reports it |
+| `IS_GRASS` | TRUE when the playing surface is grass; NULL when CFBD does not say |
+| `IS_DOME` | TRUE when the venue is a dome; NULL when CFBD does not say |
+| `HAS_LOCATION` | TRUE when both latitude and longitude are known, which is when GEO_POINT is not NULL |
+| `GEO_POINT` | Location as a GEOMETRY point with SRID 4326 (x = longitude, y = latitude, degrees); NULL when HAS_LOCATION is FALSE. ST_DISTANCE on it is planar, in degrees: use GREAT_CIRCLE_KM for kilometres, and compare with ST_WITHIN against a polygon cast to GEOMETRY(4326) |

@@ -79,7 +79,7 @@ def test_owner_privileges_are_exactly_the_documented_system_privileges() -> None
     step = grants.owner_privileges_step("CFB_TEST_OWNER")
     assert step.sql == (
         "GRANT CREATE SESSION, CREATE SCHEMA, CREATE TABLE, CREATE VIEW, CREATE SCRIPT, "
-        "CREATE VIRTUAL SCHEMA TO CFB_TEST_OWNER"
+        "CREATE FUNCTION, CREATE VIRTUAL SCHEMA TO CFB_TEST_OWNER"
     )
 
 
@@ -208,7 +208,7 @@ def test_test_first_run_creates_the_owner_and_defers_the_script_grant_until_depl
     assert db.statements == [
         "CREATE USER CFB_TEST_OWNER IDENTIFIED BY {password!q}",
         "GRANT CREATE SESSION, CREATE SCHEMA, CREATE TABLE, CREATE VIEW, CREATE SCRIPT, "
-        "CREATE VIRTUAL SCHEMA TO CFB_TEST_OWNER",
+        "CREATE FUNCTION, CREATE VIRTUAL SCHEMA TO CFB_TEST_OWNER",
     ]
     assert db.executed[0][1] == {"password": PASSWORD}
     assert report.script_grant == "pending"

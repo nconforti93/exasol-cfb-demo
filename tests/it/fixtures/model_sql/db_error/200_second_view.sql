@@ -1,0 +1,5 @@
+CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.SECOND_VIEW (
+  ID COMMENT IS 'Game id'
+) AS
+SELECT "ID" FROM {MODEL_SCHEMA}."FIRST_VIEW"
+COMMENT IS 'One row per stored game row, through the first view.';

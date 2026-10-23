@@ -160,10 +160,10 @@ The as-of helpers are parameter-dimension views: `AS_OF_POINT` is joined to the 
 | 015 | `DATASET` | reference table | CFBD dataset | seed |
 | 016 | `CLASSIFICATION_TRANSITION` | reference table | team (CFBD school name) and season range whose classification differs from CFBD's recorded code | seed (empty unless Q6 says otherwise) |
 | 020 | `GREAT_CIRCLE_KM` | function | one value per call | — |
-| 090 | `CONFERENCE_CHAMPIONSHIP_GAME` | view | detected conference championship game | `GAMES`, `CONFERENCE_CHAMPIONSHIP` |
-| 100 | `GAME` | view | game (deduplicated by game id) | `GAMES`, `METRICS_WP_PREGAME`, `VENUES`, `TEAMS`, `CONFERENCE_CHAMPIONSHIP_GAME`, `CLASSIFICATION_TRANSITION` |
+| 090 | `CONFERENCE_CHAMPIONSHIP_GAME` | view | detected conference championship game | `GAMES`, `CONFERENCE_CHAMPIONSHIP`, `CONFERENCE_TIER` (power-conference championship week, X1) |
+| 100 | `GAME` | view | game (deduplicated by game id) | `GAMES`, `METRICS_WP_PREGAME`, `VENUES`, `CONFERENCE_CHAMPIONSHIP_GAME`, `CLASSIFICATION_TRANSITION`, `DATASET` (`PLAYS_ACCESS`) |
 | 110 | `SEASON_WEEK` | view | season, season type and week | `GAME`, `CALENDAR` |
-| 120 | `SEASON` | view | season from 1869 to the newest season with games | `ERA`, `GAME`, `LOAD_SLICES` |
+| 120 | `SEASON` | view | season from 1869 to the newest season with games | `ERA`, `GAME`, `GAMES` (newest season) |
 | 130 | `VENUE` | view | venue | `VENUES` |
 | 140 | `TEAM` | view | team, listed or seen in games | `TEAMS`, `GAME` |
 | 150 | `CONFERENCE` | view | conference | `CONFERENCES` |
@@ -369,7 +369,7 @@ def deploy(connection, schema: str, objects, *, extra_statements=(), lock: RunLo
 | 2014 | 25 completed FBS-vs-FBS games (the named ones included), 20 with lines; Northam's conflicting spells; Mountain West divisions; Brookvale beats Ashford; Mountain West week 15: Eastport vs Fairhaven with notes "Mountain West Championship", plus a makeup Mountain West game in the same week |
 | 2023 | Carrow in the Pac-12 (SP+ 20.0); Desert Bowl Carrow vs Eastport; American Athletic: two conference games in week 13, Ivel vs Jessup alone in week 14, Jessup vs Kenning in week 15 (both American Athletic, not flagged as a conference game) |
 | 2024 | Carrow in the SEC. SEC: Ashford–Brookvale and Carrow–Quinton in week 14, Ashford vs Carrow alone in week 15 (notes "SEC Championship"). Pac-12: two conference games in week 13, one in week 14. Postseason week 1: CFP first round Kingsley (8) vs Northam (9); quarterfinal Ashford (1) vs Kingsley (8), Sugar Bowl, Neutral Dome, Kingsley wins; Harbor Bowl Brookvale vs Eastport; FCS playoff game Lowell vs Pemberton. AP weeks 1–16 + postseason 1, committee weeks 10–15, "Mystery Poll". Ashford: regular season 10–2 (8 SEC games, 7–1; byes in weeks 9 and 11), SEC title, quarterfinal loss: 11–3; final AP 5, final committee 1; week-8 postgame Elo 1702, preseason Elo 1650; Ashford Field week 14 vs Brookvale 31–24, spread -7.5, home WP 0.70. SP+ rows "Ashford St." and "nationalAverages" |
-| 2025 | complete; final SP+; committee weeks 10–14 plus the selection ranking labeled postseason week 1; regular weeks 1–15 |
+| 2025 | complete; final SP+; committee weeks 10–14 plus the selection ranking labeled postseason week 1; regular weeks 1–15. Championship week 14: SEC Quinton vs Vance (two SEC games in week 13), American Athletic Ivel vs Kenning (two in week 13); week 15: Marlow vs Jessup, a flagged American Athletic game alone in its week (the 2026 Army–Navy shape, X1) |
 | 2026 | weeks 1–9 completed, 10–15 scheduled; week 10 opens Thursday 2026-10-29 23:30 UTC; Ashford W W L W W W L W W; Dunmore moves to the Mountain West; Brookvale vs Ashford week 12; SEC championship game in week 15 listed without teams; lines for weeks 10–11; rankings with AP weeks 1–10 and a committee ranking labeled week 10 |
 | every stored season from 1998 | a member in every power conference of `CONFERENCE_TIER`, through the range slice's spells: Fillmore (ACC), Granton (Big Ten), Hollis (Big 12), Ashford and Brookvale (SEC), Ivel (Big East to 2012, American Athletic from 2013), Carrow and Dunmore (Pac-10 1978–2010, Pac-12 from 2011); the 2026 season slice repeats the 2026 memberships |
 
@@ -419,7 +419,7 @@ def deploy(connection, schema: str, objects, *, extra_statements=(), lock: RunLo
 | The previous season's SP+, final or not, is the prior ([7], [24]) | Require a final slice | It is in the past at every point, so it never leaks; requiring finality would null every prior when no backfill ran after 15 February. A warning reports it |
 | Classification: transition seed, then games, then memberships ([9]) | Games only; affiliation spell first | One code path for both Q6 outcomes: Q6 changes only seed rows. Spell codes may be the conference's code of today (the WAC) |
 | Tiers as a reviewed reference table keyed by CFBD names, with an ERROR check ([10]) | Derive "power" from rankings; hard-code in Phase 4 | Power status is an era rule, not data. A renamed conference would silently break auto-bids, and the check stops the refresh instead |
-| Championship games detected inside seeded championship seasons ([11]) | Schedule shape alone; `NOTES` text | The seed removes false positives of conferences without a game; the conference-game flag skips Army–Navy-type games; notes cross-check as warnings. Verified 1992–2025 (Q7) |
+| Championship games detected inside seeded championship seasons ([11]), up to the season's power-conference championship week ([32]) | Schedule shape alone; `NOTES` text | The seed removes false positives of conferences without a game; the conference-game flag skips Army–Navy-type games, and the week limit skips a flagged one after the championship weekend (2026); notes cross-check as warnings. Verified 1992–2025 (Q7) |
 | Fixed-scale `DECIMAL` for engine-facing values ([22]) | `DOUBLE` as CFBD reports; Phase 4 casts | The engine contract requires it, and casting once in the model keeps every consumer bit-identical |
 | Newest fetch wins for every slice-scoped source; duplicates warn ([23]) | Deduplicate games only; duplicates as an error | Promoted on-demand slices will overlap stored ones; the views resolve it, so a duplicate must not stop the refresh |
 | `GEOMETRY(4326)` and `GREAT_CIRCLE_KM`; no travel distance ([12]) | `GEOGRAPHY` (not in Exasol); `ST_DISTANCE` after `ST_TRANSFORM`; `TRAVEL_KM` | The only spatial type, correct distances. No consumer reads travel |
@@ -579,7 +579,7 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
      - `hold_run_lock()`: a `RUNNING` loader run in a live session, released on exit;
      - module conventions: read-only feature modules seed the league once (marker `model_readonly`, no per-test truncation); `tests/it/test_model_variants_it.py` and `tests/it/test_model_refresh_step_it.py` re-seed before every test, so no test order leaks state;
      - the plan variant `tests/it/fixtures/load-plan.model.yaml`: demo-like entries with the league's seasons and gaps, step 100 `TEST_CFB_INFRA.REFRESH_MODEL`, step 200 `TEST_STEP_RECORD`.
-   - [ ] 2.5 Deploy integration tests on fixture model directories (`tests/it/fixtures/model_sql/{valid,lint_errors,db_error,orphan,later_file}`), in `tests/it/test_model_deploy_it.py`: lint stops before any statement, a view referencing a later file deploys, a failing statement rolls back, the orphan is dropped, a held run lock refuses the deploy, the model never reads the virtual schema (dependency walk + mock hits + `FETCH_LOG`).
+   - [ ] 2.5 Deploy integration tests on fixture model directories (`tests/it/fixtures/model_sql/{valid,lint_errors,db_error,orphan,later_file}`), in `tests/it/test_model_harness_it.py`: lint stops before any statement, a view referencing a later file deploys, a failing statement rolls back, the orphan is dropped, a held run lock refuses the deploy, the model never reads the virtual schema (dependency walk + mock hits + `FETCH_LOG`).
 
 3. **Model objects** (each task: integration test file first, then `sql/model/` files; the scenarios it makes pass are listed in Verification)
    - [ ] 3.1 `090_conference_championship_game.sql`, `100_game.sql`, `110_season_week.sql`, `120_season.sql` [expert]:
@@ -737,13 +737,13 @@ None. This plan adds new objects only, and every helper it touches (`tests/it/ha
 | deploy: One command installs the whole model | Integration | `tests/it/test_model_deploy_it.py` | `test_make_model_installs_every_object` |
 | deploy: A second deploy changes nothing | Integration | `tests/it/test_model_deploy_it.py` | `test_second_deploy_changes_nothing` |
 | deploy: The full deploy includes the model | Integration | `tests/it/test_model_deploy_it.py` | `test_full_deploy_includes_model` |
-| deploy: A file that breaks a lint rule stops the deploy before any statement | Integration (CLI + DB) | `tests/cli/test_model_cli.py`, `tests/it/test_model_deploy_it.py` | `test_lint_errors_listed_nothing_sent`, `test_lint_failure_keeps_deployed_model` |
-| deploy: A view may reference a view of a later file | Integration | `tests/it/test_model_deploy_it.py` | `test_force_view_references_later_file` |
-| deploy: A failing statement rolls the whole deploy back | Integration | `tests/it/test_model_deploy_it.py` | `test_failing_statement_rolls_back` |
-| deploy: An object that no file defines any more is dropped | Integration | `tests/it/test_model_deploy_it.py` | `test_orphan_object_dropped` |
-| deploy: A deploy is refused while a loader run holds the lock | Integration | `tests/it/test_model_deploy_it.py` | `test_deploy_refused_while_loader_runs` |
+| deploy: A file that breaks a lint rule stops the deploy before any statement | Integration (CLI + DB) | `tests/cli/test_model_cli.py`, `tests/it/test_model_harness_it.py` | `test_lint_errors_are_listed_and_nothing_is_sent`, `test_lint_problems_are_listed_one_per_rule_and_nothing_is_sent` |
+| deploy: A view may reference a view of a later file | Integration | `tests/it/test_model_harness_it.py` | `test_a_view_in_an_earlier_file_may_read_a_later_one` |
+| deploy: A failing statement rolls the whole deploy back | Integration | `tests/it/test_model_harness_it.py` | `test_a_view_that_only_fails_at_its_first_query_fails_the_deploy_and_changes_nothing` |
+| deploy: An object that no file defines any more is dropped | Integration | `tests/it/test_model_harness_it.py` | `test_objects_that_no_file_defines_are_dropped` |
+| deploy: A deploy is refused while a loader run holds the lock | Integration | `tests/it/test_model_harness_it.py` | `test_a_deploy_is_refused_while_a_loader_run_holds_the_lock` |
 | deploy: The model accepts any data the virtual schema can store | Integration | `tests/it/test_model_deploy_it.py` | `test_model_over_generated_shapes` |
-| deploy: The model never reads the virtual schema | Integration | `tests/it/test_model_deploy_it.py` | `test_model_never_reads_virtual_schema` |
+| deploy: The model never reads the virtual schema | Integration | `tests/it/test_model_harness_it.py` | `test_the_model_never_reads_the_virtual_schema` |
 | documentation: Every object and column has a comment | Integration | `tests/it/test_model_docs_it.py` | `test_every_object_and_column_commented` |
 | documentation: Every object comment states its grain | Integration | `tests/it/test_model_docs_it.py` | `test_object_comments_state_grain` |
 | documentation: Model columns need no quoting | Integration | `tests/it/test_model_docs_it.py` | `test_columns_need_no_quoting` |
@@ -776,6 +776,7 @@ None. This plan adds new objects only, and every helper it touches (`tests/it/ha
 | games: Postseason games without an FBS team wait for their own week | Integration | `tests/it/test_model_games_it.py` | `test_non_fbs_postseason_waits` |
 | games: A conference championship game is recognized within its conference's championship seasons | Integration | `tests/it/test_model_games_it.py` | `test_conference_championship_rule` |
 | games: A same-conference game after the championship game is not mistaken for it | Integration | `tests/it/test_model_games_it.py` | `test_game_after_championship_not_marked` |
+| games: A conference game after the power conferences' championship week is not taken for a championship game | Integration | `tests/it/test_model_games_it.py` | `test_conference_game_after_power_championship_week_not_marked` |
 | games: A championship game the rule misses is reported | Integration | `tests/it/test_model_games_it.py` | `test_missed_championship_reported` |
 | games: A game without named teams is a placeholder | Integration | `tests/it/test_model_games_it.py` | `test_placeholder_game` |
 | games: Every game carries its coverage flags | Integration | `tests/it/test_model_games_it.py` | `test_game_coverage_flags` |

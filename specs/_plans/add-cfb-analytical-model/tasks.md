@@ -17,9 +17,9 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [x] 2.4 Harness (`tests/it/harness.py`, `tests/it/conftest.py`):
 
 ## Group C
-- [ ] 2.5 Deploy integration tests on fixture model directories (`tests/it/fixtures/model_sql/{valid,lint_erro
-- [ ] 3.1 `090_conference_championship_game.sql`, `100_game.sql`, `110_season_week.sql`, `120_season.sql` : [expert]
-- [ ] 3.2 `020_great_circle_km.sql`, `130_venue.sql`
+- [x] 2.5 Deploy integration tests on fixture model directories (`tests/it/fixtures/model_sql/{valid,lint_erro
+- [x] 3.1 `090_conference_championship_game.sql`, `100_game.sql`, `110_season_week.sql`, `120_season.sql` : [expert]
+- [x] 3.2 `020_great_circle_km.sql`, `130_venue.sql`
 
 ## Group D
 - [ ] 3.3 `140_team.sql`, `150_conference.sql` (read `GAME`)
@@ -60,7 +60,7 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [ ] 7.5 Zero-call proof and write-up:
 
 ## Cross-plan items (from the Phase 4 revision, 2026-10-22)
-- [ ] X1 Restrict championship-game detection to weeks up to the season's power-conference championship week. In the stored 2026 schedule, Army–Navy is flagged as an AAC conference game alone in week 15. The current rule would mislabel it and would miss the real AAC title game in week 14, which then enters 2026 runs as a regular game and triggers CONFERENCE_PAIR_REPEATED from the week-13 point on (late November). Fold this into task 3.1 (`CONFERENCE_CHAMPIONSHIP_GAME`) and add a scenario plus a decision-log entry. Also take the Phase 2 `DEPLOY` lock kind in the model deploy (Phase 4 H1).
+- [x] X1 Restrict championship-game detection to weeks up to the season's power-conference championship week. In the stored 2026 schedule, Army–Navy is flagged as an AAC conference game alone in week 15. The current rule would mislabel it and would miss the real AAC title game in week 14, which then enters 2026 runs as a regular game and triggers CONFERENCE_PAIR_REPEATED from the week-13 point on (late November). Fold this into task 3.1 (`CONFERENCE_CHAMPIONSHIP_GAME`) and add a scenario plus a decision-log entry. Also take the Phase 2 `DEPLOY` lock kind in the model deploy (Phase 4 H1).
 - [ ] X2 For information: under the label rule, the 2024 selection ranking only becomes visible one week after selection. Phase 4 is unaffected because it reads final rankings as labels only. Mention it in the as-of docs.
 
 ## Review and Verification

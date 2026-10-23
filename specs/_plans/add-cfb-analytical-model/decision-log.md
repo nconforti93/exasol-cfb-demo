@@ -177,6 +177,7 @@ Coverage flags must say what is trustworthy per season.
   - Q7 verifies one game per conference and season for 1992–2025. If CFBD does not flag championship games as conference games, or flags Army–Navy-type games after them, the pre-decided fallback is: the only C-vs-C game in the first week after C's last week with two or more C-vs-C games. Seasons that stay wrong (2020 is likely) are listed in `docs/model-verification.md`, and the warnings name them.
   - Champions of conferences without a championship game come from standings: Phase 4's job, stated in `cfp_field_inputs.sql`.
   - Only FBS conferences are seeded; lower-division championship games are not detected (known limit, [21]).
+- **Revision (X1, implementation):** detection looks only at weeks up to the season's power-conference championship week ([32]).
 - **Revision (review M3):** the schedule shape alone had false positives (conferences without a championship game and one isolated final-week game), false negatives (a same-conference game after the championship week) and was verified only for 2014–2025, while the CFP auto-bids need every champion.
 - **Alternatives:** the schedule shape alone (above); `NOTES` text as the rule (not known to be populated); "the calendar's last regular week" (Army–Navy-type weeks and seasons in progress defeat it).
 - **Rationale:** the seed removes the false positives at their root, the conference flag skips non-counting games, and two warnings report what the rule still misses.
@@ -351,6 +352,27 @@ Coverage flags must say what is trustworthy per season.
 - **Rationale:** the model stays general and the engine owns its parameters, while no input the engine needs from data is missing.
 - **Promotes to ADR:** yes
 
+### [32] Championship detection stops at the season's power-conference championship week (cross-plan X1)
+
+- **Context:** Phase 4's revision (its Q15, relayed as X1 on 2026-10-22) found on the stored 2026 schedule, at zero calls: weeks 1–13, then Army–Navy alone in week 15 (12 December), flagged as an American Athletic conference game, and no week-14 rows until the championship pairings are set. Rule [11] takes Army–Navy for the American Athletic's championship game and, once the real title game is stored in week 14, misses it. That game would then enter 2026 runs as a regular conference game and stop them with `CONFERENCE_PAIR_REPEATED` from the week-13 point on (late November).
+- **Decision:**
+  - `CONFERENCE_CHAMPIONSHIP_GAME` looks only at weeks up to `POWER_CHAMPIONSHIP_WEEK`: the last regular-season week in which a conference that `CONFERENCE_TIER` marks as power for the season plays a flagged conference game between two of its teams. Inside that limit, rule [11] is unchanged.
+  - A season without such a game has no limit. That covers 1992–1997, before the tier seed, when Army and Navy were independents.
+  - The view exposes the week, so the chat and `MODEL_CHECKS` can explain a miss.
+  - New scenario "A conference game after the power conferences' championship week is not taken for a championship game", on the league's 2025 season: power championship week 14, then Marlow vs Jessup, a flagged American Athletic game alone in week 15. Test `test_conference_game_after_power_championship_week_not_marked`. The league oracle `tests/synthetic/rules.py` applies the same limit; a unit test shows that the rule without it takes the week-15 game.
+- **Why it holds on real data:**
+  - Power conferences play no regular conference game after their title games. So once their championship games are stored, the limit is their championship week, and every seeded conference's title game falls in it or earlier as long as the conferences hold them on one weekend. Q7 checks that on the stored seasons 1992–2025.
+  - Before the pairings are stored (2026 now), the limit is the power conferences' last scheduled week (13). Army–Navy is still excluded, and nothing is detected for the American Athletic until its title game appears. `CONF_CHAMPIONSHIP_MISSING` skips the current season.
+  - A power conference's own title game is never cut, because the limit is at least its week. Phase 4's `SELECTION_WEEK` (power championship games) is unchanged.
+- **Leak check:** the limit depends on the schedule (weeks, flags, recorded conferences), not on results. `mutate_after` changes results and swaps title-game participants within their conference, which leaves the limit and the detection unchanged.
+- **Alternatives:**
+  - The last championship game of any conference: circular, and it gives week 15, the Army–Navy week, again (Phase 4 [37]).
+  - Leave Army–Navy out by team names or notes: brittle data knowledge, and CFBD's notes are not reliable (the reason for [11]).
+  - The calendar's last regular week: on real data that is the Army–Navy week.
+  - The first Saturday of December: Phase 4's fallback for its selection week, but the CFBD week of the title games moves (week 15 in 2024, week 14 in 2026).
+- **Known limit:** a seeded non-power conference whose title game comes after every power conference's last conference game would be missed. Q7 would show it, and `CONF_CHAMPIONSHIP_MISSING` names it.
+- **Promotes to ADR:** no
+
 ## Open Questions (assumption + verify step; all verified in task 7.2 at zero calls)
 
 | # | Assumption | Verify step (on AWS after Phase 2's backfill) | If wrong |
@@ -361,7 +383,7 @@ Coverage flags must say what is trustworthy per season.
 | Q4 | `/conferences/affiliations` returns spells (team, conference, division, start, end), split on division changes, and the range call returns spells that overlap the range | `TEAM_SEASON` for Texas 2023/2024 (Big 12 → SEC) and Alabama 2023/2024 (division West → none) | Adapt the expansion in `210_team_season.sql` (per-year rows need no expansion) |
 | Q5 | CFBD conference names match the seeds (`SEC`, `Big Ten`, `Big 12`, `ACC`, `Pac-10` to 2010 / `Pac-12`, `Big East`, `American Athletic`, `FBS Independents`, `Mid-American`, `Conference USA`, `Mountain West`, `Sun Belt`, `Western Athletic`) | `POWER_CONFERENCE_MISSING` passes for 1998–2026; `CONF_CHAMPIONSHIP_MISSING` names no conference because of its name | Fix the seed names and redeploy |
 | Q6 | CFBD's game classification is the code of its time | `SELECT SEASON, HOME_TEAM, HOME_CLASSIFICATION, AWAY_TEAM, AWAY_CLASSIFICATION FROM CFB_MODEL.GAME WHERE (SEASON = 2007 AND 'Appalachian State' IN (HOME_TEAM, AWAY_TEAM)) OR (SEASON = 2017 AND 'Liberty' IN (HOME_TEAM, AWAY_TEAM))` (seed still empty): both teams must be `fcs`; then `SELECT FLOOR(SEASON / 10) * 10, CLASSIFICATION_SOURCE, COUNT(*) FROM CFB_MODEL.TEAM_SEASON GROUP BY 1, 2`. Run as soon as stored 2007 and 2017 games exist on any target | `fbs` → fill `CLASSIFICATION_TRANSITION` with every team and season range since 1978 whose classification differs from today's code, review it like the tier seed, redeploy (seed rows only) |
-| Q7 | The championship rule finds exactly one game per conference and season of the seed, 1992–2025 | `SELECT SEASON, COUNT(*) FROM CFB_MODEL.CONFERENCE_CHAMPIONSHIP_GAME GROUP BY 1` equals the seed's conferences per season (2024: 9); `CONF_CHAMPIONSHIP_NOTES_MISMATCH` and `CONF_CHAMPIONSHIP_MISSING` pass; no 2026 game is marked before championship week | Army–Navy-type misdetections or championship games not flagged as conference games → the fallback rule of [11]; remaining exceptions (2020) listed in `docs/model-verification.md` |
+| Q7 | The championship rule finds exactly one game per conference and season of the seed, 1992–2025 | `SELECT SEASON, COUNT(*) FROM CFB_MODEL.CONFERENCE_CHAMPIONSHIP_GAME GROUP BY 1` equals the seed's conferences per season (2024: 9); `CONF_CHAMPIONSHIP_NOTES_MISMATCH` and `CONF_CHAMPIONSHIP_MISSING` pass; no 2026 game is marked before championship week, and the 2026 Army–Navy game (week 15) is never marked ([32]) | Army–Navy-type misdetections or championship games not flagged as conference games → the fallback rule of [11]; remaining exceptions (2020) listed in `docs/model-verification.md` |
 | Q8 | `/metrics/wp/pregame` `spread` is from the home side, negative when home is favored | `SELECT CORR(PREGAME_SPREAD, HOME_PREGAME_WIN_PROB) FROM CFB_MODEL.GAME WHERE SEASON = 2024` < 0 | Fix the comment and the `TEAM_SPREAD` sign |
 | Q9 | `/games` without a classification returns every division (Phase 2 A4) | Distinct game classifications in 2024 include `fcs`, `ii` and `iii` | Coverage populations stay FBS-based; record FCS and below as partial |
 | Q10 | `ST_DISTANCE` on SRID 4326 is planar (degrees), and the WKT from two `DOUBLE`s parses | Probe 1.1c | If geodesic, keep `GREAT_CIRCLE_KM` and document `ST_DISTANCE` as equivalent |

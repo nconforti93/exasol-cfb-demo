@@ -1,0 +1,6 @@
+CREATE OR REPLACE TABLE {MODEL_SCHEMA}.BASE (
+  K DECIMAL(4,0) NOT NULL COMMENT IS 'Key of the row',
+  V VARCHAR(20) UTF8 COMMENT IS 'Value of the row'
+) COMMENT IS 'One row per key.';
+
+INSERT INTO {MODEL_SCHEMA}.BASE VALUES (1, 'a'), (2, 'b'), (3, NULL);

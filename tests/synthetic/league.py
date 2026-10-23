@@ -470,6 +470,36 @@ def _season_2025(b: SeasonBuilder) -> None:
         key="harbor_bowl_2025",
     )
     b.fill(30, list(range(1, 16)), fbs_pool(2025))
+    _championship_week_2025(b)
+
+
+def _championship_week_2025(b: SeasonBuilder) -> None:
+    """The power conferences' championship week 14, then an American Athletic game flagged as a
+    conference game alone in week 15: the stored 2026 Army-Navy shape (cross-plan X1). Added after
+    the filler games, so their pairs, ids and Elo stay as they were."""
+    b.add("Quinton", "Selby", 13, points=(24, 20))
+    b.add("Uxbridge", "Vance", 13, points=(17, 27))
+    b.add(
+        "Quinton",
+        "Vance",
+        14,
+        points=(31, 27),
+        neutral=True,
+        notes="SEC Championship",
+        key="sec_championship_2025",
+    )
+    b.add("Ivel", "Jessup", 13, points=(28, 21))
+    b.add("Kenning", "Marlow", 13, points=(20, 17))
+    b.add(
+        "Ivel",
+        "Kenning",
+        14,
+        points=(35, 31),
+        neutral=True,
+        notes="American Athletic Championship",
+        key="aac_championship_2025",
+    )
+    b.add("Marlow", "Jessup", 15, points=(17, 13), key="aac_week15_2025")
 
 
 ASHFORD_2026: tuple[tuple[int, str, bool, int | None, int | None, bool], ...] = (
@@ -834,8 +864,9 @@ def with_duplicate_rows(league: League) -> League:
     """Later slices outside the load plan that store a 2026 game, line, SP+ rating and poll twice.
 
     The week-3 game Carrow vs Dunmore is fetched again as 21-17 with the line -3.5 (home win
-    probability 0.60); Ashford's 2026 SP+ is 24.0 in a team slice; the AP poll of week 9 comes
-    again in a week slice. Only view-level tests use this variant.
+    probability 0.60); its first line, -3.0 (0.58), is in the season's line slice. Ashford's 2026
+    SP+ is 24.0 in a team slice; the AP poll of week 9 comes again in a week slice. Only view-level
+    tests use this variant.
     """
     target = league.game_id("carrow_dunmore_2026_w3")
     game = copy.deepcopy(next(g for g in league.game_bodies(CURRENT_SEASON) if g["id"] == target))
@@ -850,6 +881,15 @@ def with_duplicate_rows(league: League) -> League:
         "spread": -3.5,
         "homeWinProbability": 0.6,
     }
+    season_lines = league.get(
+        "METRICS_WP_PREGAME", season_key("METRICS_WP_PREGAME", CURRENT_SEASON)
+    )
+    first_line = {**line, "spread": -3.0, "homeWinProbability": 0.58}
+    league = _replace(
+        league,
+        season_lines,
+        dataclasses.replace(season_lines, body=[*season_lines.body, first_line]),
+    )
     ashford = next(r for r in _sp_rows(CURRENT_SEASON) if r["team"] == "Ashford")
     ashford = {**ashford, "rating": 24.0}
     rankings = league.get(
