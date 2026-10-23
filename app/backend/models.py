@@ -178,6 +178,10 @@ class Team(BaseModel):
     team_id: Number
     school: str
     conference: str | None
+    abbreviation: str | None
+    color: str | None
+    alternate_color: str | None
+    has_logo: bool
 
 
 class TeamsResponse(BaseModel):
@@ -898,3 +902,266 @@ class ConsoleRunResponse(BaseModel):
     source: SpendSourceKind
     requests: list[RequestLine]
     fetch_log_ok: bool
+
+
+WinProbSource = Literal["OURS", "CFBD"]
+GameStatus = Literal["FINAL", "UPCOMING"]
+PredictionKind = Literal["FROZEN", "CURRENT"]
+
+
+class MapTeam(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    team_id: Number
+    school: str
+    mascot: str | None
+    abbreviation: str | None
+    conference: str | None
+    color: str | None
+    alternate_color: str | None
+    has_logo: bool
+    latitude: Number | None
+    longitude: Number | None
+    wins: Number
+    losses: Number
+    conf_wins: Number
+    conf_losses: Number
+    ap_rank: Number | None
+
+
+class TeamsMapResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    point: ResolvedPoint
+    notice: Notice | None
+    conferences: list[str]
+    teams: list[MapTeam]
+    queries: dict[str, str]
+
+
+class TeamHero(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    team_id: Number
+    school: str
+    mascot: str | None
+    abbreviation: str | None
+    conference: str | None
+    color: str | None
+    alternate_color: str | None
+    has_logo: bool
+    wins: Number
+    losses: Number
+    conf_wins: Number
+    conf_losses: Number
+    ap_rank: Number | None
+    cfp_rank: Number | None
+
+
+class TeamGame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    game_id: Number
+    week: Number
+    season_type: SeasonType
+    start_at: str | None
+    status: GameStatus
+    site: SiteKind
+    opponent: Team
+    opponent_rank: Number | None
+    team_points: Number | None
+    opponent_points: Number | None
+    result: Literal["W", "L", "T"] | None
+    spread: Number | None
+    win_prob: Number | None
+    win_prob_source: WinProbSource | None
+
+
+class SpRating(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    season: Number
+    overall: Number
+    overall_rank: Number
+    offense: Number
+    offense_rank: Number
+    defense: Number
+    defense_rank: Number
+
+
+class PollPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    week_seq: Number
+    label: str
+    ap_rank: Number | None
+    cfp_rank: Number | None
+
+
+class TeamResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    point: ResolvedPoint
+    notice: Notice | None
+    team: TeamHero
+    games: list[TeamGame]
+    sp: list[SpRating]
+    polls: list[PollPoint]
+    queries: dict[str, str]
+
+
+class OddsTrajectoryPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    season: Number
+    week_seq: Number
+    label: str
+    p_in_cfp: Number
+    p_bye: Number
+    p_champion: Number
+
+
+class OutlookOdds(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool
+    reason: str | None
+    move: Move | None
+    delta_p_in_cfp: Number | None
+    current: OddsTrajectoryPoint | None
+    trajectory: list[OddsTrajectoryPoint]
+
+
+class OutlookGame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    game_id: Number
+    week_seq: Number
+    start_at: str | None
+    site: SiteKind
+    opponent: Team
+    opponent_rank: Number | None
+    team_win_prob: Number
+    pred_team_points: Number
+    pred_opponent_points: Number
+    spread: Number | None
+    prediction_kind: PredictionKind
+
+
+class OutlookThisWeek(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool
+    reason: str | None
+    game: OutlookGame | None
+
+
+class OutlookWatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool
+    reason: str | None
+    guide: GuideResponse | None
+
+
+class OutlookRivalries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool
+    reason: str | None
+    series: list[MatchupSeries]
+
+
+class TeamOutlookResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    point: ResolvedPoint
+    run_id: Number | None
+    team_id: Number
+    odds: OutlookOdds
+    this_week: OutlookThisWeek
+    watch: OutlookWatch
+    rivalries: OutlookRivalries
+    queries: dict[str, str]
+
+
+class WeekGame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    game_id: Number
+    week_seq: Number
+    start_at: str | None
+    venue: str | None
+    home: Team
+    away: Team
+    home_rank: Number | None
+    away_rank: Number | None
+    spread: Number | None
+    home_win_prob: Number | None
+    win_prob_source: WinProbSource | None
+    stakes: Number | None
+    game_of_week: bool
+    upset_alert_team_id: Number | None
+
+
+class LeagueWeekResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    point: ResolvedPoint
+    notice: Notice | None
+    week_seq: Number | None
+    run_id: Number | None
+    games: list[WeekGame]
+    queries: dict[str, str]
+
+
+class TravelRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    team: Team
+    km: Number
+    trips: Number
+    longest_trip_km: Number
+    longest_trip_to: str
+
+
+class MoverRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    team: Team
+    sp_now: Number
+    sp_before: Number
+    delta: Number
+
+
+class ConferenceRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    conference: str
+    teams: Number
+    mean_sp: Number
+    nonconf_wins: Number
+    nonconf_losses: Number
+    ranked_teams: Number
+
+
+class StreakRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    team: Team
+    length: Number
+    since_season: Number
+    since_week: Number
+
+
+class LeagueStatsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    point: ResolvedPoint
+    notice: Notice | None
+    road_warriors: list[TravelRow]
+    risers: list[MoverRow]
+    fallers: list[MoverRow]
+    conference_strength: list[ConferenceRow]
+    streaks: list[StreakRow]
+    queries: dict[str, str]

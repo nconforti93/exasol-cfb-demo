@@ -31,6 +31,11 @@ describe('read endpoints', () => {
     await api.inspector()
     await api.console()
     await api.health()
+    await api.teamsMap({ season: 2026, week: 9 })
+    await api.team(102, { season: 2026, week: 9 })
+    await api.teamOutlook(102, { season: 2026, week: 9 })
+    await api.leagueWeek({ season: 2026, week: 9 })
+    await api.leagueStats({ season: 2026, week: 9 })
     expect(get.mock.calls).toEqual([
       ['/api/config', undefined, undefined],
       ['/api/points', { season: 2026 }, undefined],
@@ -49,6 +54,11 @@ describe('read endpoints', () => {
       ['/api/inspector', undefined, undefined],
       ['/api/console', undefined, undefined],
       ['/api/health', undefined, undefined],
+      ['/api/teams/map', { season: 2026, week: 9 }, undefined],
+      ['/api/team/102', { season: 2026, week: 9 }, undefined],
+      ['/api/team/102/outlook', { season: 2026, week: 9 }, undefined],
+      ['/api/league/week', { season: 2026, week: 9 }, undefined],
+      ['/api/league/stats', { season: 2026, week: 9 }, undefined],
     ])
   })
 

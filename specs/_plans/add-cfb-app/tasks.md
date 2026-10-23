@@ -5,7 +5,7 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 **UI revision 2026-10-23** (plan.md § UI revision; decisions [34]–[42]): map home, team page, league tabs. Light process: a few tests per task, no plan review. Do groups UI-A and UI-B first; they need no other phase.
 
 ## Group UI-A (start now; no other phase)
-- [ ] 9.0 Foundation: contract (types, pydantic models, synthetic fixtures with coordinates, fixtureApi routes incl. `/api/team/<id>` and `/api/logos/<id>.png`), routing (`/`, `/team/<id>`, `/league/<tab>`, old-path redirects, `mapConference`, default `home`), design tokens, `teamColor.ts`, `src/ui/` (Card, Chip, TeamMark, RankTag, RecordLine, StatTile, SqlButton)
+- [x] 9.0 Foundation: contract (types, pydantic models, synthetic fixtures with coordinates, fixtureApi routes incl. `/api/team/<id>` and `/api/logos/<id>.png`), routing (`/`, `/team/<id>`, `/league/<tab>`, old-path redirects, `mapConference`, default `home`), design tokens, `teamColor.ts`, `src/ui/` (Card, Chip, TeamMark, RankTag, RecordLine, StatTile, SqlButton)
 - [x] 9.5 Logos: `scripts/logos.py` + `make logos` (owner read of `CFB_CORE.TEAMS`, https, `espncdn.com` only, ≤ 1 MB PNG, `~/.cfb-demo/logos`), `routes/logos.py` (`/api/logos/{id}.png`), `APP_LOGO_DIR`, `APP_LOGOS`; unit tests only
 
 ## Group UI-B (after 9.0)

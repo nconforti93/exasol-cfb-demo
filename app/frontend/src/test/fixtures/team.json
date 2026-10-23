@@ -1,0 +1,398 @@
+{
+  "point": {
+    "season": 2026,
+    "week_seq": 9,
+    "next_week_seq": 10,
+    "label": "2026, after week 9",
+    "is_current": true
+  },
+  "notice": null,
+  "team": {
+    "team_id": 102,
+    "school": "Brookvale",
+    "mascot": "Herons",
+    "abbreviation": "BRK",
+    "conference": "Atlantic",
+    "color": "#0b3d91",
+    "alternate_color": "#f2a900",
+    "has_logo": true,
+    "wins": 6,
+    "losses": 1,
+    "conf_wins": 3,
+    "conf_losses": 1,
+    "ap_rank": 6,
+    "cfp_rank": null
+  },
+  "games": [
+    {
+      "game_id": 9101,
+      "week": 1,
+      "season_type": "regular",
+      "start_at": "2026-09-05T23:30:00Z",
+      "status": "FINAL",
+      "site": "HOME",
+      "opponent": {
+        "team_id": 118,
+        "school": "Norwick",
+        "conference": "Lakes",
+        "abbreviation": "NOR",
+        "color": "#13294b",
+        "alternate_color": "#ffffff",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": 38,
+      "opponent_points": 10,
+      "result": "W",
+      "spread": null,
+      "win_prob": null,
+      "win_prob_source": null
+    },
+    {
+      "game_id": 9102,
+      "week": 2,
+      "season_type": "regular",
+      "start_at": "2026-09-12T23:30:00Z",
+      "status": "FINAL",
+      "site": "AWAY",
+      "opponent": {
+        "team_id": 107,
+        "school": "Cedar Point",
+        "conference": "Atlantic",
+        "abbreviation": "CPT",
+        "color": "#bf5700",
+        "alternate_color": "#333f48",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": 27,
+      "opponent_points": 17,
+      "result": "W",
+      "spread": null,
+      "win_prob": null,
+      "win_prob_source": null
+    },
+    {
+      "game_id": 9103,
+      "week": 3,
+      "season_type": "regular",
+      "start_at": "2026-09-19T16:00:00Z",
+      "status": "FINAL",
+      "site": "HOME",
+      "opponent": {
+        "team_id": 108,
+        "school": "Dover Hall",
+        "conference": "Atlantic",
+        "abbreviation": "DVH",
+        "color": "#003087",
+        "alternate_color": "#c4ced4",
+        "has_logo": true
+      },
+      "opponent_rank": 15,
+      "team_points": 24,
+      "opponent_points": 31,
+      "result": "L",
+      "spread": null,
+      "win_prob": null,
+      "win_prob_source": null
+    },
+    {
+      "game_id": 9104,
+      "week": 4,
+      "season_type": "regular",
+      "start_at": "2026-09-26T23:30:00Z",
+      "status": "FINAL",
+      "site": "AWAY",
+      "opponent": {
+        "team_id": 109,
+        "school": "Elmstead",
+        "conference": "Atlantic",
+        "abbreviation": "ELM",
+        "color": "#cc0000",
+        "alternate_color": "#000000",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": 34,
+      "opponent_points": 20,
+      "result": "W",
+      "spread": null,
+      "win_prob": null,
+      "win_prob_source": null
+    },
+    {
+      "game_id": 9105,
+      "week": 6,
+      "season_type": "regular",
+      "start_at": "2026-10-10T19:00:00Z",
+      "status": "FINAL",
+      "site": "HOME",
+      "opponent": {
+        "team_id": 112,
+        "school": "Harlow",
+        "conference": "Atlantic",
+        "abbreviation": "HRL",
+        "color": "#101820",
+        "alternate_color": "#ffb81c",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": 41,
+      "opponent_points": 14,
+      "result": "W",
+      "spread": null,
+      "win_prob": null,
+      "win_prob_source": null
+    },
+    {
+      "game_id": 9106,
+      "week": 7,
+      "season_type": "regular",
+      "start_at": "2026-10-17T23:30:00Z",
+      "status": "FINAL",
+      "site": "AWAY",
+      "opponent": {
+        "team_id": 110,
+        "school": "Fox Harbor",
+        "conference": "Atlantic",
+        "abbreviation": "FXH",
+        "color": "#f47321",
+        "alternate_color": "#005030",
+        "has_logo": false
+      },
+      "opponent_rank": 22,
+      "team_points": 30,
+      "opponent_points": 27,
+      "result": "W",
+      "spread": null,
+      "win_prob": null,
+      "win_prob_source": null
+    },
+    {
+      "game_id": 9107,
+      "week": 8,
+      "season_type": "regular",
+      "start_at": "2026-10-24T16:00:00Z",
+      "status": "FINAL",
+      "site": "NEUTRAL",
+      "opponent": {
+        "team_id": 103,
+        "school": "Carlton",
+        "conference": "Lakes",
+        "abbreviation": null,
+        "color": "#1b5e20",
+        "alternate_color": "#d9d9d9",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": 28,
+      "opponent_points": 24,
+      "result": "W",
+      "spread": null,
+      "win_prob": null,
+      "win_prob_source": null
+    },
+    {
+      "game_id": 9004,
+      "week": 10,
+      "season_type": "regular",
+      "start_at": "2026-11-07T17:00:00Z",
+      "status": "UPCOMING",
+      "site": "HOME",
+      "opponent": {
+        "team_id": 111,
+        "school": "Glenmoor",
+        "conference": "Atlantic",
+        "abbreviation": "GLN",
+        "color": "#5e2d79",
+        "alternate_color": "#fdb827",
+        "has_logo": true
+      },
+      "opponent_rank": 11,
+      "team_points": null,
+      "opponent_points": null,
+      "result": null,
+      "spread": -6.5,
+      "win_prob": 0.68,
+      "win_prob_source": "CFBD"
+    },
+    {
+      "game_id": 9108,
+      "week": 11,
+      "season_type": "regular",
+      "start_at": "2026-11-14T20:00:00Z",
+      "status": "UPCOMING",
+      "site": "AWAY",
+      "opponent": {
+        "team_id": 104,
+        "school": "Dunmore",
+        "conference": "Lakes",
+        "abbreviation": "DUN",
+        "color": "#f5e663",
+        "alternate_color": "#1b1b1b",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": null,
+      "opponent_points": null,
+      "result": null,
+      "spread": -10.0,
+      "win_prob": 0.77,
+      "win_prob_source": "CFBD"
+    },
+    {
+      "game_id": 9109,
+      "week": 12,
+      "season_type": "regular",
+      "start_at": "2026-11-21T17:00:00Z",
+      "status": "UPCOMING",
+      "site": "HOME",
+      "opponent": {
+        "team_id": 118,
+        "school": "Norwick",
+        "conference": "Lakes",
+        "abbreviation": "NOR",
+        "color": "#13294b",
+        "alternate_color": "#ffffff",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": null,
+      "opponent_points": null,
+      "result": null,
+      "spread": -14.5,
+      "win_prob": 0.88,
+      "win_prob_source": "CFBD"
+    },
+    {
+      "game_id": 9003,
+      "week": 13,
+      "season_type": "regular",
+      "start_at": "2026-11-21T20:30:00Z",
+      "status": "UPCOMING",
+      "site": "AWAY",
+      "opponent": {
+        "team_id": 101,
+        "school": "Ashford",
+        "conference": "Atlantic",
+        "abbreviation": "ASH",
+        "color": "#7a1f3d",
+        "alternate_color": "#e9c46a",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": null,
+      "opponent_points": null,
+      "result": null,
+      "spread": 3.0,
+      "win_prob": 0.44,
+      "win_prob_source": "CFBD"
+    },
+    {
+      "game_id": 9110,
+      "week": 14,
+      "season_type": "regular",
+      "start_at": "2026-12-05T17:00:00Z",
+      "status": "UPCOMING",
+      "site": "NEUTRAL",
+      "opponent": {
+        "team_id": 107,
+        "school": "Cedar Point",
+        "conference": "Atlantic",
+        "abbreviation": "CPT",
+        "color": "#bf5700",
+        "alternate_color": "#333f48",
+        "has_logo": false
+      },
+      "opponent_rank": null,
+      "team_points": null,
+      "opponent_points": null,
+      "result": null,
+      "spread": -2.5,
+      "win_prob": 0.57,
+      "win_prob_source": "CFBD"
+    }
+  ],
+  "sp": [
+    {
+      "season": 2026,
+      "overall": 22.4,
+      "overall_rank": 9,
+      "offense": 36.1,
+      "offense_rank": 14,
+      "defense": 13.7,
+      "defense_rank": 6
+    },
+    {
+      "season": 2025,
+      "overall": 17.9,
+      "overall_rank": 21,
+      "offense": 33.0,
+      "offense_rank": 25,
+      "defense": 15.1,
+      "defense_rank": 20
+    }
+  ],
+  "polls": [
+    {
+      "week_seq": 1,
+      "label": "after week 1",
+      "ap_rank": 14,
+      "cfp_rank": null
+    },
+    {
+      "week_seq": 2,
+      "label": "after week 2",
+      "ap_rank": 12,
+      "cfp_rank": null
+    },
+    {
+      "week_seq": 3,
+      "label": "after week 3",
+      "ap_rank": 12,
+      "cfp_rank": null
+    },
+    {
+      "week_seq": 4,
+      "label": "after week 4",
+      "ap_rank": 9,
+      "cfp_rank": null
+    },
+    {
+      "week_seq": 5,
+      "label": "after week 5",
+      "ap_rank": 8,
+      "cfp_rank": null
+    },
+    {
+      "week_seq": 6,
+      "label": "after week 6",
+      "ap_rank": 8,
+      "cfp_rank": null
+    },
+    {
+      "week_seq": 7,
+      "label": "after week 7",
+      "ap_rank": 7,
+      "cfp_rank": null
+    },
+    {
+      "week_seq": 8,
+      "label": "after week 8",
+      "ap_rank": 6,
+      "cfp_rank": null
+    },
+    {
+      "week_seq": 9,
+      "label": "after week 9",
+      "ap_rank": 6,
+      "cfp_rank": null
+    }
+  ],
+  "queries": {
+    "hero": "q-0001",
+    "schedule": "q-0001",
+    "ratings": "q-0001",
+    "polls": "q-0001"
+  }
+}

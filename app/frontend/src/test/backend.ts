@@ -31,6 +31,11 @@ const DEFAULTS: Record<string, string> = {
   'GET /api/timeline': 'timeline.idle.json',
   'GET /api/quota': 'quota.json',
   'GET /api/teams': 'teams.json',
+  'GET /api/teams/map': 'teams-map.json',
+  'GET /api/team/102': 'team.json',
+  'GET /api/team/102/outlook': 'team-outlook.json',
+  'GET /api/league/week': 'league-week.json',
+  'GET /api/league/stats': 'league-stats.json',
 }
 
 /** The routes of the HTTP API answered from fixtures; `on` replaces one route, `calls` records every request. */

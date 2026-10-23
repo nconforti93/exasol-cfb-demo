@@ -20,7 +20,7 @@ function Inspector() {
 function renderShell(backend = new FakeBackend(), initial = {}) {
   return renderInApp(<AppShell pages={probePages} refreshPanel={Refresh} inspector={Inspector} />, {
     backend,
-    initial,
+    initial: { page: 'odds', ...initial },
   })
 }
 
@@ -34,11 +34,11 @@ afterEach(() => {
 
 describe('AppShell', () => {
   it('opens at the current point and loads the page there', async () => {
-    go('/')
+    go('/league/odds')
     renderShell()
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('odds@2026/9:ready'))
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Week' })).toHaveDisplayValue(/2026, after week 9/))
-    expect(window.location.pathname).toBe('/odds')
+    expect(window.location.pathname).toBe('/league/odds')
   })
 
   it('renders the banner area, page, refresh panel and footer around the page', async () => {
@@ -62,12 +62,12 @@ describe('AppShell', () => {
     renderShell()
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('odds@2026/9:ready'))
     await userEvent.click(screen.getByRole('link', { name: 'Predictions' }))
-    expect(window.location.pathname).toBe('/predictions')
+    expect(window.location.pathname).toBe('/league/predictions')
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('predictions@2026/9:ready'))
   })
 
   it('opens a link at the page and point it names', async () => {
-    go('/upsets?season=2026&week=8')
+    go('/league/upsets?season=2026&week=8')
     renderShell(new FakeBackend(), { page: 'upsets', chosen: { mode: 'explicit', season: 2026, week_seq: 8 } })
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('upsets@2026/8:ready'))
   })

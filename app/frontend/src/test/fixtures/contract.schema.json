@@ -624,12 +624,49 @@
               "type": "null"
             }
           ]
+        },
+        "abbreviation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alternate_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "has_logo": {
+          "type": "boolean"
         }
       },
       "required": [
         "team_id",
         "school",
-        "conference"
+        "conference",
+        "abbreviation",
+        "color",
+        "alternate_color",
+        "has_logo"
       ],
       "additionalProperties": false
     },
@@ -3799,6 +3836,1235 @@
         "source",
         "requests",
         "fetch_log_ok"
+      ],
+      "additionalProperties": false
+    },
+    "WinProbSource": {
+      "enum": [
+        "OURS",
+        "CFBD"
+      ]
+    },
+    "GameStatus": {
+      "enum": [
+        "FINAL",
+        "UPCOMING"
+      ]
+    },
+    "PredictionKind": {
+      "enum": [
+        "FROZEN",
+        "CURRENT"
+      ]
+    },
+    "MapTeam": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "number"
+        },
+        "school": {
+          "type": "string"
+        },
+        "mascot": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "abbreviation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alternate_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "has_logo": {
+          "type": "boolean"
+        },
+        "latitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "longitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wins": {
+          "type": "number"
+        },
+        "losses": {
+          "type": "number"
+        },
+        "conf_wins": {
+          "type": "number"
+        },
+        "conf_losses": {
+          "type": "number"
+        },
+        "ap_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team_id",
+        "school",
+        "mascot",
+        "abbreviation",
+        "conference",
+        "color",
+        "alternate_color",
+        "has_logo",
+        "latitude",
+        "longitude",
+        "wins",
+        "losses",
+        "conf_wins",
+        "conf_losses",
+        "ap_rank"
+      ],
+      "additionalProperties": false
+    },
+    "TeamsMapResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conferences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MapTeam"
+          }
+        },
+        "queries": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "point",
+        "notice",
+        "conferences",
+        "teams",
+        "queries"
+      ],
+      "additionalProperties": false
+    },
+    "TeamHero": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "number"
+        },
+        "school": {
+          "type": "string"
+        },
+        "mascot": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "abbreviation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alternate_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "has_logo": {
+          "type": "boolean"
+        },
+        "wins": {
+          "type": "number"
+        },
+        "losses": {
+          "type": "number"
+        },
+        "conf_wins": {
+          "type": "number"
+        },
+        "conf_losses": {
+          "type": "number"
+        },
+        "ap_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cfp_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team_id",
+        "school",
+        "mascot",
+        "abbreviation",
+        "conference",
+        "color",
+        "alternate_color",
+        "has_logo",
+        "wins",
+        "losses",
+        "conf_wins",
+        "conf_losses",
+        "ap_rank",
+        "cfp_rank"
+      ],
+      "additionalProperties": false
+    },
+    "TeamGame": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "week": {
+          "type": "number"
+        },
+        "season_type": {
+          "$ref": "#/$defs/SeasonType"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/GameStatus"
+        },
+        "site": {
+          "$ref": "#/$defs/SiteKind"
+        },
+        "opponent": {
+          "$ref": "#/$defs/Team"
+        },
+        "opponent_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "team_points": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opponent_points": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "const": "W"
+            },
+            {
+              "const": "L"
+            },
+            {
+              "const": "T"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spread": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "win_prob": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "win_prob_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WinProbSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "game_id",
+        "week",
+        "season_type",
+        "start_at",
+        "status",
+        "site",
+        "opponent",
+        "opponent_rank",
+        "team_points",
+        "opponent_points",
+        "result",
+        "spread",
+        "win_prob",
+        "win_prob_source"
+      ],
+      "additionalProperties": false
+    },
+    "SpRating": {
+      "type": "object",
+      "properties": {
+        "season": {
+          "type": "number"
+        },
+        "overall": {
+          "type": "number"
+        },
+        "overall_rank": {
+          "type": "number"
+        },
+        "offense": {
+          "type": "number"
+        },
+        "offense_rank": {
+          "type": "number"
+        },
+        "defense": {
+          "type": "number"
+        },
+        "defense_rank": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "season",
+        "overall",
+        "overall_rank",
+        "offense",
+        "offense_rank",
+        "defense",
+        "defense_rank"
+      ],
+      "additionalProperties": false
+    },
+    "PollPoint": {
+      "type": "object",
+      "properties": {
+        "week_seq": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        },
+        "ap_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cfp_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "week_seq",
+        "label",
+        "ap_rank",
+        "cfp_rank"
+      ],
+      "additionalProperties": false
+    },
+    "TeamResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "team": {
+          "$ref": "#/$defs/TeamHero"
+        },
+        "games": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TeamGame"
+          }
+        },
+        "sp": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpRating"
+          }
+        },
+        "polls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PollPoint"
+          }
+        },
+        "queries": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "point",
+        "notice",
+        "team",
+        "games",
+        "sp",
+        "polls",
+        "queries"
+      ],
+      "additionalProperties": false
+    },
+    "OddsTrajectoryPoint": {
+      "type": "object",
+      "properties": {
+        "season": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        },
+        "p_in_cfp": {
+          "type": "number"
+        },
+        "p_bye": {
+          "type": "number"
+        },
+        "p_champion": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "season",
+        "week_seq",
+        "label",
+        "p_in_cfp",
+        "p_bye",
+        "p_champion"
+      ],
+      "additionalProperties": false
+    },
+    "OutlookOdds": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "move": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Move"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delta_p_in_cfp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OddsTrajectoryPoint"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trajectory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OddsTrajectoryPoint"
+          }
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "move",
+        "delta_p_in_cfp",
+        "current",
+        "trajectory"
+      ],
+      "additionalProperties": false
+    },
+    "OutlookGame": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "site": {
+          "$ref": "#/$defs/SiteKind"
+        },
+        "opponent": {
+          "$ref": "#/$defs/Team"
+        },
+        "opponent_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "team_win_prob": {
+          "type": "number"
+        },
+        "pred_team_points": {
+          "type": "number"
+        },
+        "pred_opponent_points": {
+          "type": "number"
+        },
+        "spread": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prediction_kind": {
+          "$ref": "#/$defs/PredictionKind"
+        }
+      },
+      "required": [
+        "game_id",
+        "week_seq",
+        "start_at",
+        "site",
+        "opponent",
+        "opponent_rank",
+        "team_win_prob",
+        "pred_team_points",
+        "pred_opponent_points",
+        "spread",
+        "prediction_kind"
+      ],
+      "additionalProperties": false
+    },
+    "OutlookThisWeek": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "game": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutlookGame"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "game"
+      ],
+      "additionalProperties": false
+    },
+    "OutlookWatch": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "guide": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GuideResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "guide"
+      ],
+      "additionalProperties": false
+    },
+    "OutlookRivalries": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MatchupSeries"
+          }
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "series"
+      ],
+      "additionalProperties": false
+    },
+    "TeamOutlookResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "team_id": {
+          "type": "number"
+        },
+        "odds": {
+          "$ref": "#/$defs/OutlookOdds"
+        },
+        "this_week": {
+          "$ref": "#/$defs/OutlookThisWeek"
+        },
+        "watch": {
+          "$ref": "#/$defs/OutlookWatch"
+        },
+        "rivalries": {
+          "$ref": "#/$defs/OutlookRivalries"
+        },
+        "queries": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "point",
+        "run_id",
+        "team_id",
+        "odds",
+        "this_week",
+        "watch",
+        "rivalries",
+        "queries"
+      ],
+      "additionalProperties": false
+    },
+    "WeekGame": {
+      "type": "object",
+      "properties": {
+        "game_id": {
+          "type": "number"
+        },
+        "week_seq": {
+          "type": "number"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "venue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "home": {
+          "$ref": "#/$defs/Team"
+        },
+        "away": {
+          "$ref": "#/$defs/Team"
+        },
+        "home_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "away_rank": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spread": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "home_win_prob": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "win_prob_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WinProbSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stakes": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "game_of_week": {
+          "type": "boolean"
+        },
+        "upset_alert_team_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "game_id",
+        "week_seq",
+        "start_at",
+        "venue",
+        "home",
+        "away",
+        "home_rank",
+        "away_rank",
+        "spread",
+        "home_win_prob",
+        "win_prob_source",
+        "stakes",
+        "game_of_week",
+        "upset_alert_team_id"
+      ],
+      "additionalProperties": false
+    },
+    "LeagueWeekResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "week_seq": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "games": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeekGame"
+          }
+        },
+        "queries": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "point",
+        "notice",
+        "week_seq",
+        "run_id",
+        "games",
+        "queries"
+      ],
+      "additionalProperties": false
+    },
+    "TravelRow": {
+      "type": "object",
+      "properties": {
+        "team": {
+          "$ref": "#/$defs/Team"
+        },
+        "km": {
+          "type": "number"
+        },
+        "trips": {
+          "type": "number"
+        },
+        "longest_trip_km": {
+          "type": "number"
+        },
+        "longest_trip_to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "km",
+        "trips",
+        "longest_trip_km",
+        "longest_trip_to"
+      ],
+      "additionalProperties": false
+    },
+    "MoverRow": {
+      "type": "object",
+      "properties": {
+        "team": {
+          "$ref": "#/$defs/Team"
+        },
+        "sp_now": {
+          "type": "number"
+        },
+        "sp_before": {
+          "type": "number"
+        },
+        "delta": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "team",
+        "sp_now",
+        "sp_before",
+        "delta"
+      ],
+      "additionalProperties": false
+    },
+    "ConferenceRow": {
+      "type": "object",
+      "properties": {
+        "conference": {
+          "type": "string"
+        },
+        "teams": {
+          "type": "number"
+        },
+        "mean_sp": {
+          "type": "number"
+        },
+        "nonconf_wins": {
+          "type": "number"
+        },
+        "nonconf_losses": {
+          "type": "number"
+        },
+        "ranked_teams": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "conference",
+        "teams",
+        "mean_sp",
+        "nonconf_wins",
+        "nonconf_losses",
+        "ranked_teams"
+      ],
+      "additionalProperties": false
+    },
+    "StreakRow": {
+      "type": "object",
+      "properties": {
+        "team": {
+          "$ref": "#/$defs/Team"
+        },
+        "length": {
+          "type": "number"
+        },
+        "since_season": {
+          "type": "number"
+        },
+        "since_week": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "team",
+        "length",
+        "since_season",
+        "since_week"
+      ],
+      "additionalProperties": false
+    },
+    "LeagueStatsResponse": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/ResolvedPoint"
+        },
+        "notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "road_warriors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TravelRow"
+          }
+        },
+        "risers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MoverRow"
+          }
+        },
+        "fallers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MoverRow"
+          }
+        },
+        "conference_strength": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConferenceRow"
+          }
+        },
+        "streaks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StreakRow"
+          }
+        },
+        "queries": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "point",
+        "notice",
+        "road_warriors",
+        "risers",
+        "fallers",
+        "conference_strength",
+        "streaks",
+        "queries"
       ],
       "additionalProperties": false
     }

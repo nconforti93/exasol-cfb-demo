@@ -45,7 +45,7 @@ function makeBackend(): FakeBackend {
 function renderFollowing(backend: FakeBackend, initial = {}) {
   return renderInApp(
     <AppShell pages={probePages} refreshPanel={() => null} inspector={() => null} />,
-    { backend, initial },
+    { backend, initial: { page: 'odds', ...initial } },
   )
 }
 

@@ -4,6 +4,9 @@ import { createApiClient, type ApiClient } from './api/client.ts'
 import { ApiProvider } from './api/context.tsx'
 import { HeadToHeadPage } from './headtohead/HeadToHeadPage.tsx'
 import { Inspector } from './inspector/Inspector.tsx'
+import { StatsPage } from './league/StatsPage.tsx'
+import { WeekPage } from './league/WeekPage.tsx'
+import { MapPage } from './map/MapPage.tsx'
 import { OddsPage } from './odds/OddsPage.tsx'
 import { PredictionsPage } from './predictions/PredictionsPage.tsx'
 import { RefreshPanel } from './refresh/RefreshPanel.tsx'
@@ -11,12 +14,17 @@ import { AppShell } from './shell/AppShell.tsx'
 import { AppStoreProvider } from './state/react.tsx'
 import { createAppStore, type AppStore, type PageId } from './state/store.ts'
 import { parseLocation } from './state/url.ts'
+import { TeamPage } from './team/TeamPage.tsx'
 import { UpsetsPage } from './upsets/UpsetsPage.tsx'
 
 const PAGE_COMPONENTS: Record<PageId, () => React.JSX.Element> = {
+  home: MapPage,
+  team: TeamPage,
+  week: WeekPage,
   odds: OddsPage,
   predictions: PredictionsPage,
   upsets: UpsetsPage,
+  stats: StatsPage,
   'head-to-head': HeadToHeadPage,
 }
 
@@ -28,8 +36,11 @@ export interface AppProps {
 }
 
 function storeFromLocation(): AppStore {
-  const { page, chosen, focusTeam, pair } = parseLocation(window.location.pathname, window.location.search)
-  return createAppStore({ page, chosen, focusTeam, pair })
+  const { page, chosen, focusTeam, mapConference, pair } = parseLocation(
+    window.location.pathname,
+    window.location.search,
+  )
+  return createAppStore({ page, chosen, focusTeam, mapConference, pair })
 }
 
 export function App({ client, store }: AppProps = {}) {

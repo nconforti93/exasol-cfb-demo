@@ -47,6 +47,11 @@ export function formatRank(rank: number | null, tied: boolean): string {
   return tied ? `T-${rank}` : String(rank)
 }
 
+/** A poll rank as "#6". */
+export function formatPollRank(rank: number): string {
+  return `#${rank}`
+}
+
 export function formatProbSource(source: string): string {
   return source.toUpperCase() === 'ELO' ? 'Elo' : source.toLowerCase()
 }

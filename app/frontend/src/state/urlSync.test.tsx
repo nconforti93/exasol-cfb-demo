@@ -23,36 +23,44 @@ afterEach(() => {
 
 describe('useUrlSync', () => {
   it('canonicalizes the address to the page without adding a history entry', () => {
+    go('/odds?team=102')
+    const length = window.history.length
+    renderInApp(<Sync />, { initial: { page: 'odds', focusTeam: 102 } })
+    expect(here()).toBe('/league/odds?team=102')
+    expect(window.history.length).toBe(length)
+  })
+
+  it('leaves the map home at the root path', () => {
     go('/')
     const length = window.history.length
     renderInApp(<Sync />)
-    expect(here()).toBe('/odds')
+    expect(here()).toBe('/')
     expect(window.history.length).toBe(length)
   })
 
   it('writes a chosen point to the address as season and week sequence', () => {
     go('/odds')
-    const { store } = renderInApp(<Sync />)
+    const { store } = renderInApp(<Sync />, { initial: { page: 'odds' } })
     act(() => store.actions.choosePoint(2026, 8))
-    expect(here()).toBe('/odds?season=2026&week=8')
+    expect(here()).toBe('/league/odds?season=2026&week=8')
   })
 
   it('writes the page and the focus team, and drops the point when following again', () => {
     go('/odds?season=2026&week=8')
     const { store } = renderInApp(<Sync />, {
-      initial: { chosen: { mode: 'explicit', season: 2026, week_seq: 8 } },
+      initial: { page: 'odds', chosen: { mode: 'explicit', season: 2026, week_seq: 8 } },
     })
     act(() => store.actions.setFocusTeam(101))
-    expect(here()).toBe('/odds?season=2026&week=8&team=101')
+    expect(here()).toBe('/league/odds?season=2026&week=8&team=101')
     act(() => store.actions.setPage('predictions'))
-    expect(here()).toBe('/predictions?season=2026&week=8')
+    expect(here()).toBe('/league/predictions?season=2026&week=8')
     act(() => store.actions.followCurrent())
-    expect(here()).toBe('/predictions')
+    expect(here()).toBe('/league/predictions')
   })
 
   it('adds one history entry per change and none when nothing changes', () => {
     go('/odds')
-    const { store } = renderInApp(<Sync />)
+    const { store } = renderInApp(<Sync />, { initial: { page: 'odds' } })
     const length = window.history.length
     act(() => store.actions.setPage('upsets'))
     expect(window.history.length).toBe(length + 1)
@@ -63,7 +71,7 @@ describe('useUrlSync', () => {
 
   it('moves the store when the user goes back or forward', () => {
     go('/odds')
-    const { store } = renderInApp(<Sync />)
+    const { store } = renderInApp(<Sync />, { initial: { page: 'odds' } })
     act(() => {
       go('/head-to-head?team=101&opponent=102&season=2026&week=7')
       window.dispatchEvent(new PopStateEvent('popstate'))
@@ -77,24 +85,25 @@ describe('useUrlSync', () => {
 
   it('does not push entries while applying a back navigation', () => {
     go('/odds')
-    const { store } = renderInApp(<Sync />)
+    const { store } = renderInApp(<Sync />, { initial: { page: 'odds' } })
     act(() => store.actions.choosePoint(2026, 8))
     const length = window.history.length
     act(() => {
-      go('/odds')
+      go('/league/odds')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
     expect(store.getState().chosen).toEqual({ mode: 'follow' })
     expect(window.history.length).toBe(length)
-    expect(here()).toBe('/odds')
+    expect(here()).toBe('/league/odds')
   })
 
   it('stops listening on unmount', () => {
     go('/odds')
-    const { store, unmount } = renderInApp(<Sync />)
+    const { store, unmount } = renderInApp(<Sync />, { initial: { page: 'odds' } })
+    const before = here()
     unmount()
     act(() => store.actions.setPage('upsets'))
-    expect(here()).toBe('/odds')
+    expect(here()).toBe(before)
     act(() => {
       go('/predictions')
       window.dispatchEvent(new PopStateEvent('popstate'))

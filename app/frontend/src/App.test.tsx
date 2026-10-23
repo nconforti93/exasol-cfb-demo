@@ -21,11 +21,34 @@ afterEach(() => {
 })
 
 describe('App', () => {
-  it('renders the shell with the odds page placeholder at the root path', async () => {
+  it('opens on the map home at the root path', async () => {
     renderApp()
     expect(screen.getByRole('heading', { level: 1, name: 'CFB playoff odds' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Map' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('opens a team page at /team/<id> and a league tab at /league/<tab>', async () => {
+    window.history.replaceState(null, '', '/team/102')
+    const { unmount } = render(
+      <StrictMode>
+        <App client={createApiClient({ fetch: new FakeBackend().fetch })} />
+      </StrictMode>,
+    )
+    expect(await screen.findByRole('heading', { level: 2, name: 'Brookvale' })).toBeInTheDocument()
+    unmount()
+    window.history.replaceState(null, '', '/league/stats')
+    renderApp()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Stats' })).toBeInTheDocument()
+  })
+
+  it('shows an old path as its league tab and replaces the address, keeping the query', async () => {
+    window.history.replaceState(null, '', '/odds?team=102')
+    const length = window.history.length
+    renderApp()
     expect(await screen.findByRole('heading', { level: 2, name: 'Odds' })).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/odds')
+    expect(window.location.pathname + window.location.search).toBe('/league/odds?team=102')
+    expect(window.history.length).toBe(length)
   })
 
   it('opens the page a link names', async () => {
@@ -34,7 +57,7 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Head-to-head' })).toBeInTheDocument()
   })
 
-  it('navigates between the four pages', async () => {
+  it('navigates between the pages', async () => {
     renderApp()
     for (const name of ['Predictions', 'Upsets', 'Head-to-head', 'Odds']) {
       await userEvent.click(screen.getByRole('link', { name }))

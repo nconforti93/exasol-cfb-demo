@@ -1,19 +1,36 @@
 import { describe, expect, it } from 'vitest'
 
 import { createAppStore } from './store.ts'
-import { buildPath, parseLocation, syncStoreFromLocation } from './url.ts'
+import { buildPath, parseLocation, pathFor, syncStoreFromLocation } from './url.ts'
 
 describe('parseLocation', () => {
   it.each([
-    ['/', 'odds'],
+    ['/', 'home'],
+    ['/team/102', 'team'],
+    ['/league', 'week'],
+    ['/league/week', 'week'],
+    ['/league/odds', 'odds'],
+    ['/league/predictions', 'predictions'],
+    ['/league/upsets', 'upsets'],
+    ['/league/stats', 'stats'],
+    ['/league/nonsense', 'week'],
+    ['/head-to-head', 'head-to-head'],
     ['/odds', 'odds'],
     ['/predictions', 'predictions'],
     ['/upsets', 'upsets'],
-    ['/head-to-head', 'head-to-head'],
-    ['/nonsense', 'odds'],
-    ['/predictions/', 'predictions'],
+    ['/nonsense', 'home'],
+    ['/team', 'home'],
+    ['/team/abc', 'home'],
+    ['/league/odds/', 'odds'],
   ] as const)('maps %s to the %s page', (pathname, page) => {
     expect(parseLocation(pathname, '').page).toBe(page)
+  })
+
+  it('reads the team page\'s team from the path, and the map filter from ?conf=', () => {
+    expect(parseLocation('/team/102', '?season=2026&week=8')).toMatchObject({ page: 'team', focusTeam: 102 })
+    expect(parseLocation('/', '?conf=Atlantic').mapConference).toBe('Atlantic')
+    expect(parseLocation('/', '?conf=').mapConference).toBeNull()
+    expect(parseLocation('/league/odds', '?conf=Atlantic').mapConference).toBeNull()
   })
 
   it('reads an explicit point from season and week sequence', () => {
@@ -49,16 +66,37 @@ describe('parseLocation', () => {
 })
 
 describe('buildPath', () => {
-  it('builds the path of a page with no parameters while following', () => {
+  it('builds the root path for the map while following, and carries the conference', () => {
     const store = createAppStore()
-    expect(buildPath(store.getState())).toBe('/odds')
+    expect(buildPath(store.getState())).toBe('/')
+    store.actions.setMapConference('Big Ten')
+    expect(buildPath(store.getState())).toBe('/?conf=Big+Ten')
+  })
+
+  it('builds /team/<id> and /league/<tab> paths, which are what an old path is replaced by', () => {
+    const store = createAppStore()
+    store.actions.navigate({ page: 'team', team: 102 })
+    store.actions.choosePoint(2026, 8)
+    expect(buildPath(store.getState())).toBe('/team/102?season=2026&week=8')
+    for (const tab of ['week', 'predictions', 'upsets', 'stats'] as const) {
+      store.actions.setPage(tab)
+      expect(buildPath(store.getState())).toBe(`/league/${tab}?season=2026&week=8`)
+    }
   })
 
   it('keeps an explicit point and the focus team on the odds page', () => {
     const store = createAppStore()
+    store.actions.setPage('odds')
     store.actions.choosePoint(2026, 8)
     store.actions.setFocusTeam(102)
-    expect(buildPath(store.getState())).toBe('/odds?season=2026&week=8&team=102')
+    expect(buildPath(store.getState())).toBe('/league/odds?season=2026&week=8&team=102')
+  })
+
+  it('writes the address of a destination without changing the state', () => {
+    const store = createAppStore()
+    store.actions.choosePoint(2026, 8)
+    expect(pathFor(store.getState(), { page: 'team', team: 7 })).toBe('/team/7?season=2026&week=8')
+    expect(store.getState().page).toBe('home')
   })
 
   it('keeps the pair on the head-to-head page, not the focus team', () => {
@@ -74,7 +112,7 @@ describe('buildPath', () => {
     store.actions.setPage('upsets')
     store.actions.setFocusTeam(102)
     store.actions.choosePoint(2026, 3)
-    expect(buildPath(store.getState())).toBe('/upsets?season=2026&week=3')
+    expect(buildPath(store.getState())).toBe('/league/upsets?season=2026&week=3')
   })
 })
 
@@ -86,6 +124,16 @@ describe('syncStoreFromLocation', () => {
     expect(store.getState().chosen).toEqual({ mode: 'explicit', season: 2026, week_seq: 8 })
     expect(store.getState().pair).toEqual({ team: 101, opponent: 102 })
     expect(buildPath(store.getState())).toBe('/head-to-head?season=2026&week=8&team=101&opponent=102')
+  })
+
+  it('sets the team page\'s team, the map filter and the old paths\' pages', () => {
+    const store = createAppStore()
+    syncStoreFromLocation(store, '/team/102', '')
+    expect(store.getState()).toMatchObject({ page: 'team', focusTeam: 102 })
+    syncStoreFromLocation(store, '/', '?conf=Atlantic')
+    expect(store.getState()).toMatchObject({ page: 'home', mapConference: 'Atlantic' })
+    syncStoreFromLocation(store, '/upsets', '')
+    expect(buildPath(store.getState())).toBe('/league/upsets')
   })
 
   it('does not rewrite an unchanged explicit point, so nothing reloads', () => {

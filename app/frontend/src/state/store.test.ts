@@ -32,18 +32,32 @@ describe('subscribe', () => {
   it('keeps the same state object when an action changes nothing', () => {
     const store = createAppStore()
     const before = store.getState()
-    store.actions.setPage('odds')
+    store.actions.setPage('home')
     store.actions.setFocusTeam(null)
+    store.actions.setMapConference(null)
+    store.actions.navigate({ page: 'home' })
     expect(store.getState()).toBe(before)
   })
 })
 
 describe('page, focus team and head-to-head pair', () => {
-  it('starts on the odds page without a focus team or pair', () => {
+  it('starts on the map home without a focus team, conference or pair', () => {
     const state = createAppStore().getState()
-    expect(state.page).toBe('odds')
+    expect(state.page).toBe('home')
     expect(state.focusTeam).toBeNull()
+    expect(state.mapConference).toBeNull()
     expect(state.pair).toEqual({ team: null, opponent: null })
+  })
+
+  it('opens a team page with its team, and head-to-head with its pair, in one change', () => {
+    const store = createAppStore()
+    const listener = vi.fn()
+    store.subscribe(listener)
+    store.actions.navigate({ page: 'team', team: 102 })
+    expect(store.getState()).toMatchObject({ page: 'team', focusTeam: 102 })
+    store.actions.navigate({ page: 'head-to-head', team: 102, opponent: 101 })
+    expect(store.getState()).toMatchObject({ page: 'head-to-head', pair: { team: 102, opponent: 101 } })
+    expect(listener).toHaveBeenCalledTimes(2)
   })
 
   it('sets the pair with an action (P7-a)', () => {

@@ -146,10 +146,15 @@ export interface PointsResponse {
   notice: Notice | null
 }
 
+/** A team with what its mark needs: colors as CFBD sends them, and whether the app's logo cache holds its logo. */
 export interface Team {
   team_id: number
   school: string
   conference: string | null
+  abbreviation: string | null
+  color: string | null
+  alternate_color: string | null
+  has_logo: boolean
 }
 
 export interface TeamsResponse {
@@ -768,4 +773,232 @@ export interface ConsoleRunResponse {
   source: SpendSourceKind
   requests: RequestLine[]
   fetch_log_ok: boolean
+}
+
+/* UI revision: map, team page, league tabs. Every response maps its panels to query-log entry ids (`queries`). */
+
+export type WinProbSource = 'OURS' | 'CFBD'
+export type GameStatus = 'FINAL' | 'UPCOMING'
+export type PredictionKind = 'FROZEN' | 'CURRENT'
+
+/** A team at its home stadium, with its record and AP rank at the point. Coordinates are null when unknown. */
+export interface MapTeam {
+  team_id: number
+  school: string
+  mascot: string | null
+  abbreviation: string | null
+  conference: string | null
+  color: string | null
+  alternate_color: string | null
+  has_logo: boolean
+  latitude: number | null
+  longitude: number | null
+  wins: number
+  losses: number
+  conf_wins: number
+  conf_losses: number
+  ap_rank: number | null
+}
+
+export interface TeamsMapResponse {
+  point: ResolvedPoint
+  notice: Notice | null
+  conferences: string[]
+  teams: MapTeam[]
+  queries: Record<string, string>
+}
+
+export interface TeamHero {
+  team_id: number
+  school: string
+  mascot: string | null
+  abbreviation: string | null
+  conference: string | null
+  color: string | null
+  alternate_color: string | null
+  has_logo: boolean
+  wins: number
+  losses: number
+  conf_wins: number
+  conf_losses: number
+  ap_rank: number | null
+  cfp_rank: number | null
+}
+
+/** One game of the team's schedule. A game after the point is UPCOMING and carries the line and a probability. */
+export interface TeamGame {
+  game_id: number
+  week: number
+  season_type: SeasonType
+  start_at: string | null
+  status: GameStatus
+  site: SiteKind
+  opponent: Team
+  opponent_rank: number | null
+  team_points: number | null
+  opponent_points: number | null
+  result: 'W' | 'L' | 'T' | null
+  /** The line from the team's side: negative when the team is favored. */
+  spread: number | null
+  win_prob: number | null
+  win_prob_source: WinProbSource | null
+}
+
+export interface SpRating {
+  season: number
+  overall: number
+  overall_rank: number
+  offense: number
+  offense_rank: number
+  defense: number
+  defense_rank: number
+}
+
+export interface PollPoint {
+  week_seq: number
+  label: string
+  ap_rank: number | null
+  cfp_rank: number | null
+}
+
+export interface TeamResponse {
+  point: ResolvedPoint
+  notice: Notice | null
+  team: TeamHero
+  games: TeamGame[]
+  sp: SpRating[]
+  polls: PollPoint[]
+  queries: Record<string, string>
+}
+
+export interface OddsTrajectoryPoint {
+  season: number
+  week_seq: number
+  label: string
+  p_in_cfp: number
+  p_bye: number
+  p_champion: number
+}
+
+export interface OutlookOdds {
+  available: boolean
+  reason: string | null
+  move: Move | null
+  delta_p_in_cfp: number | null
+  current: OddsTrajectoryPoint | null
+  trajectory: OddsTrajectoryPoint[]
+}
+
+export interface OutlookGame {
+  game_id: number
+  week_seq: number
+  start_at: string | null
+  site: SiteKind
+  opponent: Team
+  opponent_rank: number | null
+  team_win_prob: number
+  pred_team_points: number
+  pred_opponent_points: number
+  spread: number | null
+  prediction_kind: PredictionKind
+}
+
+export interface OutlookThisWeek {
+  available: boolean
+  reason: string | null
+  game: OutlookGame | null
+}
+
+export interface OutlookWatch {
+  available: boolean
+  reason: string | null
+  guide: GuideResponse | null
+}
+
+export interface OutlookRivalries {
+  available: boolean
+  reason: string | null
+  series: MatchupSeries[]
+}
+
+export interface TeamOutlookResponse {
+  point: ResolvedPoint
+  run_id: number | null
+  team_id: number
+  odds: OutlookOdds
+  this_week: OutlookThisWeek
+  watch: OutlookWatch
+  rivalries: OutlookRivalries
+  queries: Record<string, string>
+}
+
+/** One game of the coming week. The backend orders the list: stakes first with a run, else ranked pairs, close lines, kickoff. */
+export interface WeekGame {
+  game_id: number
+  week_seq: number
+  start_at: string | null
+  venue: string | null
+  home: Team
+  away: Team
+  home_rank: number | null
+  away_rank: number | null
+  /** The line from the home side: negative when the home team is favored. */
+  spread: number | null
+  home_win_prob: number | null
+  win_prob_source: WinProbSource | null
+  /** The largest swing in any team's P(CFP) the game decides, with a published run. */
+  stakes: number | null
+  game_of_week: boolean
+  upset_alert_team_id: number | null
+}
+
+export interface LeagueWeekResponse {
+  point: ResolvedPoint
+  notice: Notice | null
+  week_seq: number | null
+  run_id: number | null
+  games: WeekGame[]
+  queries: Record<string, string>
+}
+
+export interface TravelRow {
+  team: Team
+  km: number
+  trips: number
+  longest_trip_km: number
+  longest_trip_to: string
+}
+
+export interface MoverRow {
+  team: Team
+  sp_now: number
+  sp_before: number
+  delta: number
+}
+
+export interface ConferenceRow {
+  conference: string
+  teams: number
+  mean_sp: number
+  nonconf_wins: number
+  nonconf_losses: number
+  ranked_teams: number
+}
+
+export interface StreakRow {
+  team: Team
+  length: number
+  since_season: number
+  since_week: number
+}
+
+export interface LeagueStatsResponse {
+  point: ResolvedPoint
+  notice: Notice | null
+  road_warriors: TravelRow[]
+  risers: MoverRow[]
+  fallers: MoverRow[]
+  conference_strength: ConferenceRow[]
+  streaks: StreakRow[]
+  queries: Record<string, string>
 }

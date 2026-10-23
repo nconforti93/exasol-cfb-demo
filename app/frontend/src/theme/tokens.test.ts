@@ -9,13 +9,17 @@ import {
   BASE_FONT_SIZE_PX,
   cssVariables,
   DARK,
+  LAYOUT,
   LIGHT,
   MARK_CONTRAST_MIN,
   MARK_PAIRS,
   RELIEF_PAIRS,
+  SPACE_PX,
+  staticVariables,
   TEXT_CONTRAST_MIN,
   TEXT_PAIRS,
   THEMES,
+  TYPE_SCALE,
   type ThemeName,
 } from './tokens.ts'
 
@@ -46,6 +50,35 @@ describe.each(themeNames)('%s theme contrast floors', (name) => {
   it('uses a sequential ramp that darkens (light to dark) in one hue', () => {
     const lightness = tokens.seq.map((hex) => contrastRatio(hex, '#ffffff'))
     expect([...lightness].sort((a, b) => a - b)).toEqual(lightness)
+  })
+})
+
+describe.each(themeNames)('%s card surfaces', (name) => {
+  it('keeps the card edge visible against the card', () => {
+    const tokens = THEMES[name]
+    expect(contrastRatio(tokens.borderSubtle, tokens.surface)).toBeGreaterThan(1.1)
+  })
+})
+
+describe('static tokens', () => {
+  it('has the eight spacing steps of the visual design', () => {
+    expect(SPACE_PX).toEqual([4, 8, 12, 16, 24, 32, 48, 64])
+    expect(staticVariables()['--space-8']).toBe('64px')
+  })
+
+  it('keeps every text size at the projector floor of 16 px, and body text at 18 px', () => {
+    for (const style of Object.values(TYPE_SCALE)) expect(style.sizePx).toBeGreaterThanOrEqual(16)
+    expect(TYPE_SCALE.body.sizePx).toBeGreaterThanOrEqual(BASE_FONT_SIZE_PX)
+  })
+
+  it('repeats the breakpoints of the layout constants in ui.css', () => {
+    const css = readFileSync(resolveFrom(import.meta.url, '../ui/ui.css'), 'utf8')
+    expect(css).toContain(`(max-width: ${LAYOUT.stackBelowPx}px)`)
+    expect(css).toContain(`(min-width: ${LAYOUT.wideCardFromPx}px)`)
+  })
+
+  it('writes the type scale as font shorthands', () => {
+    expect(staticVariables()['--text-title']).toMatch(/^700 22px\/1\.25 system-ui/)
   })
 })
 

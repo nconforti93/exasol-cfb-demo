@@ -79,3 +79,11 @@ export function BanIcon(props: IconProps) {
     </Svg>
   )
 }
+
+export function CodeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m5.5 4.5-3.5 3.5 3.5 3.5M10.5 4.5 14 8l-3.5 3.5" />
+    </Svg>
+  )
+}

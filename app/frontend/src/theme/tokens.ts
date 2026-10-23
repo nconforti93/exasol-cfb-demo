@@ -9,6 +9,10 @@ export const MARK_CONTRAST_MIN = 3
 export interface ThemeTokens {
   page: string
   surface: string
+  surfaceRaised: string
+  borderSubtle: string
+  shadowCard: string
+  shadowRaised: string
   ink: { primary: string; secondary: string; muted: string }
   accentText: string
   accent: string
@@ -40,6 +44,10 @@ const SEQUENTIAL_BLUE = [
 export const LIGHT: ThemeTokens = {
   page: '#f9f9f7',
   surface: '#fcfcfb',
+  surfaceRaised: '#ffffff',
+  borderSubtle: '#e1e0d9',
+  shadowCard: '0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 7%)',
+  shadowRaised: '0 4px 14px rgb(0 0 0 / 20%)',
   ink: { primary: '#0b0b0b', secondary: '#52514e', muted: '#6b6a65' },
   accentText: '#1c5cab',
   accent: '#256abf',
@@ -61,6 +69,10 @@ export const LIGHT: ThemeTokens = {
 export const DARK: ThemeTokens = {
   page: '#0d0d0d',
   surface: '#1a1a19',
+  surfaceRaised: '#222220',
+  borderSubtle: '#2c2c2a',
+  shadowCard: 'none',
+  shadowRaised: '0 6px 20px rgb(0 0 0 / 55%)',
   ink: { primary: '#f0efec', secondary: '#c3c2b7', muted: '#a09e96' },
   accentText: '#86b6ef',
   accent: '#3987e5',
@@ -81,15 +93,56 @@ export const DARK: ThemeTokens = {
 
 export const THEMES: Record<ThemeName, ThemeTokens> = { light: LIGHT, dark: DARK }
 
-export const TEXT_PAIRS: ReadonlyArray<readonly [string, (t: ThemeTokens) => string, 'page' | 'surface']> = [
+/** Spacing steps `--space-1` to `--space-8`, in px. */
+export const SPACE_PX = [4, 8, 12, 16, 24, 32, 48, 64] as const
+
+export interface TypeStyle {
+  sizePx: number
+  weight: number
+  lineHeight: number
+}
+
+/** The type scale (`--text-<name>` is the `font` shorthand; every number also sets `tabular-nums` in `ui.css`). */
+export const TYPE_SCALE = {
+  label: { sizePx: 16, weight: 600, lineHeight: 1.3 },
+  small: { sizePx: 16, weight: 400, lineHeight: 1.4 },
+  body: { sizePx: 18, weight: 400, lineHeight: 1.45 },
+  title: { sizePx: 22, weight: 700, lineHeight: 1.25 },
+  page: { sizePx: 30, weight: 700, lineHeight: 1.15 },
+  hero: { sizePx: 40, weight: 800, lineHeight: 1.1 },
+  kpi: { sizePx: 48, weight: 700, lineHeight: 1 },
+} as const satisfies Record<string, TypeStyle>
+
+export const RADIUS_PX = { card: 14, control: 10, pill: 999 } as const
+
+/** Layout constants. The two breakpoints are repeated as literals in `@media` rules, where a variable cannot go. */
+export const LAYOUT = {
+  maxWidthPx: 1320,
+  pagePadPx: 24,
+  pagePadWidePx: 32,
+  gridGapPx: 24,
+  cardPadPx: 20,
+  cardPadWidePx: 24,
+  stackBelowPx: 1100,
+  widePadFromPx: 1440,
+  wideCardFromPx: 1200,
+} as const
+
+export type Ground = 'page' | 'surface' | 'surfaceRaised'
+
+export const TEXT_PAIRS: ReadonlyArray<readonly [string, (t: ThemeTokens) => string, Ground]> = [
   ['ink.primary on page', (t) => t.ink.primary, 'page'],
   ['ink.primary on surface', (t) => t.ink.primary, 'surface'],
   ['ink.secondary on page', (t) => t.ink.secondary, 'page'],
   ['ink.secondary on surface', (t) => t.ink.secondary, 'surface'],
   ['ink.muted on page', (t) => t.ink.muted, 'page'],
   ['ink.muted on surface', (t) => t.ink.muted, 'surface'],
+  ['ink.primary on surfaceRaised', (t) => t.ink.primary, 'surfaceRaised'],
+  ['ink.secondary on surfaceRaised', (t) => t.ink.secondary, 'surfaceRaised'],
+  ['ink.muted on surfaceRaised', (t) => t.ink.muted, 'surfaceRaised'],
   ['accentText on page', (t) => t.accentText, 'page'],
   ['accentText on surface', (t) => t.accentText, 'surface'],
+  ['accentText on surfaceRaised', (t) => t.accentText, 'surfaceRaised'],
   ['moveText.up on surface', (t) => t.moveText.up, 'surface'],
   ['moveText.down on surface', (t) => t.moveText.down, 'surface'],
   ['statusText.good on surface', (t) => t.statusText.good, 'surface'],
@@ -120,6 +173,10 @@ export function cssVariables(tokens: ThemeTokens): Record<string, string> {
   const variables: Record<string, string> = {
     '--page': tokens.page,
     '--surface': tokens.surface,
+    '--surface-raised': tokens.surfaceRaised,
+    '--border-subtle': tokens.borderSubtle,
+    '--shadow-card': tokens.shadowCard,
+    '--shadow-raised': tokens.shadowRaised,
     '--ink-primary': tokens.ink.primary,
     '--ink-secondary': tokens.ink.secondary,
     '--ink-muted': tokens.ink.muted,
@@ -150,5 +207,26 @@ export function cssVariables(tokens: ThemeTokens): Record<string, string> {
   tokens.seq.forEach((hex, index) => {
     variables[`--seq-${index + 1}`] = hex
   })
+  return variables
+}
+
+function px(value: number): string {
+  return `${value}px`
+}
+
+/** The tokens that do not change with the theme: spacing, type, radii and layout. */
+export function staticVariables(): Record<string, string> {
+  const variables: Record<string, string> = { '--font-stack': FONT_STACK }
+  SPACE_PX.forEach((value, index) => {
+    variables[`--space-${index + 1}`] = px(value)
+  })
+  for (const [name, style] of Object.entries(TYPE_SCALE)) {
+    variables[`--text-${name}`] = `${style.weight} ${px(style.sizePx)}/${style.lineHeight} ${FONT_STACK}`
+  }
+  for (const [name, value] of Object.entries(RADIUS_PX)) variables[`--radius-${name}`] = px(value)
+  variables['--layout-max'] = px(LAYOUT.maxWidthPx)
+  variables['--page-pad'] = px(LAYOUT.pagePadPx)
+  variables['--grid-gap'] = px(LAYOUT.gridGapPx)
+  variables['--card-pad'] = px(LAYOUT.cardPadPx)
   return variables
 }

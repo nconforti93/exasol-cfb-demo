@@ -18,7 +18,7 @@ function Probe() {
 
 describe('store bindings', () => {
   it('re-render a component when its slice changes, in StrictMode', () => {
-    const store = createAppStore()
+    const store = createAppStore({ page: 'odds' })
     render(
       <StrictMode>
         <AppStoreProvider store={store}>

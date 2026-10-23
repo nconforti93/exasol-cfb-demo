@@ -57,5 +57,11 @@
   "timeline.failed.json": "TimelineResponse",
   "console-run.stored.json": "ConsoleRunResponse",
   "error.refresh-locked.json": "ApiErrorBody",
-  "error.refresh-running.json": "ApiErrorBody"
+  "error.refresh-running.json": "ApiErrorBody",
+  "teams-map.json": "TeamsMapResponse",
+  "team.json": "TeamResponse",
+  "team-outlook.json": "TeamOutlookResponse",
+  "team-outlook.empty.json": "TeamOutlookResponse",
+  "league-week.json": "LeagueWeekResponse",
+  "league-stats.json": "LeagueStatsResponse"
 }

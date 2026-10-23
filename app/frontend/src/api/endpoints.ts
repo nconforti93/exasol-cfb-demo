@@ -10,6 +10,8 @@ import type {
   GuideResponse,
   HealthResponse,
   InspectorResponse,
+  LeagueStatsResponse,
+  LeagueWeekResponse,
   MatchupResponse,
   OddsResponse,
   Population,
@@ -24,6 +26,9 @@ import type {
   RefreshRunResponse,
   RefreshTarget,
   ScorecardResponse,
+  TeamOutlookResponse,
+  TeamResponse,
+  TeamsMapResponse,
   TeamsResponse,
   TimelineResponse,
   UpsetsResponse,
@@ -55,6 +60,16 @@ export function createApi(client: ApiClient) {
     points: (season?: number, options?: RequestOptions) =>
       get<PointsResponse>('/api/points', season === undefined ? undefined : { season }, options),
     teams: (options?: RequestOptions) => get<TeamsResponse>('/api/teams', undefined, options),
+    teamsMap: (point: PointQuery, options?: RequestOptions) =>
+      get<TeamsMapResponse>('/api/teams/map', { ...point }, options),
+    team: (teamId: number, point: PointQuery, options?: RequestOptions) =>
+      get<TeamResponse>(`/api/team/${teamId}`, { ...point }, options),
+    teamOutlook: (teamId: number, point: PointQuery, options?: RequestOptions) =>
+      get<TeamOutlookResponse>(`/api/team/${teamId}/outlook`, { ...point }, options),
+    leagueWeek: (point: PointQuery, options?: RequestOptions) =>
+      get<LeagueWeekResponse>('/api/league/week', { ...point }, options),
+    leagueStats: (point: PointQuery, options?: RequestOptions) =>
+      get<LeagueStatsResponse>('/api/league/stats', { ...point }, options),
 
     odds: (point: PointQuery, options?: RequestOptions) => get<OddsResponse>('/api/odds', { ...point }, options),
     whatifGames: (options?: RequestOptions) => get<WhatIfGamesResponse>('/api/whatif/games', undefined, options),

@@ -2,12 +2,20 @@
   "team": {
     "team_id": 101,
     "school": "Ashford",
-    "conference": "Atlantic"
+    "conference": "Atlantic",
+    "abbreviation": "ASH",
+    "color": "#7a1f3d",
+    "alternate_color": "#e9c46a",
+    "has_logo": false
   },
   "opponent": {
     "team_id": 102,
     "school": "Brookvale",
-    "conference": "Atlantic"
+    "conference": "Atlantic",
+    "abbreviation": "BRK",
+    "color": "#0b3d91",
+    "alternate_color": "#f2a900",
+    "has_logo": true
   },
   "never_met": false,
   "next_as_of_label": "2026, after week 9",

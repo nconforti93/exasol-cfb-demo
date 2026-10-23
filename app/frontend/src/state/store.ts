@@ -2,8 +2,24 @@ import type { ConfigResponse, CurrentPoint, FollowKey, FollowState, WhatIfCondit
 
 export const MAX_CONDITIONS = 16
 
-export const PAGES = ['odds', 'predictions', 'upsets', 'head-to-head'] as const
+export const PAGES = ['home', 'team', 'week', 'odds', 'predictions', 'upsets', 'stats', 'head-to-head'] as const
 export type PageId = (typeof PAGES)[number]
+
+export const DEFAULT_PAGE: PageId = 'home'
+
+/** The pages that live under `/league/`, in tab order. */
+export const LEAGUE_TABS = ['week', 'odds', 'predictions', 'upsets', 'stats'] as const
+export type LeagueTab = (typeof LEAGUE_TABS)[number]
+
+export function isLeagueTab(page: PageId): page is LeagueTab {
+  return (LEAGUE_TABS as readonly PageId[]).includes(page)
+}
+
+/** Where a link or button goes; `navigate` sets the page and what it needs in one step. */
+export type Destination =
+  | { page: 'team'; team: number }
+  | { page: 'head-to-head'; team: number | null; opponent: number | null }
+  | { page: Exclude<PageId, 'team' | 'head-to-head'> }
 
 export type ChosenPoint = { mode: 'follow' } | { mode: 'explicit'; season: number; week_seq: number }
 
@@ -40,6 +56,8 @@ export interface AppState {
   chosen: ChosenPoint
   page: PageId
   focusTeam: number | null
+  /** The conference chip chosen on the map (`?conf=`); null shows every FBS team. */
+  mapConference: string | null
   pair: Pair
   conditions: WhatIfCondition[]
   inspector: InspectorState
@@ -67,6 +85,9 @@ export interface AppActions {
   followCurrent(): void
   applyFollow(follow: FollowState): void
   setFocusTeam(teamId: number | null): void
+  setMapConference(conference: string | null): void
+  /** Opens a destination: the page and its team or pair together, so the address changes once. */
+  navigate(destination: Destination): void
   setPair(team: number | null, opponent: number | null): void
   swapPair(): void
   /** Sets, replaces or (with null) removes a condition. Returns false when the 16-condition limit refuses it. */
@@ -136,13 +157,26 @@ export function selectChatContext(state: AppState): ChatContext {
   }
 }
 
+/** The state after opening a destination (pure; the URL builder uses it to write a link's address). */
+export function applyDestination(state: AppState, destination: Destination): AppState {
+  switch (destination.page) {
+    case 'team':
+      return { ...state, page: 'team', focusTeam: destination.team }
+    case 'head-to-head':
+      return { ...state, page: 'head-to-head', pair: { team: destination.team, opponent: destination.opponent } }
+    default:
+      return { ...state, page: destination.page }
+  }
+}
+
 export function initialState(): AppState {
   return {
     config: null,
     current: null,
     chosen: { mode: 'follow' },
-    page: 'odds',
+    page: DEFAULT_PAGE,
     focusTeam: null,
+    mapConference: null,
     pair: { team: null, opponent: null },
     conditions: [],
     inspector: { open: false, entryId: null },
@@ -207,6 +241,14 @@ export function createAppStore(initial: Partial<AppState> = {}): AppStore {
     },
     applyFollow: (reading) => update(followReading(state, reading)),
     setFocusTeam: (teamId) => update(state.focusTeam === teamId ? state : { ...state, focusTeam: teamId }),
+    setMapConference: (conference) =>
+      update(state.mapConference === conference ? state : { ...state, mapConference: conference }),
+    navigate(destination) {
+      const next = applyDestination(state, destination)
+      const unchanged =
+        next.page === state.page && next.focusTeam === state.focusTeam && next.pair.team === state.pair.team && next.pair.opponent === state.pair.opponent
+      if (!unchanged) update(next)
+    },
     setPair(team, opponent) {
       if (state.pair.team === team && state.pair.opponent === opponent) return
       update({ ...state, pair: { team, opponent } })

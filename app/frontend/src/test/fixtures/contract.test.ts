@@ -58,6 +58,12 @@ describe('fixture coverage of the demo states', () => {
       'preview-plan.cached.json',
       'refresh-plan.live.json',
       'error.live-busy.json',
+      'teams-map.json',
+      'team.json',
+      'team-outlook.json',
+      'team-outlook.empty.json',
+      'league-week.json',
+      'league-stats.json',
     ]) {
       expect(names.has(required), required).toBe(true)
     }
@@ -69,5 +75,29 @@ describe('fixture coverage of the demo states', () => {
       expect(row.p_in_cfp).toBeGreaterThanOrEqual(0)
       expect(row.p_in_cfp).toBeLessThanOrEqual(1)
     }
+  })
+})
+
+describe('map fixture', () => {
+  interface MapFixture {
+    teams: { team_id: number; conference: string | null; latitude: number | null; longitude: number | null }[]
+  }
+  const map = fixture<MapFixture>('teams-map.json')
+  const located = map.teams.filter((team) => team.latitude !== null && team.longitude !== null)
+
+  it('has a team in Honolulu, one without coordinates, and a twelve-team cluster within 40 km', () => {
+    expect(located.some((team) => Math.abs((team.latitude ?? 0) - 21.31) < 0.1 && Math.abs((team.longitude ?? 0) + 157.86) < 0.1)).toBe(true)
+    expect(map.teams.length - located.length).toBe(1)
+    const cluster = located.filter((team) => Math.abs((team.latitude ?? 0) - 32.78) < 0.3 && Math.abs((team.longitude ?? 0) + 96.8) < 0.3)
+    expect(cluster.length).toBeGreaterThanOrEqual(12)
+  })
+
+  it('spans the country and lists the conferences of its teams', () => {
+    const latitudes = located.map((team) => team.latitude ?? 0)
+    const longitudes = located.map((team) => team.longitude ?? 0)
+    expect(Math.max(...latitudes) - Math.min(...latitudes)).toBeGreaterThan(20)
+    expect(Math.max(...longitudes) - Math.min(...longitudes)).toBeGreaterThan(40)
+    const conferences = fixture<{ conferences: string[] }>('teams-map.json').conferences
+    expect([...new Set(map.teams.map((team) => team.conference))].sort()).toEqual([...conferences].sort())
   })
 })

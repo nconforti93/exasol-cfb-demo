@@ -14,6 +14,10 @@ function ProbeBody({ name }: { name: string }) {
   )
 }
 
+const Home = () => <ProbeBody name="home" />
+const Team = () => <ProbeBody name="team" />
+const Week = () => <ProbeBody name="week" />
+const Stats = () => <ProbeBody name="stats" />
 const Odds = () => <ProbeBody name="odds" />
 const Predictions = () => <ProbeBody name="predictions" />
 const Upsets = () => <ProbeBody name="upsets" />
@@ -21,6 +25,10 @@ const HeadToHead = () => <ProbeBody name="head-to-head" />
 
 /** Test pages for the shell: each loads `/api/odds` at the effective point and shows `page@season/week:status`. */
 export const probePages: Record<PageId, ComponentType> = {
+  home: Home,
+  team: Team,
+  week: Week,
+  stats: Stats,
   odds: Odds,
   predictions: Predictions,
   upsets: Upsets,

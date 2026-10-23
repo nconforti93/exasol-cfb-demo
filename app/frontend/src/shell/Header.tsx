@@ -2,19 +2,22 @@ import type { MouseEvent, ReactNode } from 'react'
 
 import { ThemeSwitch } from '../theme/ThemeSwitch.tsx'
 import { useAppActions, useAppState } from '../state/react.tsx'
-import { PAGES, effectivePoint, type PageId } from '../state/store.ts'
+import { effectivePoint, type PageId } from '../state/store.ts'
 import { buildPath } from '../state/url.ts'
 import { AsOfPicker } from './AsOfPicker.tsx'
 import { LedgerBadge } from './LedgerBadge.tsx'
 import { QuotaBadge } from './QuotaBadge.tsx'
 import { useShellData } from './ShellData.tsx'
 
-const PAGE_LABELS: Record<PageId, string> = {
-  odds: 'Odds',
-  predictions: 'Predictions',
-  upsets: 'Upsets',
-  'head-to-head': 'Head-to-head',
-}
+const NAV_LABELS: ReadonlyArray<readonly [PageId, string]> = [
+  ['home', 'Map'],
+  ['week', 'This week'],
+  ['odds', 'Odds'],
+  ['predictions', 'Predictions'],
+  ['upsets', 'Upsets'],
+  ['stats', 'Stats'],
+  ['head-to-head', 'Head-to-head'],
+]
 
 function isPlainClick(event: MouseEvent): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
@@ -38,7 +41,7 @@ export function Header({ refreshPanel }: { refreshPanel?: ReactNode }) {
       <div className="shell-header-row">
         <h1 className="shell-title">CFB playoff odds</h1>
         <nav aria-label="Pages" className="shell-tabs">
-          {PAGES.map((page) => (
+          {NAV_LABELS.map(([page, label]) => (
             <a
               key={page}
               href={buildPath({ ...state, page })}
@@ -49,7 +52,7 @@ export function Header({ refreshPanel }: { refreshPanel?: ReactNode }) {
                 actions.setPage(page)
               }}
             >
-              {PAGE_LABELS[page]}
+              {label}
             </a>
           ))}
         </nav>

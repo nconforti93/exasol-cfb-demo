@@ -3,32 +3,56 @@
     {
       "team_id": 101,
       "school": "Ashford",
-      "conference": "Atlantic"
+      "conference": "Atlantic",
+      "abbreviation": "ASH",
+      "color": "#7a1f3d",
+      "alternate_color": "#e9c46a",
+      "has_logo": false
     },
     {
       "team_id": 102,
       "school": "Brookvale",
-      "conference": "Atlantic"
+      "conference": "Atlantic",
+      "abbreviation": "BRK",
+      "color": "#0b3d91",
+      "alternate_color": "#f2a900",
+      "has_logo": true
     },
     {
       "team_id": 103,
       "school": "Carlton",
-      "conference": "Lakes"
+      "conference": "Lakes",
+      "abbreviation": null,
+      "color": "#1b5e20",
+      "alternate_color": "#d9d9d9",
+      "has_logo": false
     },
     {
       "team_id": 104,
       "school": "Dunmore",
-      "conference": "Lakes"
+      "conference": "Lakes",
+      "abbreviation": "DUN",
+      "color": "#f5e663",
+      "alternate_color": "#1b1b1b",
+      "has_logo": false
     },
     {
       "team_id": 105,
       "school": "Eastgate",
-      "conference": "Pacific"
+      "conference": "Pacific",
+      "abbreviation": "EAST",
+      "color": "00573F",
+      "alternate_color": "ffffff",
+      "has_logo": true
     },
     {
       "team_id": 106,
       "school": "Fairhaven",
-      "conference": "Pacific"
+      "conference": "Pacific",
+      "abbreviation": "FAIR",
+      "color": "#c8102e",
+      "alternate_color": "#13294b",
+      "has_logo": false
     }
   ]
 }

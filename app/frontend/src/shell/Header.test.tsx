@@ -14,7 +14,7 @@ function renderHeader(backend = new FakeBackend(), initial = {}) {
     <ShellProviders>
       <Header refreshPanel={<p>refresh slot</p>} />
     </ShellProviders>,
-    { backend, initial },
+    { backend, initial: { page: 'odds', ...initial } },
   )
 }
 
@@ -24,9 +24,12 @@ describe('Header', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'CFB playoff odds' })).toBeInTheDocument()
     const nav = screen.getByRole('navigation', { name: 'Pages' })
     expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Map',
+      'This week',
       'Odds',
       'Predictions',
       'Upsets',
+      'Stats',
       'Head-to-head',
     ])
     expect(screen.getByRole('button', { name: 'Inspector' })).toBeInTheDocument()
@@ -48,7 +51,7 @@ describe('Header', () => {
     renderHeader(new FakeBackend(), { chosen: { mode: 'explicit', season: 2026, week_seq: 8 } })
     expect(screen.getByRole('link', { name: 'Predictions' })).toHaveAttribute(
       'href',
-      '/predictions?season=2026&week=8',
+      '/league/predictions?season=2026&week=8',
     )
   })
 

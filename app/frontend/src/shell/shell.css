@@ -194,8 +194,17 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 1rem;
-  padding: 0.5rem 1rem 1rem;
+  gap: var(--grid-gap);
+  width: 100%;
+  max-width: var(--layout-max);
+  margin-inline: auto;
+  padding: var(--space-5) var(--page-pad) var(--space-6);
+}
+
+@media (min-width: 1440px) {
+  .shell-body {
+    padding-inline: var(--space-6);
+  }
 }
 
 .shell-main {

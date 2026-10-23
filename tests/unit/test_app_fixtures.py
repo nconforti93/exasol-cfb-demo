@@ -45,9 +45,24 @@ def test_every_enum_of_the_contract_is_a_model_alias() -> None:
 
 def test_a_model_refuses_a_field_the_contract_does_not_name() -> None:
     with pytest.raises(ValueError):
-        models.Team.model_validate({"team_id": 1, "school": "A", "conference": None, "x": 1})
+        models.Team.model_validate(
+            {"team_id": 1, "school": "A", "conference": None, "has_logo": False, "x": 1}
+        )
 
 
 def test_integers_stay_integers_when_a_model_is_dumped() -> None:
-    team = models.Team.model_validate({"team_id": 7, "school": "A", "conference": None})
-    assert team.model_dump_json() == '{"team_id":7,"school":"A","conference":null}'
+    team = models.Team.model_validate(
+        {
+            "team_id": 7,
+            "school": "A",
+            "conference": None,
+            "abbreviation": None,
+            "color": None,
+            "alternate_color": None,
+            "has_logo": False,
+        }
+    )
+    assert team.model_dump_json() == (
+        '{"team_id":7,"school":"A","conference":null,"abbreviation":null,'
+        '"color":null,"alternate_color":null,"has_logo":false}'
+    )

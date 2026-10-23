@@ -1,0 +1,35 @@
+{
+  "point": {
+    "season": 2026,
+    "week_seq": 9,
+    "next_week_seq": 10,
+    "label": "2026, after week 9",
+    "is_current": true
+  },
+  "run_id": null,
+  "team_id": 102,
+  "odds": {
+    "available": false,
+    "reason": "No published run at 2026, after week 9. Odds appear after the first simulation run.",
+    "move": null,
+    "delta_p_in_cfp": null,
+    "current": null,
+    "trajectory": []
+  },
+  "this_week": {
+    "available": false,
+    "reason": "No prediction yet: this week's picks come with the first simulation run.",
+    "game": null
+  },
+  "watch": {
+    "available": false,
+    "reason": "Games to watch appear once a run is published for this week.",
+    "guide": null
+  },
+  "rivalries": {
+    "available": false,
+    "reason": "Rivalries appear once the series are published.",
+    "series": []
+  },
+  "queries": {}
+}

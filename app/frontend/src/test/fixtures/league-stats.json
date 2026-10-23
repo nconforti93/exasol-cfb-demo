@@ -1,0 +1,351 @@
+{
+  "point": {
+    "season": 2026,
+    "week_seq": 9,
+    "next_week_seq": 10,
+    "label": "2026, after week 9",
+    "is_current": true
+  },
+  "notice": null,
+  "road_warriors": [
+    {
+      "team": {
+        "team_id": 124,
+        "school": "Tidewater",
+        "conference": "Pacific",
+        "abbreviation": "TID",
+        "color": "#024731",
+        "alternate_color": "#c8c9c7",
+        "has_logo": false
+      },
+      "km": 21480,
+      "trips": 4,
+      "longest_trip_km": 4240,
+      "longest_trip_to": "Boulder"
+    },
+    {
+      "team": {
+        "team_id": 105,
+        "school": "Eastgate",
+        "conference": "Pacific",
+        "abbreviation": "EAST",
+        "color": "00573F",
+        "alternate_color": "ffffff",
+        "has_logo": true
+      },
+      "km": 16120,
+      "trips": 5,
+      "longest_trip_km": 3840,
+      "longest_trip_to": "Miami"
+    },
+    {
+      "team": {
+        "team_id": 110,
+        "school": "Fox Harbor",
+        "conference": "Atlantic",
+        "abbreviation": "FXH",
+        "color": "#f47321",
+        "alternate_color": "#005030",
+        "has_logo": false
+      },
+      "km": 14260,
+      "trips": 4,
+      "longest_trip_km": 4010,
+      "longest_trip_to": "Seattle"
+    },
+    {
+      "team": {
+        "team_id": 106,
+        "school": "Fairhaven",
+        "conference": "Pacific",
+        "abbreviation": "FAIR",
+        "color": "#c8102e",
+        "alternate_color": "#13294b",
+        "has_logo": false
+      },
+      "km": 13190,
+      "trips": 4,
+      "longest_trip_km": 3560,
+      "longest_trip_to": "Raleigh"
+    },
+    {
+      "team": {
+        "team_id": 121,
+        "school": "Quarry Bay",
+        "conference": "Pacific",
+        "abbreviation": "QRY",
+        "color": "#002855",
+        "alternate_color": "#e5a823",
+        "has_logo": false
+      },
+      "km": 12650,
+      "trips": 5,
+      "longest_trip_km": 3380,
+      "longest_trip_to": "Boston"
+    }
+  ],
+  "risers": [
+    {
+      "team": {
+        "team_id": 111,
+        "school": "Glenmoor",
+        "conference": "Atlantic",
+        "abbreviation": "GLN",
+        "color": "#5e2d79",
+        "alternate_color": "#fdb827",
+        "has_logo": true
+      },
+      "sp_now": 18.6,
+      "sp_before": 4.1,
+      "delta": 14.5
+    },
+    {
+      "team": {
+        "team_id": 102,
+        "school": "Brookvale",
+        "conference": "Atlantic",
+        "abbreviation": "BRK",
+        "color": "#0b3d91",
+        "alternate_color": "#f2a900",
+        "has_logo": true
+      },
+      "sp_now": 22.4,
+      "sp_before": 17.9,
+      "delta": 4.5
+    },
+    {
+      "team": {
+        "team_id": 127,
+        "school": "Westbrook",
+        "conference": "Heartland",
+        "abbreviation": "WBK",
+        "color": "#0051ba",
+        "alternate_color": "#e8000d",
+        "has_logo": false
+      },
+      "sp_now": 21.0,
+      "sp_before": 17.2,
+      "delta": 3.8
+    },
+    {
+      "team": {
+        "team_id": 135,
+        "school": "Fenwick",
+        "conference": "Gulf",
+        "abbreviation": "FEN",
+        "color": "#00539b",
+        "alternate_color": "#ffffff",
+        "has_logo": true
+      },
+      "sp_now": 9.7,
+      "sp_before": 6.6,
+      "delta": 3.1
+    },
+    {
+      "team": {
+        "team_id": 123,
+        "school": "Stonehaven",
+        "conference": "Pacific",
+        "abbreviation": "STH",
+        "color": "#8c1d40",
+        "alternate_color": "#ffc627",
+        "has_logo": true
+      },
+      "sp_now": 14.2,
+      "sp_before": 11.9,
+      "delta": 2.3
+    }
+  ],
+  "fallers": [
+    {
+      "team": {
+        "team_id": 129,
+        "school": "Zephyr",
+        "conference": "Heartland",
+        "abbreviation": "ZPH",
+        "color": "#841617",
+        "alternate_color": "#fdf9d8",
+        "has_logo": true
+      },
+      "sp_now": 12.1,
+      "sp_before": 25.3,
+      "delta": -13.2
+    },
+    {
+      "team": {
+        "team_id": 113,
+        "school": "Irwin",
+        "conference": "Lakes",
+        "abbreviation": "IRW",
+        "color": "#00274c",
+        "alternate_color": "#ffcb05",
+        "has_logo": false
+      },
+      "sp_now": 16.0,
+      "sp_before": 24.1,
+      "delta": -8.1
+    },
+    {
+      "team": {
+        "team_id": 119,
+        "school": "Oakridge",
+        "conference": "Pacific",
+        "abbreviation": "OAK",
+        "color": "#990000",
+        "alternate_color": "#ffc72c",
+        "has_logo": false
+      },
+      "sp_now": 8.2,
+      "sp_before": 14.9,
+      "delta": -6.7
+    },
+    {
+      "team": {
+        "team_id": 115,
+        "school": "Kettering",
+        "conference": "Lakes",
+        "abbreviation": "KET",
+        "color": "#c5050c",
+        "alternate_color": "#ffffff",
+        "has_logo": false
+      },
+      "sp_now": 3.3,
+      "sp_before": 8.5,
+      "delta": -5.2
+    },
+    {
+      "team": {
+        "team_id": 133,
+        "school": "Denholm",
+        "conference": "Heartland",
+        "abbreviation": "DEN",
+        "color": "#9e1b32",
+        "alternate_color": "#ffffff",
+        "has_logo": false
+      },
+      "sp_now": -1.2,
+      "sp_before": 2.6,
+      "delta": -3.8
+    }
+  ],
+  "conference_strength": [
+    {
+      "conference": "Atlantic",
+      "teams": 8,
+      "mean_sp": 11.4,
+      "nonconf_wins": 19,
+      "nonconf_losses": 5,
+      "ranked_teams": 3
+    },
+    {
+      "conference": "Lakes",
+      "teams": 8,
+      "mean_sp": 9.8,
+      "nonconf_wins": 17,
+      "nonconf_losses": 7,
+      "ranked_teams": 2
+    },
+    {
+      "conference": "Pacific",
+      "teams": 10,
+      "mean_sp": 8.1,
+      "nonconf_wins": 21,
+      "nonconf_losses": 10,
+      "ranked_teams": 3
+    },
+    {
+      "conference": "Heartland",
+      "teams": 8,
+      "mean_sp": 7.6,
+      "nonconf_wins": 16,
+      "nonconf_losses": 9,
+      "ranked_teams": 2
+    },
+    {
+      "conference": "Gulf",
+      "teams": 15,
+      "mean_sp": 4.9,
+      "nonconf_wins": 24,
+      "nonconf_losses": 19,
+      "ranked_teams": 2
+    }
+  ],
+  "streaks": [
+    {
+      "team": {
+        "team_id": 113,
+        "school": "Irwin",
+        "conference": "Lakes",
+        "abbreviation": "IRW",
+        "color": "#00274c",
+        "alternate_color": "#ffcb05",
+        "has_logo": false
+      },
+      "length": 14,
+      "since_season": 2025,
+      "since_week": 5
+    },
+    {
+      "team": {
+        "team_id": 120,
+        "school": "Pinecrest",
+        "conference": "Pacific",
+        "abbreviation": "PIN",
+        "color": "#cc0000",
+        "alternate_color": "#ffffff",
+        "has_logo": true
+      },
+      "length": 9,
+      "since_season": 2025,
+      "since_week": 13
+    },
+    {
+      "team": {
+        "team_id": 127,
+        "school": "Westbrook",
+        "conference": "Heartland",
+        "abbreviation": "WBK",
+        "color": "#0051ba",
+        "alternate_color": "#e8000d",
+        "has_logo": false
+      },
+      "length": 8,
+      "since_season": 2026,
+      "since_week": 1
+    },
+    {
+      "team": {
+        "team_id": 102,
+        "school": "Brookvale",
+        "conference": "Atlantic",
+        "abbreviation": "BRK",
+        "color": "#0b3d91",
+        "alternate_color": "#f2a900",
+        "has_logo": true
+      },
+      "length": 5,
+      "since_season": 2026,
+      "since_week": 6
+    },
+    {
+      "team": {
+        "team_id": 119,
+        "school": "Oakridge",
+        "conference": "Pacific",
+        "abbreviation": "OAK",
+        "color": "#990000",
+        "alternate_color": "#ffc72c",
+        "has_logo": false
+      },
+      "length": 5,
+      "since_season": 2026,
+      "since_week": 4
+    }
+  ],
+  "queries": {
+    "road_warriors": "q-0001",
+    "movers": "q-0001",
+    "conference_strength": "q-0001",
+    "streaks": "q-0001"
+  }
+}
