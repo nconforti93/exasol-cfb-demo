@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { createApi } from '../src/api/endpoints.ts'
-import { fixtureFor, logoFile, teamResponseFor } from './fixtureApi.ts'
+import { fixtureFor, logoFile, snapshotDirectory, snapshotFileFor, teamResponseFor } from './fixtureApi.ts'
 
 describe('preview fixture API', () => {
   it('maps every endpoint the frontend calls to an existing fixture', async () => {
@@ -56,5 +56,16 @@ describe('preview team and logo routes', () => {
     expect(logoFile(dir, '103', null)).toBe(join(dir, '103.png'))
     expect(logoFile(dir, '101', null)).toBeNull()
     expect(logoFile(dir, '../102', null)).toBeNull()
+  })
+
+  it('serves the real-data snapshot only for the pages it covers', () => {
+    expect(snapshotFileFor('GET', '/api/teams/map')).toBe('teams-map.json')
+    expect(snapshotFileFor('GET', '/api/team/84')).toBe('team/84.json')
+    expect(snapshotFileFor('GET', '/api/team/84/outlook')).toBe('team/84.outlook.json')
+    expect(snapshotFileFor('GET', '/api/league/week')).toBe('league-week.json')
+    expect(snapshotFileFor('GET', '/api/odds')).toBeNull()
+    expect(snapshotFileFor('POST', '/api/inspector')).toBeNull()
+    expect(snapshotDirectory({})).toBeNull()
+    expect(snapshotDirectory({ CFB_FIXTURES_DIR: '/x' })).toBe('/x')
   })
 })

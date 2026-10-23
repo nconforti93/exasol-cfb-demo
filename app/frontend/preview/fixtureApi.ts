@@ -76,6 +76,33 @@ export function logoFile(directory: string, teamId: string, variant: string | nu
   return existsSync(light) ? light : null
 }
 
+/** The real-data snapshot directory (`make app-preview REAL=1`, written by `make app-fixtures`); null for sample data. */
+export function snapshotDirectory(env: NodeJS.ProcessEnv = process.env): string | null {
+  const directory = env['CFB_FIXTURES_DIR']
+  return directory === undefined || directory === '' ? null : directory
+}
+
+const SNAPSHOT_FILES: ReadonlyArray<readonly [RegExp, (match: RegExpExecArray) => string]> = [
+  [/^\/api\/points$/, () => 'points.json'],
+  [/^\/api\/teams$/, () => 'teams.json'],
+  [/^\/api\/teams\/map$/, () => 'teams-map.json'],
+  [/^\/api\/team\/(\d+)$/, (match) => `team/${match[1]}.json`],
+  [/^\/api\/team\/(\d+)\/outlook$/, (match) => `team/${match[1]}.outlook.json`],
+  [/^\/api\/league\/week$/, () => 'league-week.json'],
+  [/^\/api\/league\/stats$/, () => 'league-stats.json'],
+  [/^\/api\/inspector$/, () => 'inspector.json'],
+]
+
+/** The snapshot file (relative to its directory) that answers a GET, or null for a path the snapshot does not cover. */
+export function snapshotFileFor(method: string, path: string): string | null {
+  if (method !== 'GET') return null
+  for (const [pattern, file] of SNAPSHOT_FILES) {
+    const match = pattern.exec(path)
+    if (match !== null) return file(match)
+  }
+  return null
+}
+
 /** The sample team page re-headed for another team of the map fixture; null for an id the map does not know. */
 export function teamResponseFor(teamId: number): unknown {
   const sample = readFixture('team.json') as { team: SampleTeam; games: Array<{ opponent: SampleTeam }> }
@@ -116,6 +143,13 @@ export function fixtureApi() {
       res.setHeader('Cache-Control', 'no-store')
       res.end(readFileSync(file))
       return
+    }
+    const snapshot = snapshotDirectory()
+    const snapshotFile = snapshot === null ? null : snapshotFileFor(method, url.pathname)
+    if (snapshot !== null && snapshotFile !== null) {
+      const path = join(snapshot, snapshotFile)
+      if (!existsSync(path)) return send(res, 404, { error: 'not_found', message: `the snapshot has no ${snapshotFile}` })
+      return send(res, 200, JSON.parse(readFileSync(path, 'utf8')))
     }
     const team = /^\/api\/team\/(\d+)$/.exec(url.pathname)
     if (team !== null && method === 'GET') {

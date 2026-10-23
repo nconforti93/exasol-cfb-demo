@@ -13,7 +13,7 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 - [x] 9.2 Map home (`src/map`): d3-geo 3.1.1, topojson-client 3.1.0, us-atlas 3.0.1 (+ @types/d3-geo 3.1.1, @types/topojson-client 3.1.5), `layout.ts` relaxation + leader lines, conference zoom, list view
 - [x] 9.3 Team page (`src/team`): hero, schedule/results, SP+/polls; outlook panels (odds + trajectory, this week, games to watch + what-if, rivalries) with empty states
 - [x] 9.4 League This week + Stats (`src/league/WeekPage.tsx`, `StatsPage.tsx`): matchup order/upset alert; road warriors, SP+ movers, conference strength, streaks; SQL buttons
-- [ ] 9.6 Real-data snapshot: `scripts/app_fixtures.py` + `make app-fixtures` + `make app-preview REAL=1` (owner, stored tables only, 0 CFBD calls, output `~/.cfb-demo/fixtures/`); run once on AWS after the backfill + Phase 3 views + `make logos`
+- [x] 9.6 Real-data snapshot: `scripts/app_fixtures.py` + `make app-fixtures` + `make app-preview REAL=1` (owner, stored tables only, 0 CFBD calls, output `~/.cfb-demo/fixtures/`); run once on AWS after the backfill + Phase 3 views + `make logos` Run 2026-10-23 on AWS (Exasol 2026.1.1), season 2026 after week 7: 138 FBS teams, 138 on the map, 138 with logos, 138 team pages, 49 games this week, 10 statements, 0 CFBD calls, ~35 s.
 
 ## Group UI-R (gate: 2.2, Phase 2 merged, Phase 5 thin views P6-UI-b/c/d deployed)
 - [ ] 9.7 Routes `teams/map`, `team/{id}`, `league/week`, `league/stats` over `CFB_API`; `tests/it/test_app_team_it.py`

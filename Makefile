@@ -28,10 +28,13 @@ CONFIRM  ?=
 ARGS     ?=
 FORCE    ?=
 ALL      ?=
+REAL     ?=
+SEASON   ?=
+FIXTURES_DIR := $(if $(filter 1 yes,$(REAL)),$(HOME)/.cfb-demo/fixtures/latest,$(REAL))
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record logos db-check \
         app-deps app-build app-test app-lint \
-        app app-serve app-user app-e2e app-perf app-preview
+        app app-serve app-user app-e2e app-perf app-preview app-fixtures
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -116,9 +119,16 @@ app-serve: db-check
 	$(PY) -m scripts.app serve
 
 # make app-preview  the frontend on http://127.0.0.1:5173 with /api/* served from the test fixtures (sample data;
+#                   REAL=1 serves the snapshot of `make app-fixtures` (REAL=<dir> another one) ahead of them;
 #                   no database, no CFBD, no AWS). PORT is fixed by vite.config.ts; stop it with Ctrl-C.
 app-preview: app-deps
-	cd "$(FRONTEND)" && CFB_PREVIEW=1 VITE_CFB_PREVIEW=1 npx vite
+	cd "$(FRONTEND)" && CHOKIDAR_USEPOLLING=1 CFB_PREVIEW=1 VITE_CFB_PREVIEW=1 $(if $(REAL),CFB_FIXTURES_DIR="$(FIXTURES_DIR)") npx vite
+
+# make app-fixtures  reads the stored model as the owner (TARGET=aws works; SEASON=2026 optional) and writes a
+#                    real-data snapshot of the map, team, this-week and stats responses to ~/.cfb-demo/fixtures/
+#                    (outside the repository, never committed). 0 CFBD calls.
+app-fixtures: db-check
+	$(PY) -m scripts.app_fixtures $(if $(SEASON),--season $(SEASON))
 
 app-user: db-check
 	$(PY) -m scripts.app user $(if $(filter yes,$(ROTATE)),--rotate) $(ARGS)
