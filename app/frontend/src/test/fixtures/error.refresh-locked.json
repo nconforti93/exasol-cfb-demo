@@ -1,0 +1,4 @@
+{
+  "error": "refresh_locked",
+  "message": "run 40 holds the loader lock (REFRESH_WEEK started 2026-10-23T09:05:00Z)"
+}

@@ -1,0 +1,206 @@
+.odds-page h2 {
+  margin: 0;
+}
+
+.odds-point {
+  margin: 0 0 0.5rem;
+  color: var(--ink-secondary);
+}
+
+.odds-run {
+  margin: 0.5rem 0 1rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+}
+
+.odds-run p {
+  margin: 0;
+}
+
+.odds-run-main {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.odds-run-detail,
+.odds-note,
+.odds-muted {
+  color: var(--ink-secondary);
+}
+
+.odds-note {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.odds-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (min-width: 1500px) {
+  .odds-layout {
+    grid-template-columns: minmax(0, 1fr) 26rem;
+  }
+}
+
+.odds-scroll {
+  overflow-x: auto;
+}
+
+.odds-table-tools,
+.whatif-bar,
+.guide-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.odds-table,
+.guide-table {
+  width: 100%;
+}
+
+.odds-table th,
+.odds-table td,
+.guide-table th,
+.guide-table td {
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--grid);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.odds-table thead th,
+.guide-table thead th {
+  color: var(--ink-secondary);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.odds-table tbody th {
+  font-weight: 400;
+}
+
+.odds-team-button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.odds-team-button[aria-pressed="true"] {
+  font-weight: 700;
+}
+
+.odds-focus {
+  background: var(--seq-track);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.odds-cond {
+  border-left: 1px solid var(--grid);
+}
+
+.flag-low {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.4rem;
+  color: var(--ink-primary);
+}
+
+.flag-low .icon {
+  color: var(--status-warning);
+}
+
+.odds-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.whatif,
+.guide {
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+}
+
+.whatif h3,
+.guide h3,
+.whatif h4,
+.guide h4 {
+  margin: 0.25rem 0;
+}
+
+.whatif h4 {
+  color: var(--ink-secondary);
+  font-size: 0.9rem;
+}
+
+.whatif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.whatif-game {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--grid);
+}
+
+.whatif-matchup {
+  margin: 0 0 0.3rem;
+}
+
+.whatif-meta {
+  color: var(--ink-secondary);
+  font-size: 0.85rem;
+}
+
+.whatif-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.whatif-unavailable {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.guide-root {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.guide-root .icon {
+  color: var(--status-good-text);
+}
+
+.guide-conditional {
+  font-weight: 600;
+}
+
+.odds-side,
+.odds-table-block {
+  min-width: 0;
+}
+
+.guide {
+  margin-top: 1rem;
+}

@@ -1,0 +1,143 @@
+.refresh-panel {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.refresh-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.refresh-heading {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.refresh-summary {
+  flex: 1 1 auto;
+  color: var(--ink-secondary);
+}
+
+.refresh-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+}
+
+.refresh-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.refresh-target label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.refresh-input,
+.refresh-target select {
+  font: inherit;
+  color: var(--ink-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+}
+
+.refresh-input {
+  width: 6rem;
+}
+
+.refresh-invalid,
+.refresh-reason {
+  color: var(--ink-secondary);
+}
+
+.refresh-reason,
+.refresh-action,
+.refresh-outcome-head,
+.refresh-plan-week,
+.refresh-plan-reasons li,
+.refresh-plan-running {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.refresh-plan {
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+}
+
+.refresh-plan-title {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.refresh-plan-cost,
+.refresh-plan-week-counts {
+  margin: 0.2rem 0;
+}
+
+.refresh-plan-tables,
+.refresh-plan-facts,
+.refresh-plan-reasons {
+  margin: 0.2rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.refresh-plan-tables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  color: var(--ink-secondary);
+}
+
+.refresh-plan-week-counts {
+  color: var(--ink-secondary);
+}
+
+.refresh-outcome {
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-left: 6px solid var(--status-good);
+  border-radius: 6px;
+}
+
+.refresh-outcome-failed {
+  border-left-color: var(--status-critical);
+}
+
+.refresh-outcome p {
+  margin: 0.15rem 0;
+}
+
+.timeline-section {
+  background: var(--surface);
+}
+
+.timeline-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.25rem 0;
+  font-size: 1rem;
+}
+
+.timeline-args,
+.timeline-elapsed {
+  color: var(--ink-secondary);
+  font-weight: 400;
+}

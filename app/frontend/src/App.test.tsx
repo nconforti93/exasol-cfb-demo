@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -43,10 +43,10 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByRole('link', { name: 'Odds' })).toHaveAttribute('aria-current', 'page'))
   })
 
-  it('shows the placeholders of the refresh panel and, once opened, of the inspector', async () => {
+  it('shows the refresh panel in the header and, once opened, the inspector in the drawer', async () => {
     renderApp()
-    expect(screen.getByText(/refresh panel is built in task 5.6/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Refresh' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Inspector' }))
-    expect(screen.getByText(/inspector is built in task 5.6/)).toBeInTheDocument()
+    expect(within(screen.getByRole('complementary', { name: 'Inspector' })).getByRole('tablist', { name: 'Inspector views' })).toBeInTheDocument()
   })
 })

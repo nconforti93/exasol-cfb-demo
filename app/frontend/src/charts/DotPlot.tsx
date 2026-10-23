@@ -17,7 +17,7 @@ interface DotPlotProps {
   size?: number
 }
 
-const MARGIN = { top: 12, right: 16, bottom: 44, left: 56 }
+const MARGIN = { top: 12, right: 28, bottom: 44, left: 56 }
 const DOT_RADIUS = 5
 
 function percent(value: number): string {

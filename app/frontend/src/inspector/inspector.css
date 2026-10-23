@@ -1,0 +1,163 @@
+.inspector-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.inspector-tabs [role="tab"][aria-selected="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.inspector-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.inspector-muted {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 0.9rem;
+}
+
+.inspector-actions,
+.inspector-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+.inspector-log,
+.inspector-requests,
+.inspector-facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inspector-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  color: var(--ink-secondary);
+  font-size: 0.9rem;
+}
+
+.inspector-entry {
+  border-bottom: 1px solid var(--grid);
+  padding: 0.25rem 0;
+}
+
+.inspector-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--ink-primary);
+  background: transparent;
+  border: 0;
+  padding: 0.25rem 0;
+  cursor: pointer;
+}
+
+.inspector-entry-head[aria-expanded="true"] {
+  font-weight: 600;
+}
+
+.inspector-principal {
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.inspector-page {
+  color: var(--ink-secondary);
+}
+
+.inspector-error,
+.inspector-refused {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.2rem 0;
+}
+
+.inspector-detail,
+.inspector-query,
+.inspector-run-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.inspector-query {
+  border-bottom: 1px solid var(--grid);
+  padding-bottom: 0.75rem;
+}
+
+.inspector-query-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.inspector-sql {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+  color: var(--ink-primary);
+  background: var(--page);
+  border: 1px solid var(--grid);
+  border-radius: 6px;
+}
+
+.inspector-requests li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.6rem;
+  padding: 0.2rem 0;
+}
+
+.inspector-http {
+  flex: 1 1 100%;
+  word-break: break-all;
+  font-size: 0.8rem;
+  color: var(--ink-primary);
+}
+
+.inspector-manifest-table {
+  margin: 0.25rem 0;
+  font-size: 0.95rem;
+}
+
+.inspector-plan {
+  padding: 0.25rem 0.75rem;
+  border-left: 4px solid var(--accent);
+}
+
+.inspector-plan p {
+  margin: 0.2rem 0;
+}
+
+.inspector-result-scroll {
+  overflow-x: auto;
+}
+
+.inspector .waterfall-row {
+  grid-template-columns: 1fr auto;
+}
+
+.inspector .waterfall-label {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+}

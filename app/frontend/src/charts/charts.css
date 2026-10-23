@@ -199,3 +199,23 @@
   height: 0.9rem;
   border-radius: 3px;
 }
+
+.timeline-facts-on .timeline-row {
+  grid-template-columns: 9rem 8rem minmax(8rem, 1fr) minmax(10rem, 18rem);
+}
+
+.timeline-facts {
+  color: var(--ink-secondary);
+  font-size: 0.9rem;
+}
+
+.timeline-detail {
+  grid-column: 1 / -1;
+  color: var(--ink-primary);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.waterfall-label {
+  overflow-wrap: anywhere;
+}

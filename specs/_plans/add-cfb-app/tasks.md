@@ -16,14 +16,14 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 - [x] 5.1 Shell (`src/shell`, `src/state`, `src/api`, `App.tsx`):
 
 ## Group A-FE2
-- [~] 5.2 Odds (`src/odds`, `src/charts` bars)
-- [~] 5.3 Predictions (`src/predictions`, `src/charts` dot plot)
-- [~] 5.4 Upsets (`src/upsets`)
-- [~] 5.5 Head-to-head and spending (`src/headtohead`, `src/spend`)
-- [~] 5.6 Refresh and inspector (`src/refresh`, `src/inspector`, `src/charts` timeline and waterfall
+- [x] 5.2 Odds (`src/odds`, `src/charts` bars)
+- [x] 5.3 Predictions (`src/predictions`, `src/charts` dot plot)
+- [x] 5.4 Upsets (`src/upsets`)
+- [x] 5.5 Head-to-head and spending (`src/headtohead`, `src/spend`)
+- [x] 5.6 Refresh and inspector (`src/refresh`, `src/inspector`, `src/charts` timeline and waterfall
 
 ## Group A3
-- [ ] 2.1 `app/backend/db.py` and `operator.py`:
+- [~] 2.1 `app/backend/db.py` and `operator.py`:
 
 ## Group P2 (gate: Phase 2 merged)
 - [ ] 1.9 Extract `loader/guard.py` from `scripts/loader_cli.py` [expert]
@@ -63,6 +63,9 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 - [ ] 8.1 Local rehearsal at 0 calls:
 - [ ] 8.2 AWS live, at most 12 calls for this plan with **8 planned**, under `APP_LEDGER_PLAN=add-cf
 - [ ] 8.3 Zero-call proof and write-up:
+
+## Follow-ups
+- [ ] FU-1 Backend adds an optional `refresh_target {season, week, season_type}` to `ConfigResponse`, computed from `SEASON_WEEK` (the next week after the current point, across the regular→postseason and season boundaries). The RefreshPanel uses it instead of its week+1 guess. Update `types.ts`, the schema, the fixtures and the models. Fold this into 2.2/4.2.
 
 ## Cross-plan items
 - [ ] P7-a..e Phase 7 hand-offs (see review.md); fold them into 5.1, 2.1, 2.2 and 6.x

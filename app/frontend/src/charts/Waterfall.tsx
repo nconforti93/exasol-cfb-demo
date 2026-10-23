@@ -23,6 +23,11 @@ const STRIP_HEIGHT = 14
 const MIN_BAR = 2
 const SOURCE_ORDER: readonly WaterfallSource[] = ['LIVE', 'REPLAY', 'STORED']
 
+function barTitle(row: WaterfallRow): string {
+  const status = row.status === null ? 'no status' : String(row.status)
+  return `${row.label}: ${row.source}, ${status}, starts at ${Math.round(row.startMs)} ms, takes ${Math.round(row.durationMs)} ms`
+}
+
 function directLabel(row: WaterfallRow): string {
   return row.source === 'STORED' ? 'stored' : `${Math.round(row.durationMs)} ms`
 }
@@ -74,7 +79,9 @@ export function Waterfall({ title = 'Requests', rows }: WaterfallProps) {
                   width={Math.max(MIN_BAR, scale(row.startMs + row.durationMs) - scale(row.startMs))}
                   height={STRIP_HEIGHT - 2}
                   rx={4}
-                />
+                >
+                  <title>{barTitle(row)}</title>
+                </rect>
               ) : null}
             </svg>
             <span className="waterfall-value num">{directLabel(row)}</span>
@@ -83,7 +90,7 @@ export function Waterfall({ title = 'Requests', rows }: WaterfallProps) {
       </ol>
       <svg className="waterfall-axis axis-x" aria-hidden="true" width="100%" viewBox={`0 0 ${STRIP_WIDTH} 20`} preserveAspectRatio="none">
         {ticks.map((tick) => (
-          <text key={tick} className="tick" x={scale(tick)} y={14} textAnchor={tick === 0 ? 'start' : 'middle'}>
+          <text key={tick} className="tick" x={scale(tick)} y={14} textAnchor={tick === 0 ? 'start' : tick === axisMax ? 'end' : 'middle'}>
             {`${tick} ms`}
           </text>
         ))}

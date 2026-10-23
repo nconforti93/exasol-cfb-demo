@@ -1,0 +1,144 @@
+.h2h-page,
+.upsets-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.h2h-page h2,
+.upsets-page h2,
+.h2h-page h3,
+.upsets-page h3 {
+  margin: 0.25rem 0;
+}
+
+.h2h-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.25rem;
+}
+
+.h2h-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.h2h-field label {
+  color: var(--ink-secondary);
+}
+
+.h2h-pickers select,
+.h2h-pickers input {
+  font: inherit;
+  color: var(--ink-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  min-width: 12rem;
+}
+
+.h2h-card,
+.preview-card {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 0.5rem 1rem 0.9rem;
+}
+
+.h2h-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.5rem 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.h2h-facts div {
+  display: flex;
+  flex-direction: column;
+}
+
+.h2h-facts dt {
+  color: var(--ink-secondary);
+  font-size: 0.9rem;
+}
+
+.h2h-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.h2h-table,
+.preview-teams {
+  width: 100%;
+}
+
+.h2h-table th,
+.h2h-table td,
+.preview-teams th,
+.preview-teams td {
+  padding: 0.25rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--grid);
+}
+
+.h2h-table th,
+.preview-teams thead th {
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+.h2h-scroll {
+  overflow-x: auto;
+}
+
+.h2h-muted,
+.preview-basis,
+.preview-side,
+.preview-meta {
+  color: var(--ink-secondary);
+}
+
+.preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.preview-cached {
+  margin: 0;
+}
+
+.preview-fetching {
+  margin: 0.5rem 0;
+  font-weight: 600;
+}
+
+.preview-odds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.25rem 1.5rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.preview-odds div {
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-odds dt {
+  color: var(--ink-secondary);
+  font-size: 0.9rem;
+}
+
+.preview-odds dd {
+  margin: 0;
+}
+
+.preview-meta {
+  margin: 0.15rem 0;
+}

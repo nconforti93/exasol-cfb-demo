@@ -179,6 +179,40 @@ describe('TimelineBars', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Table view' }))
     expect(within(screen.getByRole('table')).getByText('SIMULATE')).toBeInTheDocument()
   })
+
+  describe('with facts', () => {
+    const facts = (seconds: string, rows: string) => [
+      { column: 'Seconds', value: seconds },
+      { column: 'Rows', value: rows },
+    ]
+    const withFacts = [
+      { ...steps[0]!, facts: facts('0.2 s', '') },
+      { ...steps[1]!, facts: facts('1.1 s', '62 rows') },
+      { ...steps[2]!, facts: facts('3 s elapsed', ''), detail: 'waiting for the test hook' },
+    ]
+
+    it('shows each step\'s facts and detail beside its bar, skipping empty facts', () => {
+      render(<TimelineBars steps={withFacts} nowSeconds={4} />)
+      expect(screen.getByText('1.1 s · 62 rows')).toBeInTheDocument()
+      expect(screen.getByText('0.2 s')).toBeInTheDocument()
+      expect(screen.getByText('3 s elapsed')).toBeInTheDocument()
+      expect(screen.getByText('waiting for the test hook')).toBeInTheDocument()
+    })
+
+    it('adds the fact columns and the detail to the table view', async () => {
+      render(<TimelineBars steps={withFacts} nowSeconds={4} />)
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Table view' }))
+      const table = screen.getByRole('table')
+      expect(within(table).getByRole('columnheader', { name: 'Rows' })).toBeInTheDocument()
+      expect(within(table).getByRole('columnheader', { name: 'Detail' })).toBeInTheDocument()
+      expect(within(table).getByText('62 rows')).toBeInTheDocument()
+    })
+
+    it('names each bar for hover with its step, status and times', () => {
+      const { container } = render(<TimelineBars steps={withFacts} nowSeconds={4} />)
+      expect(container.querySelector('rect.timeline-bar title')?.textContent).toBe('CHECK: done, 0.0 s to 0.2 s')
+    })
+  })
 })
 
 describe('Waterfall', () => {
@@ -218,6 +252,11 @@ describe('Waterfall', () => {
     const { container } = render(<Waterfall title="Requests" rows={rows.slice(0, 2)} />)
     expect(screen.queryByText(/recorded timings/i)).toBeNull()
     expect(container.querySelector('.legend')).toBeNull()
+  })
+
+  it('names each bar for hover with its request, source and times', () => {
+    const { container } = render(<Waterfall title="Requests" rows={rows} />)
+    expect(container.querySelector('rect.waterfall-bar title')?.textContent).toBe('year 2022: LIVE, 200, starts at 0 ms, takes 400 ms')
   })
 
   it('has a table view with the milliseconds', async () => {
