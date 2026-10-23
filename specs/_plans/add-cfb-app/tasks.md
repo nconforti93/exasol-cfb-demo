@@ -6,7 +6,7 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 
 ## Group UI-A (start now; no other phase)
 - [ ] 9.0 Foundation: contract (types, pydantic models, synthetic fixtures with coordinates, fixtureApi routes incl. `/api/team/<id>` and `/api/logos/<id>.png`), routing (`/`, `/team/<id>`, `/league/<tab>`, old-path redirects, `mapConference`, default `home`), design tokens, `teamColor.ts`, `src/ui/` (Card, Chip, TeamMark, RankTag, RecordLine, StatTile, SqlButton)
-- [ ] 9.5 Logos: `scripts/logos.py` + `make logos` (owner read of `CFB_CORE.TEAMS`, https, `espncdn.com` only, ≤ 1 MB PNG, `~/.cfb-demo/logos`), `routes/logos.py` (`/api/logos/{id}.png`), `APP_LOGO_DIR`, `APP_LOGOS`; unit tests only
+- [x] 9.5 Logos: `scripts/logos.py` + `make logos` (owner read of `CFB_CORE.TEAMS`, https, `espncdn.com` only, ≤ 1 MB PNG, `~/.cfb-demo/logos`), `routes/logos.py` (`/api/logos/{id}.png`), `APP_LOGO_DIR`, `APP_LOGOS`; unit tests only
 
 ## Group UI-B (after 9.0)
 - [ ] 9.1 Shell: nav (Map · League · Head-to-head), team search, League page hosting the built Odds/Predictions/Upsets as tabs, TeamMark in their rows, restyle to cards/grid

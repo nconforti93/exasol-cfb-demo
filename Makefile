@@ -13,6 +13,8 @@
 #   record             live CFBD calls through the fetch UDF, capped by the ledger cache/live-calls.jsonl
 #                      (scripts/record.py). Without CONFIRM=yes it only prints the plan. ARGS="--ledger"
 #                      prints the totals, ARGS="--info" logs one free /info reading.
+#   logos              fills the private team-logo cache (~/.cfb-demo/logos) from CFB_CORE.TEAMS: an external
+#                      fetch to the logo host, 0 CFBD calls. FORCE=1 fetches existing files again, ALL=1 adds FCS.
 
 TARGET ?= local
 export TARGET
@@ -24,8 +26,10 @@ PY   := $(RUN) python
 PATTERNS ?=
 CONFIRM  ?=
 ARGS     ?=
+FORCE    ?=
+ALL      ?=
 
-.PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check \
+.PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record logos db-check \
         app-deps app-build app-test app-lint \
         app app-serve app-user app-e2e app-perf app-preview
 
@@ -76,6 +80,9 @@ dns-check: db-check
 
 record: db-check
 	$(PY) -m scripts.record --patterns "$(PATTERNS)" --confirm "$(CONFIRM)" $(ARGS)
+
+logos: db-check
+	$(PY) -m scripts.logos $(if $(filter 1 yes,$(FORCE)),--force) $(if $(filter 1 yes,$(ALL)),--all)
 
 # Frontend (app/frontend: Node >= 22.12, exact pins, package-lock.json is the source of truth).
 # app-deps runs `npm ci` only when package.json or the lockfile changed; on a Windows drive it installs

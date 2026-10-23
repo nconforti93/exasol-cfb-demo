@@ -864,3 +864,7 @@ The owner (Nico) was away and delegated the decisions on the independent review 
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. -->
+
+## [43] Logo host is CFBD's CDN, not ESPN (2026-10-23, orchestrator)
+- The stored `CFB_CORE.TEAMS.LOGOS` URLs are all on `cdn.collegefootballdata.com` (`/logos/500/<id>.png`, `/logos-dark/500/<id>.png`, then 256…16), not ESPN as [37] assumed.
+- Decision: the `make logos` allowlist is `collegefootballdata.com`. It is the data provider's own CDN, read-only public images, and not a CFBD API call (no key, not counted against the quota). Everything else in [37] stands: a private cache outside the repo, never committed, never hotlinked.

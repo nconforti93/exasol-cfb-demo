@@ -22,6 +22,8 @@ DEFAULT_CONSOLE_USER = "CFB_CONSOLE_WEB"
 DEFAULT_LEDGER_PLAN = "app"
 DEFAULT_LEDGER_PATH = ledger.LEDGER_PATH
 DEFAULT_STATIC_DIR = ROOT / "app" / "frontend" / "dist"
+DEFAULT_LOGO_DIR = Path.home() / ".cfb-demo" / "logos"
+LOGO_MODES = ("on", "off")
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 VITE_PORT = 5173
 VITE_HOSTS = ("127.0.0.1", "localhost")
@@ -187,6 +189,8 @@ class Settings:
     prefix: str
     owner_password: str | None = field(repr=False)
     static_dir: Path
+    logo_dir: Path = DEFAULT_LOGO_DIR
+    logos_enabled: bool = True
 
     @property
     def host(self) -> str:
@@ -261,6 +265,9 @@ class Settings:
         selected = get("TARGET", target.DEFAULT_TARGET)
         if selected not in TARGETS:
             raise SettingsError(f"TARGET must be one of {', '.join(TARGETS)}")
+        logos = get("APP_LOGOS", "on").lower()
+        if logos not in LOGO_MODES:
+            raise SettingsError(f"APP_LOGOS must be one of {', '.join(LOGO_MODES)}")
         return cls(
             target=selected,
             dsn_override=get(target.DSN_VARIABLE) or None,
@@ -281,6 +288,8 @@ class Settings:
             prefix=prefix,
             owner_password=values.get("CFB_TEST_OWNER_PASSWORD") or None,
             static_dir=Path(get("APP_STATIC_DIR")) if get("APP_STATIC_DIR") else DEFAULT_STATIC_DIR,
+            logo_dir=Path(get("APP_LOGO_DIR")) if get("APP_LOGO_DIR") else DEFAULT_LOGO_DIR,
+            logos_enabled=logos == "on",
         )
 
 

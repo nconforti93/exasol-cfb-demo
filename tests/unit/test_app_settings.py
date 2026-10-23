@@ -197,6 +197,16 @@ def test_defaults_follow_the_settings_table(tmp_path: Path) -> None:
     assert loaded.ledger_path == settings.DEFAULT_LEDGER_PATH
     assert loaded.prefix == "" and loaded.console_password is None
     assert loaded.static_dir == settings.DEFAULT_STATIC_DIR
+    assert loaded.logo_dir == settings.DEFAULT_LOGO_DIR and loaded.logos_enabled
+
+
+def test_logo_settings_come_from_the_environment(tmp_path: Path) -> None:
+    none = tmp_path / "x.env"
+    custom = load(environment(APP_LOGO_DIR=str(tmp_path / "marks"), APP_LOGOS="off"), none)
+    assert custom.logo_dir == tmp_path / "marks" and not custom.logos_enabled
+    assert load(environment(APP_LOGOS="ON"), none).logos_enabled
+    with pytest.raises(SettingsError, match="APP_LOGOS"):
+        load(environment(APP_LOGOS="maybe"), none)
 
 
 def test_the_environment_wins_over_dotenv(tmp_path: Path) -> None:
