@@ -1,6 +1,6 @@
 # User Guide
 
-> Work in progress: sections are added as features land. This version covers the CFBD virtual schema: deploying it, storing the key, querying it, and its properties. The loader, the app and the chat are not part of it yet.
+> Work in progress: sections are added as features land. This version covers the CFBD virtual schema (deploying it, storing the key, querying it, its properties) and the loader that persists and refreshes the data ([§9](#9-persisting-and-refreshing)). The app and the chat are not part of it yet.
 
 ## Prerequisites
 - Exasol Personal, local deployment (laptop-class machine is enough), or any Exasol 2026.x database.
@@ -9,10 +9,10 @@
 
 ## 1. Deploy and grant readers
 
-`sys` owns the real deployment: the schemas `CFB_INFRA`, `CFB_META` and `CFB_CORE`, the adapter, the fetch function and the virtual schema `CFBD_VS`. `make deploy` and `make grants` log in as `sys`, with the password read at run time from the Exasol Personal secrets file. It is never printed or written. Both targets first check that the database is reachable (start it with `exasol start -d local`).
+`sys` owns the real deployment: the schemas `CFB_INFRA`, `CFB_META`, `CFB_CORE` and `CFB_STAGE`, the adapter, the fetch function, the loader scripts and the virtual schema `CFBD_VS`. `make deploy` and `make grants` log in as `sys`, with the password read at run time from the Exasol Personal secrets file. It is never printed or written. Both targets first check that the database is reachable (start it with `exasol start -d local`).
 
 ```bash
-make deploy    # build the bundle, create everything, create CFBD_VS
+make deploy    # build the bundle, create everything, create CFBD_VS, then deploy the loader (§9)
 make grants    # create the role CFB_READER, grant it SELECT ON CFBD_VS
 ```
 
@@ -287,7 +287,7 @@ GROUP BY REQ_SLICE;
 SELECT REQ_SOURCE, COUNT(*) FROM CFBD_VS.GAMES WHERE P_YEAR = 2020 GROUP BY REQ_SOURCE;
 ```
 
-Doing this by hand is for experiments. The loader that backfills and refreshes slices is a later phase; until then `CFB_CORE` and `LOAD_LOG` are empty and every query fetches. Stored rows come back with `REQ_SOURCE = 'STORED'`, `REQ_STATUS` and `REQ_MS` NULL and `REQ_ATTEMPTS = 0`.
+Doing this by hand is for experiments. The loader ([§9](#9-persisting-and-refreshing)) does it for the whole load plan, in batches, with the bookkeeping and the call budget; until it has run, `CFB_CORE` and `LOAD_LOG` are empty and every query fetches. Stored rows come back with `REQ_SOURCE = 'STORED'`, `REQ_STATUS` and `REQ_MS` NULL and `REQ_ATTEMPTS = 0`.
 
 Notes:
 
@@ -295,6 +295,7 @@ Notes:
 - A stored final slice with zero rows is still a hit: it returns zero rows at zero calls.
 - `/info`, `/info/usage`, `/games/schedule`, `/scoreboard` and `/live/plays` (and their child tables) change between calls, so they are always fetched and have no mirror.
 - `ALTER VIRTUAL SCHEMA CFBD_VS SET READ_THROUGH = 'FALSE'` switches read-through off for all tables: every slice is fetched.
+- A slice is final only when it can no longer change. Slices of the current season are never final, so **any query on them through `CFBD_VS` is a live call**. Pages and the chat read current-season data from `CFB_CORE`, never through `CFBD_VS` (see [§9.8](#98-reading-current-season-data)).
 
 ### Stored-only queries
 
@@ -389,3 +390,274 @@ It writes one row per slice, in manifest order, from that slice's `REQ_*` values
 - Staged rows of a slice that the manifest did not plan, or with a source the manifest did not list, are an error and nothing is written.
 
 Logging is the caller's job on purpose: it must see the staged result, and only the caller knows its context.
+
+## 9. Persisting and refreshing
+
+The loader copies slices from `CFBD_VS` into the mirrors in `CFB_CORE` and registers them in `CFB_META.LOAD_LOG`, so read-through serves them at zero calls ([§5](#5-read-through-and-stored-data)). It has two entry points, both Lua scripting programs in `CFB_INFRA` that you run with plain SQL:
+
+| Entry point | Does |
+|---|---|
+| `EXECUTE SCRIPT CFB_INFRA.BACKFILL(profile, from_season, max_calls)` | Fetches every slice of the load plan that is missing (and every slice that has become final since it was stored). Resumable, idempotent, newest first |
+| `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(season, week, season_type)` | The weekly refresh: re-fetches the season's weekly slices that are not final yet, and returns a step timeline |
+
+`make backfill`, `make refresh` and `make quota` wrap them with a call estimate, a confirmation and the call ledger. Run the loader as `sys`, which owns the scripts: a Lua script runs with the rights of its caller, so a user needs `EXECUTE` on the script and every privilege the script uses. A role for the app is planned for the app phase.
+
+Every command takes `TARGET=local|aws` (default `local`), as in §1: `make backfill PROFILE=demo TARGET=aws`.
+
+### 9.1 The load plan
+
+`loader/load-plan.yaml` is the single reviewed file that decides what costs calls. Every planned slice, every call estimate and every finality decision comes from it. An entry has:
+
+| Field | Meaning |
+|---|---|
+| `table` | The virtual table to store (it must have a mirror in `CFB_CORE`) |
+| `profile` | `demo` (the v1 pages, designed for the free tier) or `full` (the optional archive; `full` includes `demo`) |
+| `priority` | Lower numbers load first. Entries of equal priority interleave season by season, so give each weekly entry its own priority: one fan-out batch per entry is much cheaper than one-slice batches |
+| `slicing` | `none` (one slice), `season` (one slice per season) or `season_range` (one slice for a year range, for endpoints that take `minYear` and `maxYear`) |
+| `seasons` | `from` and, optionally, `to` (omitted means the current season). A `none` or `season_range` slice has no season, so `FROM` never skips it |
+| `gaps` | Seasons the API has no data for. They are registered as final empty slices at zero calls |
+| `params` | Fixed parameter values, for example `{classification: fbs}` |
+| `refresh_class` | `static` (final when loaded) or `weekly` (see below) |
+
+The `config` block holds the settings: `monthly_call_budget` (1000), `refresh_reserve` (150), `quarantine_after` (2), `season_rollover` (`08-01`: a new season's slices enter the plan on this day), `season_final_after` (`02-15`: season S is final when loaded on or after 15 February of S+1) and `refresh_profiles` (`[demo]`: which profiles the weekly refresh re-fetches).
+
+Finality is a date rule, not a data rule: historic seasons contain cancelled games that never complete, so "all games completed" would never hold. A `static` slice is final on load. A `weekly` slice is final from `season_final_after`; until then it stays non-final and `REFRESH_WEEK` replaces it. A slice stored while it was not final is fetched once more by the next `BACKFILL` after it becomes final.
+
+**The demo profile** (current season 2026):
+
+| Entries | Calls |
+|---|---|
+| `TEAMS`, `VENUES`, `CONFERENCES` | 3 |
+| `CONFERENCES_AFFILIATIONS` 1869-2025 as one range slice, plus 2026 | 2 |
+| `CALENDAR` 2013-2026 | 14 |
+| `GAMES` 1869-2026, without the 1871 gap | 157 |
+| `METRICS_WP_PREGAME`, `RATINGS_SP` 2013-2026 | 28 |
+| `RANKINGS_POLLS_RANKS` 2014-2026 | 13 |
+| **Backfill, once** | **217** |
+| **Weekly refresh:** the current season's slice of `GAMES`, `METRICS_WP_PREGAME`, `RATINGS_SP` and `RANKINGS_POLLS_RANKS` | **4** |
+
+The count assumes that one `/games?seasonType=both&year=Y` call returns every division (verified live, S1). Rankings load from `RANKINGS_POLLS_RANKS` alone, which carries its own `SEASON`, `SEASON_TYPE`, `WEEK` and `POLL` keys, so no positional join to `RANKINGS_POLLS` is needed.
+
+**Editing the plan.** Edit the file, check it, and deploy:
+
+```bash
+uv run python -m loader.plan --check --estimate   # validates against the catalog, prints slices and calls (0 calls)
+make deploy                                       # replaces the plan tables, views and scripts
+```
+
+The check lists every problem at once, each naming the entry and the rule, and the deploy changes nothing when the plan is invalid. Entry order is the entry's id, so redeploy after reordering. Editing the plan never refetches anything: a slice whose key still matches stays stored. A plan edit that changes a slice key (a new fixed parameter, say) orphans the old slices (see [§9.6](#96-failures-quarantine-and-orphans)).
+
+### 9.2 Deploy and settings
+
+`make deploy` deploys the virtual schema (§1) and then the loader: the `CFB_STAGE` schema (one empty mirror per planned table, used while a batch loads), the plan tables, the six views and the scripts `BACKFILL`, `REFRESH_WEEK` and `RUN_LOCK`. It never touches the data in `LOAD_LOG`, `FETCH_LOG`, the run logs or `CFB_CORE`. It prints a warning when stored slices no longer match the plan.
+
+`LOADER_CONFIG` overrides loader settings for one deployment, until the next `make deploy`:
+
+```bash
+make deploy LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"
+```
+
+The override changes the settings but not the plan's hash. Deploy without it to return to the plan file's values.
+
+### 9.3 Backfill
+
+```bash
+make backfill PROFILE=demo                      # prints the estimate and the quota, then refuses: no CONFIRM
+make backfill PROFILE=demo MAX_CALLS=20 CONFIRM=yes
+make backfill PROFILE=demo CONFIRM=yes          # resumes where the last run stopped
+make backfill PROFILE=demo FROM=2018 CONFIRM=yes   # seasons up to 2018 (seasonless slices always run)
+make backfill PROFILE=demo MAX_CALLS=0 CONFIRM=yes # dry run
+```
+
+| Setting | Meaning |
+|---|---|
+| `PROFILE` | `demo` (default) or `full` |
+| `FROM` | The newest season to load. Seasonless slices are always included |
+| `MAX_CALLS` | The most calls this run may spend. Without it, the ledger room caps the run. `0` is a dry run: it registers known gaps, checks every pending batch with `EXPLAIN VIRTUAL` and fetches nothing |
+| `CONFIRM=yes` | Required to run in live mode. Without it the command prints the estimate and the quota and stops (exit 1) |
+| `LEDGER=off` | Turns the call ledger off (see [§9.5](#95-quota-budget-and-the-ledger)) |
+
+What the wrapper does, in order, each guard stopping the command before the next one: validate the arguments; connect; check that the script is installed (otherwise `make deploy`); print the estimate from the deployed views (calls per table, and tables that are blocked); in live mode read `CFB_META.QUOTA` (free); require `CONFIRM=yes`; check the ledger. In replay mode (`FETCH_MODE = 'replay'`) there are no calls, so there is no quota read, no confirmation and no ledger.
+
+Running the script directly, from any SQL client:
+
+```sql
+EXECUTE SCRIPT CFB_INFRA.BACKFILL('demo', NULL, NULL);   -- profile, from_season, max_calls (NULL = no limit)
+```
+
+It returns one row per table that was loaded, checked, blocked or had failures, then a total row with `TABLE_NAME = '*'`. Never run the call `WITH OUTPUT`: that returns only the script's log lines and discards the result table. All three arguments are required.
+
+| Column | Meaning |
+|---|---|
+| `RUN_ID` | The run's row in `CFB_META.LOAD_RUN` |
+| `TABLE_NAME` | The table, or `*` for the run totals |
+| `SLICES`, `ROWS_LOADED` | Slices and rows loaded (known gaps excluded) |
+| `CALLS` | Calls spent, measured as the change of `/info` used calls |
+| `FAILED_SLICES` | Slices that failed even when fetched alone |
+| `RUN_STATUS` | `DONE`, `DONE_WITH_FAILURES`, `STOPPED_BUDGET`, `STOPPED_MAX_CALLS` or `FAILED` |
+| `CALLS_NEEDED` | Pending slices still to fetch (gaps and quarantined slices excluded) |
+| `DETAIL` | Gaps registered, blocked tables, the first failures |
+
+Illustrative result of a first run with `MAX_CALLS=20` (row counts elided):
+
+```
+RUN_ID  TABLE_NAME                SLICES  ROWS_LOADED  CALLS  FAILED_SLICES  RUN_STATUS        CALLS_NEEDED
+7       TEAMS                     1       ...          1      0              STOPPED_MAX_CALLS 0
+7       VENUES                    1       ...          1      0              STOPPED_MAX_CALLS 0
+7       CONFERENCES               1       ...          1      0              STOPPED_MAX_CALLS 0
+7       CONFERENCES_AFFILIATIONS  2       ...          2      0              STOPPED_MAX_CALLS 0
+7       CALENDAR                  14      ...          14     0              STOPPED_MAX_CALLS 0
+7       GAMES                     1       ...          1      0              STOPPED_MAX_CALLS 156
+7       *                         20      ...          20     0              STOPPED_MAX_CALLS 197
+```
+
+How it works:
+
+- **Order:** profile (`demo` before `full`), priority, newest season first (seasonless slices first), table, entry. A slice that failed before comes last and is fetched alone.
+- **Batches:** one plan entry at a time, at most `MAX_CALLS_PER_QUERY` slices (and at most the remaining allowance), fetched by one fan-out query. The rows go through `CFB_STAGE` into `CFB_CORE` in one transaction together with the `LOAD_LOG` and `FETCH_LOG` rows. A failed batch leaves no trace and earlier batches stay committed, which is what makes a run resumable.
+- **Idempotent:** a rerun fetches only missing slices and slices that have become final since. A complete profile costs 0 calls to run again.
+- **Budget:** it stops before the quota allows no more (`STOPPED_BUDGET`), at `MAX_CALLS` (`STOPPED_MAX_CALLS`), or when `QUOTA.BACKFILL_SPENDABLE` runs out. The allowance follows the key's real counter after every batch, so retries are counted too.
+- **Read-through stays on.** The loader never switches `READ_THROUGH` (it is global, and concurrent queries would re-fetch stored slices); its batch queries keep only fetched rows (`REQ_SOURCE <> 'STORED'`).
+- **Drift check:** before each batch, `EXPLAIN VIRTUAL` (0 calls) confirms that the adapter would request exactly the batch's slice keys. A mismatch stops the run before any request and names `make deploy`.
+
+Exit codes of the wrapper: 0 for `DONE`, `STOPPED_BUDGET` and `STOPPED_MAX_CALLS`; 1 when a guard refused (nothing was sent); 2 for an error (arguments, connection, database); 3 when the run itself failed (`FAILED`, `DONE_WITH_FAILURES`, a raised error).
+
+### 9.4 The weekly refresh
+
+The demo's one call:
+
+```sql
+EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(2026, 9, 'regular');   -- season, week, season_type
+```
+
+Exasol has no `CALL` statement, so the refresh is an `EXECUTE SCRIPT`. All three arguments are required (`'regular'` or `'postseason'`; NULL means `'regular'`). Both season types number their weeks from 1 in the calendar, so `(2026, 1, 'postseason')` is the first bowl week and differs from `(2026, 1, 'regular')`. Never run it `WITH OUTPUT`.
+
+From the shell: `make refresh SEASON=2026 WEEK=9 [SEASON_TYPE=postseason] [CONFIRM=yes] [TARGET=local|aws]` runs the same guards as `make backfill` (estimate, quota, confirmation, ledger), then prints the timeline.
+
+The result is the step timeline, one row per step:
+
+| Column | Meaning |
+|---|---|
+| `RUN_ID` | The run's row in `CFB_META.LOAD_RUN` |
+| `STEP_NO` | 1 `CHECK`, 2 to 99 `FETCH <table>`, 100 and up registered steps |
+| `STEP_NAME`, `STEP_STATUS` | The step and `DONE` / `RUNNING` / `FAILED` |
+| `SECONDS` | Time between the step's start and end (for a `FETCH`, the SQL-to-HTTP time of that table) |
+| `SLICES`, `ROWS_LOADED`, `CALLS` | What the step loaded and spent |
+| `DETAIL` | Slices fetched, or the error |
+
+Illustrative timeline with the demo plan (numbers elided):
+
+```
+RUN_ID  STEP_NO  STEP_NAME                       STEP_STATUS  SECONDS  SLICES  ROWS_LOADED  CALLS
+12      1        CHECK                           DONE         ...      0       0            0
+12      2        FETCH GAMES                     DONE         ...      1       ...          1
+12      3        FETCH METRICS_WP_PREGAME        DONE         ...      1       ...          1
+12      4        FETCH RATINGS_SP                DONE         ...      1       ...          1
+12      5        FETCH RANKINGS_POLLS_RANKS      DONE         ...      1       ...          1
+```
+
+What the steps do:
+
+- **`CHECK`** validates the arguments, checks that the week with its season type exists in the stored `CALENDAR` of the season, lists the due slices (the season's slices of `weekly` entries in `refresh_profiles` that are missing or not final), refuses a table that has orphan slices, and, in live mode, requires the due calls to fit `QUOTA.REFRESH_SPENDABLE`. It fails before any request when they do not. A refresh may use the reserve that backfills keep.
+- **`FETCH <table>`** re-fetches the season's slice of that table and replaces its rows (delete and insert) together with the `LOAD_LOG` row in one transaction. A weekly refresh re-fetches the whole season slice, not a week slice: read-through matches slice keys exactly, so a week slice next to a season slice would store every game twice, and a season call costs the same one call. It also picks up corrections to earlier weeks. A failed fetch keeps that table's previous rows. Each table commits on its own, so tables fetched before a failure stay refreshed, and readers may briefly see a mix; a failing step stops the chain.
+- Every step writes its `CFB_META.REFRESH_LOG` row when it starts and again when it ends, and commits both, so another session (the app's timeline) sees progress while the script runs.
+- **Registered steps** (100 and up) are the hook of the later phases (model, predictions, simulations). They come from `refresh_steps` in the load plan (`{step_no: 100, name: MODEL, script: CFB_INFRA.REFRESH_MODEL}`) and are called as `EXECUTE SCRIPT <script>(run_id, season, week, season_type)`. The contract:
+  - exactly four parameters, `(run_id, season, week, season_type)` with the season type normalized to `'regular'` or `'postseason'`;
+  - the step must **not** take the run lock: the refresh already holds it, and taking it again would abandon the refresh's own run;
+  - it runs in the refresh's transaction: the refresh commits before it and commits its work together with its `DONE` row; a failing step is rolled back before its `FAILED` row is written;
+  - it should read `CFB_CORE`, never `CFBD_VS`.
+
+  The loader registers no steps itself.
+- **Calendar gap.** The `CALENDAR` of the current season is `static`, so it is final once loaded and may lack a bowl week that CFBD publishes later. A week missing from the stored calendar fails `CHECK` with that explanation (see [§9.7](#97-re-fetching-a-slice) for the remedy).
+
+### 9.5 Quota, budget and the ledger
+
+`make quota` (or `SELECT * FROM "CFB_META"."QUOTA"`) prints the key's quota and what the loader may spend; the command also prints the ledger room. It reads `/info`, which costs no call, and has no row if `/info` cannot be read; the scripts then refuse to run live.
+
+| Column | Meaning |
+|---|---|
+| `TIER_NAME`, `MONTHLY_LIMIT`, `USED_CALLS`, `REMAINING_CALLS` | From `/info`. `USED_CALLS` counts **every** call of the key this month, including other tools and the shared CBBD pool |
+| `RESET_AT`, `PERIOD_START` | The end and start of the quota month, in UTC |
+| `MONTHLY_CALL_BUDGET`, `REFRESH_RESERVE` | The project's settings from the load plan (or `LOADER_CONFIG`) |
+| `PROJECT_BUDGET` | `LEAST(MONTHLY_LIMIT, MONTHLY_CALL_BUDGET)`: a cap on the key's whole monthly use |
+| `REFRESH_SPENDABLE` | `GREATEST(0, LEAST(REMAINING_CALLS, PROJECT_BUDGET - USED_CALLS))` |
+| `BACKFILL_SPENDABLE` | `GREATEST(0, REFRESH_SPENDABLE - REFRESH_RESERVE)` |
+| `BACKFILL_CALLS`, `REFRESH_CALLS`, `OTHER_CALLS` | Calls this month by run kind (from `FETCH_LOG`, counting retries); the rest is `OTHER_CALLS` (on-demand queries, other clients, failed batches) |
+| `DEMO_CALLS_TO_COMPLETE`, `FULL_CALLS_TO_COMPLETE` | Pending slices of the demo profile, and of demo plus full |
+
+The reserve exists so a refresh can still run when the backfill has used up its share: a backfill stops at `BACKFILL_SPENDABLE`, a refresh may spend down to `REFRESH_SPENDABLE`. The demo is designed for the free tier (1,000 calls a month, even on a larger key), which is why `monthly_call_budget` defaults to 1000.
+
+Two guards keep live runs inside a budget:
+
+1. **In the database:** `PROJECT_BUDGET` against `/info`'s used calls. It holds for every SQL client, including a `BACKFILL` typed outside `make`.
+2. **The ledger** (`cache/live-calls.jsonl`, gitignored, shared with the recorder and every other plan through the main working tree). `make backfill` and `make refresh` check it before a live run and append the run to it afterwards. The caps live in `vs/live/ledger.yaml`, which the owner edits: `plans` (calls a plan may spend over all months) and `months` (calls the whole key may spend in a UTC month, across all plans). A month without an entry refuses live calls. The wrappers refuse when the plan's total plus the estimate would exceed its cap, or when `/info`'s used calls plus the estimate would exceed the month's cap. `MAX_CALLS` defaults to the ledger room and is capped at it. A ledger entry is written for every live run, with the larger of the script's measured calls and the `/info` change.
+
+`LEDGER=off` turns the ledger off for people who run their own key (nothing is read, checked or written); the in-database budget still applies. The ledger is not used for prefixed namespaces, which read the mock API. `python -m vs.host.ledger --summary` prints the totals against the caps.
+
+### 9.6 Failures, quarantine and orphans
+
+**Run logs.** `CFB_META.LOAD_RUN` has one row per run (`BACKFILL`, `REFRESH_WEEK`, `SNAPSHOT`, `RESTORE`, and later the `DEPLOY` kind that the model deploy and simulation runs take): kind, arguments, session, times in UTC, status, slices, rows, calls and the key's remaining calls before and after. `CFB_META.REFRESH_LOG` has one row per step. `LOAD_LOG.LOADED_BY` and `FETCH_LOG.CONTEXT` hold `<KIND>#<run id>`.
+
+```sql
+SELECT "RUN_ID", "RUN_KIND", "RUN_STATUS", "STARTED_AT", "CALLS", "DETAIL"
+FROM "CFB_META"."LOAD_RUN" ORDER BY "RUN_ID" DESC LIMIT 10;
+
+SELECT * FROM "CFB_META"."LOAD_STATUS" ORDER BY "ENTRY_ID";   -- per plan entry: planned, stored, final, missing, quarantined, orphans, calls to complete, BLOCKED_BY
+```
+
+**One run at a time.** A `RUNNING` row in `LOAD_RUN` is the run lock; a second loader run, a snapshot or a restore refuses to start while another holds it, and the refusal names the holder. A lock never blocks forever: a `RUNNING` row is treated as abandoned, and the next run proceeds, when its session is gone, when it belongs to the calling session, or (for `BACKFILL` and `REFRESH_WEEK`, which are one statement) when its session is idle, meaning the script ended without closing its row after a failure or `KILL STATEMENT`. Snapshot and restore run from host sessions that are often idle between statements, so for them only a vanished session counts.
+
+**Failing slices.** The fetch function fails a whole fan-out when one slice fails. `BACKFILL` therefore rolls back a failed multi-slice batch and fetches each slice alone: the good ones commit, and a slice that fails alone gets a row in `CFB_META.LOAD_FAILURES` (one failure per run). From then on it is fetched alone and last. After `quarantine_after` (2) failing runs it is quarantined: skipped, and shown in `LOAD_STATUS`, until you clear it. If every slice of a batch fails alone, the cause is not the slice and the run stops with `FAILED` instead of burning calls. `REFRESH_WEEK` has no fallback: a failure stops the refresh and is shown in the timeline.
+
+```sql
+SELECT "TABLE_NAME", "SLICE_KEY", "FAILURES", "LAST_ERROR" FROM "CFB_META"."LOAD_FAILURES";
+
+-- after fixing the cause (a plan or catalog error, a tier problem, an outage)
+DELETE FROM "CFB_META"."LOAD_FAILURES"
+WHERE "TABLE_NAME" = 'GAMES' AND "SLICE_KEY" = '/games?seasonType=both&year=2019';
+```
+
+A slice that later succeeds clears its own row.
+
+**Orphans.** An orphan slice is a `LOAD_LOG` row the loader wrote (`BACKFILL#...`, `REFRESH_WEEK#...` or a registered gap) for a planned table whose key matches no planned slice. It appears after a catalog change (an explicit default changes every key of a table), a plan edit or a restore from another catalog. `LOAD_STATUS.ORPHAN_SLICES` counts them, `SELECT * FROM "CFB_META"."LOAD_ORPHANS"` lists them, `make deploy` warns, and **`BACKFILL` and `REFRESH_WEEK` refuse to fetch that table** (`BLOCKED_BY = 'ORPHANS'`), because refetching would pay twice for data already stored under another key. Resolve them either by migrating the stored rows to the new keys (there is no migration tool yet), or by deleting the orphan `LOAD_LOG` rows and their `CFB_CORE` rows so the table is fetched again. A table whose API feature is missing from `API_FEATURES` (a paid tier) is blocked by that feature instead, and never reports orphans.
+
+### 9.7 Re-fetching a slice
+
+To fetch a stored slice again, make it non-final and run the loader. Example: the current-season calendar lacks a bowl week that CFBD published later, and `REFRESH_WEEK` fails its `CHECK`:
+
+```sql
+UPDATE "CFB_META"."LOAD_LOG" SET "IS_FINAL" = FALSE
+WHERE "TABLE_NAME" = 'CALENDAR' AND "SLICE_KEY" = '/calendar?year=2026';
+```
+
+Then `make backfill PROFILE=demo CONFIRM=yes`. The loader fetches the slice once more (one call). Read the exact slice key with `SELECT "SLICE_KEY" FROM "CFB_META"."LOAD_LOG" WHERE "TABLE_NAME" = 'CALENDAR'`. For a `static` slice that is final the backfill does not touch it unless you do this.
+
+### 9.8 Reading current-season data
+
+Slices of the current season are never final, so a `CFBD_VS` query on them always fetches live and costs calls. Pages, the chat and analyses read current-season data from `CFB_CORE` (later through `CFB_MODEL` and `CFB_API`), never through `CFBD_VS`. Only the loader reads the current season through the virtual schema.
+
+### 9.9 Snapshots and restore
+
+A snapshot is a private copy of the stored data. It lets you rebuild a database, move data from AWS to your laptop, or reset a rehearsal, with **zero CFBD calls**: neither command reads the virtual schema.
+
+```bash
+make snapshot NAME=sunday-week9 [TARGET=aws]                 # copy the stored data to a private directory
+make snapshots                                               # list them
+make restore NAME=sunday-week9 [TARGET=local]                # checks the snapshot and stops: no CONFIRM
+make restore NAME=sunday-week9 CONFIRM=yes [FORCE=yes] [TARGET=local]
+```
+
+- **Where:** `~/.cfb-demo/snapshots/<NAME>/` (`CFB_SNAPSHOT_DIR` overrides the root). Directories are mode 0700 and files 0600. A location inside the repository or a OneDrive folder is refused, and an existing name is never overwritten. CFBD's terms forbid redistributing the raw data, so snapshots stay on your machine: never commit, share or upload them.
+- **Scope:** every `CFB_CORE` table plus `CFB_META.LOAD_LOG` and `CFB_META.FETCH_LOG`. The run logs (`LOAD_RUN`, `REFRESH_LOG`, `LOAD_FAILURES`) stay with each deployment, so restored `LOADED_BY` and `CONTEXT` values refer to the source deployment's runs.
+- **Format:** one gzip CSV file per non-empty table (`CFB_CORE.GAMES.csv.gz`, with a header line), plus `manifest.json` written last: the name, time, source target, database version, catalog hash, plan hash, and per table the columns, rows, SHA-256 and a per-column fingerprint. No credential is in it. A directory without a manifest is an incomplete snapshot. (An earlier plan used Parquet through exapump; the probe found it unusable for these tables: it fails on commas, quotes and newlines in VARCHARs, trims spaces and writes untyped columns.)
+- **Snapshot:** takes the run lock, fingerprints every table before and after the export, and keeps nothing if the data changed in between.
+- **Restore** checks everything before it changes anything: the manifest, that every table exists with the manifest's columns in the same order (a column difference is always refused, also with `FORCE`), that the set of `CFB_CORE` tables matches, the files' checksums and headers, and the catalog hash. **A snapshot of another catalog is refused unless `FORCE=yes`**: slice keys may differ, so restored slices could become orphans. The catalog hash covers the generated catalog, so any regeneration changes it. After a forced restore, `LOAD_ORPHANS` shows what no longer matches. Then it takes the run lock, loads each file into a landing schema `CFB_RESTORE`, checks every fingerprint against the manifest, replaces all scope tables in one transaction, and drops the landing schema. A failed restore changes nothing. It records a `RESTORE` row in `LOAD_RUN`.
+- **Rehearsal reset:** restoring the "Sunday after week N" snapshot returns the database to that state at zero calls.
+- **The DOUBLE exception.** The copy goes through each value's text form, and Exasol writes a `DOUBLE` with 15 significant digits. A `DOUBLE` with more digits comes back rounded to its text form (a relative change of at most 4e-12). Every other type round-trips exactly, including 2,000,000-character values and the 0001 and 9999 dates. The fingerprint of a `DOUBLE` column is computed on the text form on both sides, so a restore that matches its fingerprints is exact in that sense, and it would refuse rather than pass silently if another database version parsed the text differently.
+- `sys` runs both commands: the file transfer is `EXPORT` and `IMPORT`, which need those system privileges.
+
+### 9.10 AWS and other keys
+
+`TARGET=aws` runs every loader command against the AWS `default` deployment, with the node's TLS certificate pinned: the sys password is read from the deployment's secrets at run time and is never sent to a non-loopback host unverified (`vs/host/target.py`). On AWS, only deploy and run: never stop, start or resize the deployment.
+
+People who run their own key and do not want the repository's ledger use `LEDGER=off`. They should still set `monthly_call_budget` to what their key allows: in the plan file, or with `make deploy LOADER_CONFIG="monthly_call_budget=<n>"`.

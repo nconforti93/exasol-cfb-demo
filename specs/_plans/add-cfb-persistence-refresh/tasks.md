@@ -40,10 +40,10 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 - [x] 7.4 Quality gate:
 
 ## Group I
-- [ ] 8.1 `docs/user-guide.md` § "Persisting and refreshing":
-- [ ] 8.2 `specs/architecture.md`:
-- [ ] 8.3 `docs/roadmap.md`:
-- [ ] 8.4 `CLAUDE.md` dense bullets:
+- [x] 8.1 `docs/user-guide.md` § "Persisting and refreshing":
+- [x] 8.2 `specs/architecture.md`:
+- [x] 8.3 `docs/roadmap.md`:
+- [x] 8.4 `CLAUDE.md` dense bullets:
 
 ## Group J (sequential, gated)
 - [ ] 9.0 Gates and AWS smoke (0 CFBD calls):
@@ -60,7 +60,7 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 - [ ] P6-c (information only) Phase 6 task 1.9 will move the guard logic from `scripts/loader_cli.py` (estimate, quota, ledger check and record) into `loader/guard.py` after this plan merges. Keep that logic cohesive so it extracts cleanly.
 
 ## Review and Verification
-- [ ] R.1 Code review
+- [~] R.1 Code review
 - [ ] V.1 Checklist
 - [ ] V.2 Scenario coverage audit
 - [ ] V.3 Manual testing and verification-report.md
