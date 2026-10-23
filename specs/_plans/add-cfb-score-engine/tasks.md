@@ -11,7 +11,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [44]). Details, files, test
 - [x] 1.2 Simulation schema, deploy (`make sim`) and the engine script (`engine/udf.py`, `engine/bundle.py`, data tables)
 
 ### Group S1-B
-- [ ] 1.3 Score model, engine input views and the fit (`make sim-fit`, seed committed after one AWS fit)
+- [x] 1.3 Score model, engine input views and the fit (`make sim-fit`, seed committed after one AWS fit)
 
 ### Group S1-C
 - [ ] 1.4 `CFB_INFRA.SIMULATE`, outputs, `SIM_TEAM_ODDS`, `engine/whatif.py`, `make simulate` and `make what-if`

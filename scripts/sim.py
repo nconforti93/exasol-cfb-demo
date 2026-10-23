@@ -3,7 +3,11 @@
     python -m scripts.sim deploy [--target local|aws] [--dsn HOST:PORT] [--prefix PREFIX_]
                                  [--lint-only]
 
+    python -m scripts.sim fit [--target local|aws] [--dsn HOST:PORT] [--prefix PREFIX_]
+                              [--output PATH] [--dry-run]
+
     make sim [TARGET=local|aws] [ARGS="--prefix TEST_"]
+    make sim-fit [TARGET=local|aws] [ARGS="--dry-run"]
 
 - `deploy` lints `sql/sim/` first (every problem is listed and nothing is sent), then connects as
   `sys` to the target (`vs/host/target.py`), takes the loader's run lock as kind `DEPLOY` and
@@ -14,6 +18,13 @@
   `--lint-only` lints, renders and builds the script only: no target is resolved, no connection is
   opened. Exit 0 and "lint ok", or 2 with every problem listed.
 
+- `fit` reads the completed regular-season games of 2014-2025 and the SP+ ratings of the seasons
+  before them from `CFB_MODEL.GAME` and `RATING_SP` of the target (read-only `SELECT`s, no lock,
+  0 CFBD calls, never the virtual schema), estimates the constants of the score model
+  (`engine/fit.py`), prints them with the games behind each and the fit quality, and writes the
+  seed `sql/sim/010_sim_params.sql` (`--output` another file, `--dry-run` nothing). Review the
+  diff and commit it; `make sim` deploys it.
+
 Exit codes: 0 ok, 1 refused (the run lock is held), 2 error.
 """
 
@@ -22,10 +33,12 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 from engine import bundle
 from engine import deploy as sim_deploy
+from engine import fit as fit_module
 from engine.deploy import SimLintError, SimOptions
 from loader.runlock import RunLockError, RunLockRefused
 from vs.host import target
@@ -82,6 +95,25 @@ class _Command:
             _print(line)
         return EXIT_OK
 
+    def fit(self) -> int:
+        namespace = Namespace(self._args.prefix)
+        connection = self._connector(self._resolve(self._args.target, dsn=self._args.dsn))
+        try:
+            games, ratings = fit_module.read_inputs(connection, namespace.model_schema)
+        finally:
+            connection.close()
+        table = fit_module.build_table(games, ratings)
+        result = fit_module.fit_constants(table)
+        for line in fit_module.summary_lines(result, table):
+            _print(line)
+        if self._args.dry_run:
+            _print("dry run: nothing written")
+            return EXIT_OK
+        output = Path(self._args.output)
+        output.write_text(fit_module.render_seed(result), encoding="utf-8")
+        _print(f"seed written: {output}; review the diff, then make sim to deploy it")
+        return EXIT_OK
+
 
 def _common() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
@@ -107,6 +139,15 @@ def _parser() -> argparse.ArgumentParser:
         "--lint-only",
         action="store_true",
         help="lint, render and build only: no connection, exit 0 or 2",
+    )
+    fit_command = commands.add_parser(
+        "fit", parents=[_common()], help="fit the score model's constants and write the seed"
+    )
+    fit_command.add_argument(
+        "--output", default=str(fit_module.SEED_PATH), help="the seed file to write"
+    )
+    fit_command.add_argument(
+        "--dry-run", action="store_true", help="print the fit and write nothing"
     )
     return parser
 

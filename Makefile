@@ -41,6 +41,10 @@
 #                      never replaced, so a redeploy keeps every run. ARGS="--prefix TEST_" deploys
 #                      another namespace; ARGS="--lint-only" lints and builds without a connection.
 #                      scripts/sim.py; 0 CFBD calls.
+#   sim-fit            fits the score model's constants on the stored 2014-2025 games and SP+ ratings of
+#                      the target (read-only, 0 CFBD calls, never the virtual schema), prints them with
+#                      the fit quality and rewrites the seed sql/sim/010_sim_params.sql. ARGS="--dry-run"
+#                      writes nothing. Review the diff, commit it, then `make sim` deploys it.
 
 TARGET ?= local
 export TARGET
@@ -56,7 +60,7 @@ NAME     ?=
 ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
-.PHONY: backfill refresh quota snapshot restore snapshots model model-check model-docs model-perf sim
+.PHONY: backfill refresh quota snapshot restore snapshots model model-check model-docs model-perf sim sim-fit
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -142,3 +146,6 @@ model-perf: db-check
 
 sim: db-check
 	$(PY) -m scripts.sim deploy $(ARGS)
+
+sim-fit: db-check
+	$(PY) -m scripts.sim fit $(ARGS)

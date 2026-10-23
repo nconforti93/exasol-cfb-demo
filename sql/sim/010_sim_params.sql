@@ -1,7 +1,8 @@
 -- Reference seed: the constants of the score model, the resume ranking and the odds views
 -- (sim-engine/score-model). Replaced on every deploy; change it in a pull request, never in the
--- database. FITTED rows are written by `make sim-fit` (task 1.3); until then the fitted keys hold
--- UNFITTED placeholders (the S3 prototype's defaults) so that every view compiles and a run can start.
+-- database. FITTED rows are written by `make sim-fit` (engine/fit.py) from the completed
+-- regular-season games of 2014-2025; 8,188 FBS games have a prior SP+ and an Elo.
+-- ASSUMED rows are stated choices (published rules, S3 prototype values, or a fit that fell back).
 CREATE OR REPLACE TABLE {SIM_SCHEMA}.SIM_PARAMS (
   PARAM_KEY    VARCHAR(40) ASCII NOT NULL COMMENT IS 'Name of the constant, upper case, unique; SCORE_PARAMS turns each key into a column',
   PARAM_VALUE  DECIMAL(12,4) NOT NULL COMMENT IS 'Value of the constant, four decimals',
@@ -10,20 +11,20 @@ CREATE OR REPLACE TABLE {SIM_SCHEMA}.SIM_PARAMS (
 ) COMMENT IS 'One row per constant of the score model, the resume ranking and the odds movement views. Replaced from git on every deploy; the fit and the owner change it through a reviewed seed file.';
 
 INSERT INTO {SIM_SCHEMA}."SIM_PARAMS" VALUES
-  ('HFA', 2.5, 'UNFITTED', 'Home-field advantage in points, applied off neutral sites'),
-  ('B_SP', 1.0, 'UNFITTED', 'Weight of the previous season SP+ rating in a team rating, points per SP+ point'),
-  ('B_ELO', 0.0, 'UNFITTED', 'Weight of the current Elo above ELO_CENTER in a team rating, points per Elo point'),
-  ('ELO_CENTER', 1500, 'UNFITTED', 'Elo of an average FBS team in the fit, a whole number'),
-  ('B_ELO_ONLY', 0.0, 'UNFITTED', 'Points per Elo point when a team has an Elo but no previous SP+'),
-  ('B_SP_ONLY', 1.0, 'UNFITTED', 'Points per SP+ point when a team has a previous SP+ but no Elo'),
-  ('NON_FBS_RATING', -25, 'UNFITTED', 'Rating in points of a non-FBS opponent without an Elo'),
-  ('SIGMA_1', 15.0, 'UNFITTED', 'Standard deviation of a game margin one week ahead, in points'),
-  ('TAU', 0.0, 'UNFITTED', 'Growth of the margin standard deviation per week ahead, in points; it sets the shared team-strength offsets of the engine'),
-  ('TOTAL_INTERCEPT', 0.0, 'UNFITTED', 'Intercept of the predicted game total in points'),
-  ('TOTAL_SLOPE', 0.0, 'UNFITTED', 'Points of predicted game total per point of the four prior offense and defense ratings'),
-  ('TOTAL_DEFAULT', 55.0, 'UNFITTED', 'Predicted game total in points when a team has no previous SP+'),
-  ('ELO_PROB_SCALE', 400, 'UNFITTED', 'Elo points that separate a 10:1 win-odds ratio in the pregame probability from Elo'),
-  ('ELO_PROB_HFA', 55, 'UNFITTED', 'Elo points of home-field advantage in the pregame probability from Elo'),
+  ('HFA', 3.1367, 'FITTED', 'Home-field advantage in points, applied off neutral sites'),
+  ('B_SP', 0.0164, 'FITTED', 'Weight of the previous season SP+ rating in a team rating, points per SP+ point'),
+  ('B_ELO', 0.0414, 'FITTED', 'Weight of the current Elo above ELO_CENTER in a team rating, points per Elo point'),
+  ('ELO_CENTER', 1510, 'FITTED', 'Mean Elo of the FBS teams in the fit, a whole number'),
+  ('B_ELO_ONLY', 0.0422, 'FITTED', 'Points per Elo point when a team has an Elo but no previous SP+'),
+  ('B_SP_ONLY', 0.6783, 'FITTED', 'Points per SP+ point when a team has a previous SP+ but no Elo'),
+  ('NON_FBS_RATING', -28.4057, 'FITTED', 'Rating in points of a non-FBS opponent without an Elo'),
+  ('SIGMA_1', 16.602, 'FITTED', 'Standard deviation of a game margin one week ahead, in points'),
+  ('TAU', 2.8269, 'FITTED', 'Growth of the margin standard deviation per week ahead, in points; it sets the shared team-strength offsets of the engine'),
+  ('TOTAL_INTERCEPT', 23.0703, 'FITTED', 'Intercept of the predicted game total in points'),
+  ('TOTAL_SLOPE', 0.2891, 'FITTED', 'Points of predicted game total per point of the four prior offense and defense ratings'),
+  ('TOTAL_DEFAULT', 55.4156, 'FITTED', 'Predicted game total in points when a team has no previous SP+'),
+  ('ELO_PROB_SCALE', 511, 'FITTED', 'Elo points that separate a 10:1 win-odds ratio in the pregame probability from Elo'),
+  ('ELO_PROB_HFA', 78, 'FITTED', 'Elo points of home-field advantage in the pregame probability from Elo'),
   ('FBS_DEFAULT_RATING', -10, 'ASSUMED', 'Rating in points of an FBS team with neither a previous SP+ nor an Elo'),
   ('OT_MARGIN', 3, 'ASSUMED', 'Margin in points of a game that went to overtime, a whole number'),
   ('MARGIN_CAP', 24, 'ASSUMED', 'Cap in points on one game margin in the resume point differential, a whole number'),

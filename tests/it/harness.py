@@ -42,6 +42,7 @@ import json
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -605,6 +606,37 @@ class Harness:
         )
         if self._sim_digest != wanted:
             self.deploy_sim()
+
+    @contextmanager
+    def set_sim_params(self, **values: int | float | str) -> Iterator[None]:
+        """Overwrite constants of `SIM_PARAMS` for the block (keys as in the seed, numbers as
+        text or numbers), then put the deployed values back. The reference table is not part of
+        the per-test reset, so a test changes it only through this.
+        """
+        table = f"{self.sim}.SIM_PARAMS"
+        keys = list(values)
+        if not all(re.fullmatch(r"[A-Z0-9_]+", key) for key in keys):
+            raise HarnessError(f"SIM_PARAMS keys are upper case words, got {keys}")
+        listed = ", ".join(f"'{key}'" for key in keys)
+        before = dict(
+            self.query(f"SELECT PARAM_KEY, PARAM_VALUE FROM {table} WHERE PARAM_KEY IN ({listed})")
+        )
+        unknown = sorted(set(keys) - set(before))
+        if unknown:
+            raise HarnessError(f"unknown SIM_PARAMS keys {unknown}")
+
+        def write(new_values: Mapping[str, Any]) -> None:
+            for key, value in new_values.items():
+                self.query(
+                    f"UPDATE {table} SET PARAM_VALUE = {{value}} WHERE PARAM_KEY = {{key}}",
+                    {"value": Decimal(str(value)), "key": key},
+                )
+
+        write(values)
+        try:
+            yield
+        finally:
+            write(before)
 
     def seed_league(self, variant: Callable[[League], League] | None = None) -> League:
         """Store the synthetic league in `TEST_CFB_CORE` and `LOAD_LOG`, and set the test clock.
