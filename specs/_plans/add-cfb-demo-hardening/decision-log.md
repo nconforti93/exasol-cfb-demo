@@ -1,6 +1,6 @@
 # Decision Log: add-cfb-demo-hardening
 
-Date: 2026-10-23 (planned)
+Date: 2026-10-23 (planned; revised the same day after the independent review, see the last interview entry and decisions [27]–[42])
 
 ## Interview
 
@@ -80,8 +80,83 @@ Applied:
 - the stage set is exactly the must-pass set (decision [15]);
 - the transcript mode is task 5.3, built from the turn log;
 - P8-b is decision [16];
-- P8-c is task 10.6;
+- P8-c is task 10.6 (task 11.6 since the review revision);
 - this plan's own cross-plan changes are renamed X8-a to X8-d (decision [25]), so they do not collide with Phase 7's P8 names.
+
+**Q (relay, 2026-10-23, after the independent review in `review.md`):** How are the review's findings resolved?
+**A:** The owner is away and delegated these decisions to the orchestrator; log each one. Close to verbatim:
+- **M1, accepted.**
+  - Put the one-time captures in their own first group, needing only Phase 2 and the foundation recorder:
+    - the Sunday AWS snapshot (window Sunday to Tuesday);
+    - the 4 week recordings (until the next week completes);
+    - the local `make predict` before Tuesday's kickoff.
+  - Copy each Sunday's recording set to `~/.cfb-demo/recordings/<season>-wNN/` right away, because `--rerecord` overwrites `cache/replay/`.
+  - Make the Phase 7–dependent group F optional, so that G, H and I (including the must tasks 8.1 and 9.1) don't wait on it.
+  - An honest scorecard headline for kit w10-w11 needs Phase 5's `make predict` on local by Tue Nov 10. Make that an explicit dated task, with the degraded alternative (a labeled reconstruction) if Phase 5 isn't ready.
+- **M2, accepted.**
+  - Demo tiers:
+    - Full;
+    - B: no chat; the MCP coda replaces it;
+    - C: no app; a SQL client in replay mode plus the CLI dial;
+    - D: VS plus model only.
+  - Go/no-go on Nov 9, with `TIER=` in the preflight, scripts per tier in `docs/demo-script.md`, and preflight checks per tier.
+- **M3, decided.**
+  - **Who runs the cadence:** the orchestrator, from a local Claude Code session on the laptop, which has the WSL and AWS access. Fallback: the owner runs `make weekly WEEK=n` himself, a one-command checklist.
+  - **Missed Sunday:**
+    - the snapshot may be taken until Tuesday, before the first kickoff of the next week;
+    - recordings may be taken until week N+2 completes;
+    - outside those windows that week's kit is unavailable: fall back to the previous week's kit, and document it.
+  - **Q17** (AWS 2026.1.1 snapshot → laptop 2026.2 restore) is gated on Oct 31, as a 0-call test of the round trip. If it fails, the local `CFBD_API` connection becomes an owner action due Nov 1, and kit snapshots are taken on the laptop instead.
+  - **Demo date:** the owner said "around mid-November", so use Nov 16–20. U6 stays an owner confirmation, non-blocking.
+- **M4, decided.**
+  - The default is "live proof, replay data": the stage refresh runs in replay mode against the kit, plus one live click (a preview or the fan-out) to prove it is live.
+  - Live data on stage is an owner override (a U-item).
+  - Transcript replay is allowed only when the newest refresh's fetches were all `REPLAY` on that kit's path.
+- **M5, accepted.**
+  - `make demo-mode` refuses while a refresh is `RUNNING`.
+  - Add a refresh deadline and `make demo-abort`, which uses `KILL STATEMENT` on the refresh session.
+  - Add a test where a later fetch fails after live `GAMES` has already committed.
+  - Add a probe in 3.2 for `ALTER VIRTUAL SCHEMA … SET` against another session's open transaction.
+- **M6, accepted.** The kit check also requires week N+2 to be NOT complete.
+- **M7, accepted.**
+  - Freeze `vs/catalog`, `sql/core` and the load plan from Nov 1 to the demo. Add a release-check rule and a `CLAUDE.md` task.
+  - No `make deploy` on the real local namespace during demo week; the preflight checks the catalog hash.
+- **M8, accepted.**
+  - Extend the known-secret scan with the files the review lists: `node_access.pem`, `connection-instructions.txt`, every deployment's `secrets.json`, `~/.exapump/config.toml`, the starter-kit credentials, and the Claude Desktop config.
+  - The CFBD key check is an optional hidden prompt, never extraction from the DB.
+- **Other answers.**
+  - The cadence costs 8 calls a week (refresh plus recording); fix the budget numbers.
+  - Add a hard rule to the `CLAUDE.md` task: "never run exakit runtime commands or plain `exakit mcp-doctor` on this machine; `deployments/default` is the AWS instance; only `exakit mcp-doctor --json` is safe".
+  - Owner actions the orchestrator takes over:
+    - U1, the ledger cap, already added (`add-cfb-demo-hardening: 70`);
+    - U3, the passwords: the orchestrator generates random passwords into `.env` (mode 0600, never printed) and runs `make app-user` / `make chat-user`;
+    - U5, the cadence.
+  - U4 uses `wsl.exe -e uvx exasol-mcp-server@<version>` as the primary Claude Desktop command.
+- **Minors.** Fix all of them, specifically:
+  - m1: script which app shows the scale card after the dial, or run `make bench-sync` on stage;
+  - m4: disable the Refresh button in App B (the AWS app);
+  - m10: name the chat daily-cap value in the pre-show checklist;
+  - m12: the Wi-Fi-off drill is a hard gate.
+- **YAGNI cuts, all accepted:**
+  - the `ondemand` and `load` benchmark suites;
+  - the two-way `BENCH_METRIC` sync;
+  - the second scale-card location;
+  - the `kit-pick` heuristic (use a `sql demo` query);
+  - transcript replay unless an Anthropic key arrives (keep it as a conditional task).
+- **Constraints:** no DB, CFBD or Anthropic calls; no edits outside the plan directory; `speq plan validate` must pass with no warnings; append a "Review resolution" section to `review.md`. Before starting, invoke `exasol:exasol-database`, `exasol:exasol-bucketfs`, `exasol-mcp` and `exasol-runtime` (all four were loaded).
+
+Applied:
+- **The captures and the cadence:** group A (tasks 10.1–10.6), the new feature `demo/season-cadence`, task 3.5 due Nov 8, the recordings copy, and the dated predict task 10.4 (decisions [27], [29], [30]).
+- **Tiers** (decision [28]): in `demo/preflight`, `demo/rehearsal` and `demo/chat-beat`, and task 11.2.
+- **The stage default** (decision [31], revising [4]), and the transcript guard with task 5.3 made conditional (decision [32]).
+- **Abort and guard** (decision [33]): in `demo/rehearsal`, plus the probe in task 3.2 (Q19, Q20).
+- **The week-N+2 check** (decision [34]).
+- **The freeze** (decision [35]): task 1.6 by Oct 31, and the `freeze` rule.
+- **The secret homes and the CFBD prompt** (decision [36]).
+- **The owner actions** (decision [37]) and the `exakit` rule (decision [38]).
+- **The YAGNI cuts** (decision [39]).
+- **The stage mechanics** (decision [40]): m1 as `make bench-sync` on stage with App A's card; m4 as `APP_REFRESH=off`.
+- **The budget** (decision [41]) and **the placeholders-only script** (decision [42]).
 
 ## Design Decisions
 
@@ -104,8 +179,10 @@ Applied:
 
 ### [2] Kits judge the weeks from the data, never from the clock
 
-- **Decision:** a kit is refused unless two things hold:
+- **Revised** by [34] (review M6): a third check.
+- **Decision:** a kit is refused unless three things hold:
   - the recorded season `GAMES` body has every week-N+1 FBS game completed (exceptions are named in `demo/demo.yaml`);
+  - the recorded season `GAMES` body has week N+2 not complete;
   - the snapshot's stored `GAMES` rows have week N completed and no week-N+1 game completed.
 
   The recordings' `requested_at` and the snapshot's `created_at` are reported, not used as rules.
@@ -117,9 +194,10 @@ Applied:
 
 ### [3] A Sunday cadence keeps the snapshots coming and the scorecard honest
 
+- **Revised** by [27], [29] and [41] (review M1, M3, §5): the cadence also records and copies the week's slices, checks the data before paying, has a named runner and windows, and costs 8 calls a week. Its rules are the feature `demo/season-cadence`.
 - **Decision:** every Sunday in November, `make weekly WEEK=n CONFIRM=yes`:
-  - on AWS, a live `REFRESH_WEEK(2026, n)` (4 calls), with its model, prediction, 1M simulation and publication steps, then `make snapshot TARGET=aws NAME=aws-2026-wNN`;
-  - on the laptop, the restore, `make analyses`, `make predict` (week n+1's first freeze, before kickoff), a week-n simulation and publication if missing, and `make bench-sync`.
+  - on AWS: the quota check, a live `REFRESH_WEEK(2026, n)` (4 calls) with its model, prediction, 1M simulation and publication steps, the content checks, then `make snapshot TARGET=aws NAME=aws-2026-wNN`, then the recording of the 4 season slices (4 calls), copied at once to `~/.cfb-demo/recordings/2026-wNN/`;
+  - on the laptop: the restore, `make analyses`, `make predict` (week n+1's first freeze, before kickoff), a week-n simulation and publication if missing, and `make bench-sync`.
 
   The `predict` step is refused after week n+1's first kickoff unless `ALLOW_LATE=yes`.
 - **Alternatives:**
@@ -130,12 +208,13 @@ Applied:
   - It produces a "Sunday after week n" snapshot every week.
   - It makes the laptop's week-n+1 predictions `IN_ADVANCE` at zero extra calls, so the "model went 41–9" headline is a forecast.
   - It keeps AWS at the current week for the dial.
-  - 4 calls a week fits the owner's "~4/week refresh".
+  - It costs 8 calls a week, not 4. The owner's "~4/week" covered only the refresh, and AWS cannot keep its own responses (no replay directory), so the recording repeats the 4 requests (review §5).
 - **Promotes to ADR:** yes
 
 ### [4] Live first when the preflight passes; replay is a one-command fallback that needs no restore
 
-- **Decision:**
+- **Superseded as the stage default** by [31] (review M4): the laptop now refreshes in replay by default, and the live call is a click in the AWS app. The rule below applies only when the owner overrides to live data (U11), extended by [33]: a hung or failed step is stopped with `make demo-abort` before the switch.
+- **Decision (original):**
   - The laptop refreshes live on stage when `make demo-preflight MODE=live` passes at T-30 min (the local `CFBD_API` connection, the DNS gate, ledger room under `app`, quota); otherwise the demo runs in replay.
   - If a live step fails during the demo, `make demo-mode MODE=replay KIT=<kit>` and running the step again recovers. `REFRESH_WEEK` re-fetches every non-final season slice, and a failed fetch keeps the previous data, so no restore is needed.
 - **Alternatives:**
@@ -180,6 +259,7 @@ Applied:
 
 ### [8] The side-by-side numbers come from run summaries synced into `CFB_BENCH`
 
+- **Revised** by [39] and [40]: `make bench-sync` copies run summaries and steps only, never `BENCH_METRIC`. The card lives only in the inspector's "Scale" tab, and on stage `make bench-sync` runs right after the dial.
 - **Decision:**
   - `CFB_BENCH` (new schema) holds imported run summaries and steps (`BENCH_SIM_RUN`, `BENCH_SIM_STEP`), the benchmark's measurements (`BENCH_METRIC`) and the deployment's own label.
   - `make bench-sync` copies both ways between `local` and `aws`, merging by key.
@@ -204,6 +284,7 @@ Applied:
 
 ### [10] The benchmark measures, copies and drops
 
+- **Revised** by [39]: three suites (`sims`, `whatif`, `refresh`). The `load` and `ondemand` numbers are read from the logs by `make bench-report`, which reads both deployments directly.
 - **Decision:**
   - `make bench` runs five suites:
     - `sims`: a matrix per target, median of 3, sizing from the runs;
@@ -225,6 +306,7 @@ Applied:
 
 ### [12] The release check is a stdlib scanner over the tree and the history, with known secrets held in memory; a fast subset runs in `make lint`
 
+- **Revised** by [35] (the `freeze` rule in the fast subset) and [36] (every home of a known secret, and the CFBD key by an optional hidden prompt).
 - **Decision:** `scripts/release_check.py` runs several rule groups:
   - secret patterns: PEM keys, AWS keys, Anthropic keys, bearer tokens, `IDENTIFIED BY` literals, tracked secret files;
   - known secrets, read at run time from the deployments' `secrets.json` and `deployment.json` and from `.env` and searched in every tracked file and history blob;
@@ -260,6 +342,7 @@ Applied:
 
 ### [15] The chat beat: Phase 7's must-pass questions on stage; stub as the fallback; a transcript replay mode built here (revised after the Phase 7 relay)
 
+- **Revised** by [32] (review M4 and YAGNI): the transcript is built only once a key exists, and it replays only after a refresh whose fetches all replayed the kit's own recordings. Also revised by [28] (in tiers B and C the coda is the whole beat) and [41] (the demo-day caps).
 - **Decision:**
   - **On stage:** RQ01 (sets a what-if), RQ04 (explains a swing), RQ10 (outside the pages) and RQ15 as a 20-second guardrail aside (RQ14 its alternative). This is exactly Phase 7's must-pass set, each 3/3 live.
   - **Reserve:** RQ05, the team in the browser's app state. It goes on stage only after it joins the must-pass list and passes three live runs (Phase 7 P8-a).
@@ -284,6 +367,7 @@ Applied:
 
 ### [16] The MCP coda (Phase 7 P8-b): Claude Desktop, entry `exasol-cfb`, the chat user with the role `CFB_MCP`, local only
 
+- **Revised** by [37]: the entry's command is `wsl.exe -e <absolute uvx> exasol-mcp-server@<v>`, with `WSLENV`. The coda runs on the owner's Claude subscription, not the API key, which makes it tier B's beat 5 ([28]).
 - **Decision:**
   - The last 30 seconds of beat 5 use Claude Desktop with the Exasol MCP server under the entry `exasol-cfb`. That is not the starter kit's managed `exasol` entry, which `mcp-doctor` restores and which belongs to a broader user.
   - The server runs as `CFB_CHAT_WEB` (role `CFB_MCP`, `SELECT` on `CFB_API` only), with `EXA_MCP_SETTINGS` `{"enable_read_query": true, "schemas": {"like_pattern": "CFB_API"}}` and `EXA_SSL_CERT_VALIDATION=false` on loopback.
@@ -299,6 +383,7 @@ Applied:
 
 ### [17] Ledger plan `add-cfb-demo-hardening` capped at 70, 0 in October; the demo itself under `app`
 
+- **Revised** by [41]: the cadence's cost is stated as 8 calls a week, the captures run before the rehearsals, and a rehearsal starts only with room left for the remaining captures. The totals are unchanged (≤ 43 planned). The ledger entry was added by the orchestrator on 2026-10-23 ([37]).
 - **Decision:**
   - The cap is 70: ≤ 43 planned for a demo in the week of Nov 16, plus ≤ 10 if it slips past Nov 22, plus retry headroom.
   - It covers the cadence refreshes (after task 2.4's `PLAN=`; before that they count against Phase 2's remaining 79), the kit recordings, the console fan-out (once) and two live dress rehearsals (`APP_LEDGER_PLAN=add-cfb-demo-hardening`).
@@ -310,7 +395,8 @@ Applied:
 
 ### [18] Demo choices live in a committed `demo/demo.yaml`; `make kit-pick` proposes them
 
-- **Decision:**
+- **Revised** by [39]: `make kit-pick`'s bubble heuristic is cut. Bubble candidates come from a documented `sql demo` query in the script's kit recipe. `make kit-previews` keeps only the listing of preview game ids that feeds `make record`. The `rivalries` list is dropped. `demo/demo.yaml` gains `tier` ([28]), `stage_mode` ([31]) and `console_fanout_slices` (Q11).
+- **Decision (original):**
   - Per kit, the file holds the bubble team, the what-if game, the head-to-head pairs, the preview game ids and allowed incomplete games. It also holds the console queries, the chat questions and the candidate rivalries.
   - `make kit-pick` reads `CFB_API` after a replayed refresh and proposes:
     - bubble teams: P(CFP) between 25 and 75 % with a high-leverage game the next week;
@@ -386,7 +472,7 @@ Applied:
   - **X8-c:** the dial routes, the operator entries, the cookie and the card.
   - **X8-d:** the `demo` bindings and the transcript model mode.
 
-  The prefix X8 keeps them apart from Phase 7's inbound hand-offs P8-a to P8-c, which this plan takes (tasks 5.2, 5.3, 8.1, 8.2, 10.6).
+  The prefix X8 keeps them apart from Phase 7's inbound hand-offs P8-a to P8-c, which this plan takes (tasks 5.2, 5.3, 8.1, 8.2, 11.6).
 - **Alternatives:** hand the changes back to Phases 2, 5, 6 and 7; reuse the P8 names.
 - **Rationale:**
   - Those plans are reviewed and in implementation; adding scope to them now would delay their demo-critical work.
@@ -396,7 +482,12 @@ Applied:
 
 ### [26] A demo-minimum cut line for this plan
 
-- **Decision:**
+- **Revised** by [27] and [28]:
+  - The cut line also covers the predecessors: a missing phase lowers the demo tier.
+  - "Must" now starts with the captures (10.1–10.5), `make weekly` (3.5) and the freeze (1.6).
+  - `make demo-abort` (3.6) is "Should", because only the live-data override needs it.
+  - The transcript is conditional on a key.
+- **Decision (original):**
   - **Must by the demo:** kits, rehearsal, mode switch, the core preflight checks, the demo script, deployment, the cadence and the kit weeks.
   - **Should:** the app dial and card (fallback: two windows and the CLI dial), the benchmark (fallback: Phase 4's verification numbers), the transcript, `make weekly`.
   - **After the demo:** Labs readiness (release check, README, LICENSE) and the docs tasks.
@@ -404,28 +495,278 @@ Applied:
 - **Rationale:** Phases 3–7 are still being implemented, and the demo date is fixed. Labs readiness serves the public release, not the demo.
 - **Promotes to ADR:** no
 
+
+### [27] Captures first: their own group, recordings copied on capture, and the Phase 7 group optional (review M1)
+
+- **Decision:**
+  - The three time-bound inputs form group A (tasks 10.1–10.6), which runs on its calendar from Oct 31 without waiting for any other group:
+    - the AWS snapshot of "Sunday after week N";
+    - the week's season-slice recordings;
+    - the laptop's predictions, frozen before Tuesday's kickoff.
+
+    It needs only Phase 2 on AWS, the foundation's recorder and the ledger entry. Until `make weekly` merges (task 3.5, due Nov 8), it runs Phase 2's commands one by one.
+  - The cadence copies each Sunday's recordings to `~/.cfb-demo/recordings/<season>-wNN/` at once (0700/0600, `SHA256SUMS`). Kits are built later from that copy (`make kit SOURCE=…`).
+  - The stage kit's honest headline is its own dated task (10.4): the week-11 predictions are frozen on local by Tue Nov 10, or the headline is the labeled reconstruction.
+  - The Phase 7 tasks (5.2, 5.3) form the optional group G, which never blocks H–K. A task removed by the cut line or by the tier decision leaves the chain. 8.1's draft and 9.1 may start before 7.1.
+- **Alternatives:**
+  - The strict chain A → … → I behind Phases 2–7. With it, the must tasks 8.1 and 9.1 waited on Phase 7.
+  - Copying recordings only at kit build: Nov 15's `GAMES` recording overwrites Nov 8's in `cache/replay/`.
+- **Rationale:** only the captures can never be redone; everything else can be built from them on any later day. A slipping predecessor then costs the demo time, not its data.
+- **Promotes to ADR:** yes
+
+### [28] Four demo tiers, with a go/no-go on Nov 9 (review M2)
+
+- **Decision:**
+  - The tiers:
+    - **Full** (Phases 2–7): beats 1–6 as scripted.
+    - **B** (Phases 2–6): no chat panel; the Claude Desktop coda is beat 5.
+    - **C** (Phases 2–5): no app; a SQL client on local in replay, and the dial from the command line.
+    - **D** (Phases 2–3): the virtual schema and the model only, as beats 2 and 3.
+  - On Mon Nov 9 the orchestrator sets `tier` in `demo/demo.yaml` from what is merged and green, and logs it here. A tier may go up later only after that tier passes its preflight and a dress rehearsal by Nov 16.
+  - The preflight takes `TIER=`, and a check the tier does not use prints `SKIP`. `make rehearse TIER=D` skips the analyses and the base publication.
+  - `docs/demo-script.md` has a section per tier, and its `sql demo` blocks carry `tiers=`.
+  - If Phase 7 has not merged, the orchestrator creates the coda's user `CFB_CHAT_WEB` with the role `CFB_MCP` (task 9.1).
+- **Alternatives:** no degraded path, where the beat fallbacks assume a working app and engine; deciding the tier on demo day.
+- **Rationale:** Phases 3–7 are being implemented in the same weeks. A defined step down for each phase that can slip keeps a demo. Nov 9 is the first day with a real kit to rehearse on.
+- **Promotes to ADR:** yes
+
+### [29] The cadence's runner, its windows and the missed-Sunday rule; the cadence gets its own spec (review M3)
+
+- **Decision:**
+  - **Runner:** the orchestrator, from a local Claude Code session on the laptop. Only that machine has WSL, the local Exasol and the AWS secrets under `deployments/default`; a cloud agent reaches neither. If no session has run the cadence by Monday evening, the owner runs `make weekly WEEK=n CONFIRM=yes`, a one-command checklist.
+  - **Windows:**
+    - the snapshot can be a kit base until Tuesday's first kickoff of the next week; the content rule is "until week n+1's first FBS game ends";
+    - the recordings serve their kit until week N+2 completes (for kit `wN-wN+1`), which in cadence terms is until week n+1 completes;
+    - the predictions are honest until week n+1's first kickoff.
+  - **Missed Sunday:**
+    - a late run still refreshes AWS;
+    - its snapshot is named `-late` when it can no longer be a base;
+    - its recording is skipped at zero calls when its kit would refuse it;
+    - outside the windows, that week's kit is unavailable: the previous week's kit is used, and this log records it.
+  - **Spec:** the feature `demo/season-cadence` specifies the cadence in 5 scenarios. It is CLI-tested with fake targets and runners.
+- **Alternatives:**
+  - "By the owner or the orchestrator": nobody concrete.
+  - A local timer: each live run needs a `CONFIRM`.
+  - Clock windows only: they would accept a recording that the kit then refuses.
+- **Rationale:** it names who acts and when, checks the data before paying, and makes the fallback explicit instead of improvised.
+- **Promotes to ADR:** no
+
+### [30] Q17 is a gate on Oct 31, with a 0-call fix first and the laptop path second (review M3)
+
+- **Decision:**
+  - By Sat Oct 31, a 0-call snapshot → restore round trip from AWS (2026.1.1) to the laptop (2026.2). This is Phase 2's task 9.5, run here as 10.1 if it has not run.
+  - If it fails:
+    1. first, a 0-call fix of the cross-version difference in Phase 2's snapshot code (for example the DOUBLE text form of its [41]), retested by Nov 1;
+    2. otherwise U2 (the local `CFBD_API`) is due Nov 1, and the laptop takes over the snapshots:
+       - a local demo backfill (≈ 217 calls, on a November ledger line the orchestrator adds, outside this plan's 70);
+       - each Sunday a local live refresh (4) and `make snapshot TARGET=local`, next to the AWS refresh for the dial. That makes 12 calls a week, ≤ 55 of 70 for a demo on Nov 16–20.
+- **Alternatives:**
+  - Checking it "before 10.1": too late to get U2 for Nov 1.
+  - Taking kit snapshots on the laptop from the start: it needs U2 and ≈ 217 more calls for nothing if the restore works.
+- **Rationale:** Nov 1 is the first capture, and its fallback needs the owner's connection the same day. The local backfill is stated, not hidden: it is the real price of the fallback.
+- **Promotes to ADR:** no
+
+### [31] On stage: live proof, replay data; live data on the laptop is the owner's override (review M4; revises [4])
+
+- **Decision:**
+  - The laptop (App A) refreshes in replay over the stage kit, so every scripted number is the kit's.
+  - The one live call is the console `fan-out` in the AWS app (App B, beat 2; 3 calls under `app`). The reserve is App B's head-to-head preview (1 call).
+  - Live data on the laptop is the owner's override (U11: `stage_mode: live`, needs U2). The preflight then runs with `MODE=live`, and the abort rules of [33] apply.
+  - The script carries two expected columns: "replay" (kit facts) and "live" (read on screen, never a fixed number).
+  - The preflight's live checks run for each deployment that goes live: App B with `AWS=yes`, the laptop with `MODE=live`.
+- **Why App B:** the virtual schema's mode is global to a deployment, so a live click on the laptop would need a mode switch on stage. App B is always live ([6]). As a side effect, U2 is no longer needed for the default.
+- **Alternatives:**
+  - **Live first when the preflight passes** (the old [4]). A live refresh in the demo week fetches newer slices than the kit: weekday results, Tuesday's CFP rankings, maybe new SP+. The script's numbers, `kit-facts` and a transcript would then contradict the screen.
+  - **Replay only:** it loses the live call the story promises.
+  - **A live click on the laptop:** it needs a mode switch on stage.
+- **Rationale:** the mission's promise is "refresh on stage, fall back without network". A replayed refresh of real recorded week-N+1 data, with the badge saying "replay", is honest. One real call in beat 2 proves the virtual schema is live.
+- **Promotes to ADR:** yes
+
+### [32] A transcript only once a key exists, and only on its kit's replayed data (review M4, YAGNI)
+
+- **Decision:**
+  - Task 5.3 is built only once an Anthropic key has arrived (Q16).
+  - Its guard holds when both are true:
+    - the point and the restored snapshot match the transcript's;
+    - every fetch of the newest `REFRESH_WEEK` run is `REPLAY`, with the slice key and the request time of one of the kit's `refresh` recordings. A replayed fetch carries the recording's request time (`cfbd-fetch/fetch-modes`), so this proves the refresh read the kit's own path.
+
+    The app checks it at start and before each transcript turn; otherwise it uses the stub and gives the reason.
+  - If no key ever arrives, the recorder drops `demo/chat-beat`'s two transcript scenarios.
+- **Alternatives:**
+  - A binding by the kit's SHA-256 and point only. After a live refresh the point is the same, so the transcript would quote the kit's numbers over live data.
+  - Reading `REPLAY_PATH` from the virtual schema's properties. The app's roles cannot read them, and the property may have changed after the refresh.
+- **Rationale:** it proves "on that kit's path" from data the app role can read, and it spends the expert-grade effort only when it can pay off.
+- **Promotes to ADR:** no
+
+### [33] No mode switch during a run; a refresh deadline; `make demo-abort` (review M5)
+
+- **Decision:**
+  - **The guard.** `make demo-mode` refuses while a non-stale `RUNNING` row of any kind is in `CFB_META.LOAD_RUN`, naming it. Staleness follows Phase 2's rules: session gone, own session, or an idle script session. The `ALTER` runs on its own connection with a 10-second limit.
+  - **The deadline.** The app's `APP_REFRESH_DEADLINE_S` (default 45) applies to the `FETCH` steps. When they have not all ended by then, the refresh progress shows `make demo-abort` and `make demo-mode MODE=replay KIT=<kit>`.
+  - **The abort.** `make demo-abort` runs `KILL STATEMENT IN SESSION <id> WITH MESSAGE 'demo-abort'` (grammar `kill_statement`) on the newest `RUNNING` `REFRESH_WEEK` or `SIMULATE` run.
+    - It waits up to 15 seconds for the session to be gone or idle; the next run sets the row `ABANDONED` (Phase 2 `loader/run-logs`, Phase 4 `sim-runs`).
+    - A killed statement keeps its transaction (owner's verified note on 2026.1.0). The app's action closes its own connection (`app/access`), which ends that transaction.
+    - If the session still runs after 15 seconds, the command exits with 2 and prints the `KILL SESSION` line.
+  - **New scenarios:** a failure on the third fetch after a changed live `GAMES` committed, repaired by the replayed refresh; and a hung refresh, refused by the switch, aborted, then replayed.
+  - **The probe in 3.2:** the `ALTER` against another session's open transaction, the mode's reach into other sessions, and the killed run's transaction (Q19, Q20).
+- **Alternatives:**
+  - A total refresh deadline, such as the review's 60 s: it would also fire on a slow but healthy simulation step.
+  - The app killing its own run: a second stop path on stage, with no gain over one pasted terminal line.
+  - `KILL SESSION` as the default: it rolls back, but it also ends a SQL client's session in tier C without warning.
+- **Rationale:** it reuses Phase 2's stale rules, Phase 4's cleanup and Phase 6's per-action connections, adds no cleanup code, and makes a mixed live/replay run impossible.
+- **Promotes to ADR:** no
+
+### [34] A third week check: week N+2 is not complete in the recording (review M6)
+
+- **Decision:**
+  - `make kit` refuses a recorded `GAMES` body in which every week-N+2 FBS game is completed, naming the week and the recordings copy to use instead.
+  - `kit.json` counts the week-N+2 games already completed (weekday games), because their predictions become reconstructions on replay.
+  - The cadence applies the same rule before it records ([29]).
+- **Alternatives:** trusting the recording date; refusing any week-N+2 result, which would reject every recording made after a Tuesday MACtion game.
+- **Rationale:** `CURRENT_AS_OF` is the newest finished week, so a recording made after week N+2 ended moves the replayed point to N+2. This is a content rule, like the other two.
+- **Promotes to ADR:** no
+
+### [35] Freeze the snapshot scope's definitions from Nov 1 until the demo (review M7)
+
+- **Decision:**
+  - **Frozen paths:** `vs/catalog/`, `sql/core/`, `sql/meta/load_log.sql`, `sql/meta/fetch_log.sql` and `loader/load-plan.yaml`. They are frozen from Nov 1, after the cadence's snapshot, until the demo (`UNTIL` 2026-11-21, moved with the date).
+  - **Enforcement:**
+    - `make demo-freeze` pins their git tree ids in `demo/freeze.yaml`;
+    - `release_check --fast`, part of every `make lint`, fails on a change (the `freeze` rule);
+    - the preflight's `kit` check compares the deployed catalog hash with the kit snapshot's, and the trees with the pins.
+  - **The rule in words:** `CLAUDE.md` states it (task 1.6, by Oct 31), together with "no `make deploy` on the real local namespace in demo week except through `make rehearse`". The orchestrator tells the Phase 2–7 sessions.
+  - **A change** needs the owner's decision and a migration that re-fingerprints the existing snapshots.
+- **Alternatives:**
+  - `make generate && git diff` inside the preflight: the preflight would then write files. That check stays in the Checklist and in lint.
+  - Re-taking snapshots after a change: impossible, because they are time-bound.
+  - No rule.
+- **Rationale:** the kits of Nov 8 and Nov 15 cannot be retaken. A regenerated catalog or a changed `CFB_CORE` table after them would silently break the stage kit.
+- **Promotes to ADR:** yes
+
+### [36] Known secrets from every home; the CFBD key only by a hidden prompt (review M8; extends [12])
+
+- **Decision:**
+  - **The homes.** `known-secret` reads, into memory only:
+    - for every deployment under `~/.exasol/personal/deployments/` (today `local`, `default` and `test`): its `secrets.json` (every string value of 8 or more characters), `deployment.json`, `connection-instructions.txt` (values after a password label), and `node_access.pem` and any `*.pem` (key bodies compared with whitespace removed, any 64-character run);
+    - `~/.exapump/config.toml`, parsed with `tomllib` and never printed, as the `exasol-database` skill's "never `cat`" rule requires;
+    - `~/.exasol-starter-kit/credentials/*`;
+    - the `exasol-cfb` entry's `EXA_PASSWORD` in the Claude Desktop configuration;
+    - `.env`.
+
+    A missing home is a `WARN` naming it.
+  - **The secret-file rule** also names a tracked `.exapump/config.toml` and `claude_desktop_config.json`.
+  - **The CFBD key:** `--cfbd-key-prompt` (owner only) asks for it at a prompt that does not echo, for one run, in memory only. Without the flag, the report says "pattern-checked only".
+- **Alternatives:** reading only `local` and `default` `secrets.json`; extracting the key from the connection (owner rule: no secret extraction); patterns only.
+- **Rationale:** the AWS node's SSH key, the exapump passwords and the starter kit's MCP user are real secrets on this machine, and a pasted key body passes every pattern rule.
+- **Promotes to ADR:** no
+
+### [37] Owner actions taken over by the orchestrator; U4 through `wsl.exe`
+
+- **Decision:**
+  - **U1, the ledger entry, is done:** `add-cfb-demo-hardening: 70` (ledger commit `12cbbf1`). The ≤ $10 Anthropic approval stays with the owner.
+  - **U3:** the orchestrator generates random app and chat passwords into `.env` (mode 0600, never printed) and runs `make app-user` and `make chat-user` on both targets. The API key stays with the owner.
+  - **U5:** the cadence runner of [29].
+  - **U4's primary entry** is `wsl.exe` with `-e`, the absolute path of `uvx` in WSL and `exasol-mcp-server@<v>`.
+    - Its `env` sets the `EXA_*` values and `WSLENV` with `/u` for each of them.
+    - `wsl.exe -e` starts no login shell, and on this machine `uvx` is `~/.local/bin/uvx`, which only `.profile` and `.bashrc` put on the path. A bare `uvx` would not be found, and without `WSLENV` the variables would not reach the server.
+    - The DSN is WSL-local `localhost:8563`.
+  - **The alternatives for U4:** Windows-native `uvx` with WSL localhost forwarding, or Claude Code in WSL.
+- **Alternatives:** keep U1, U3 and U5 with the owner (he is away); Windows-native `uvx` as the primary command.
+- **Rationale:** these actions need no judgment only the owner can make. uv, Python and the database are already in WSL.
+- **Promotes to ADR:** no
+
+### [38] Never an `exakit` runtime command on this machine
+
+- **Decision:** a hard rule in `CLAUDE.md` (task 1.6): "never run exakit runtime commands or plain `exakit mcp-doctor` on this machine; `deployments/default` is the AWS instance; only `exakit mcp-doctor --json` is safe". Local Exasol is driven only with `exasol stop/start -d local`.
+- **Alternatives:** use the kit's commands as its skills recommend.
+- **Rationale:**
+  - The `exasol-runtime` skill keeps the kit's state in `deployments/default`, which on this machine is the AWS instance.
+  - `exakit start/stop/status/repair-runtime` would therefore act on AWS and break the mandate.
+  - The plain `mcp-doctor` repairs and may provision on that database (`exasol-mcp` skill).
+- **Promotes to ADR:** yes
+
+### [39] Cuts that do not serve the demo (review §10)
+
+- **Decision:**
+  - **Benchmark:** the `load` and `ondemand` suites are cut; `make bench-report` reads those numbers from `CFB_META.LOAD_RUN` and `FETCH_LOG` directly.
+  - **Sync:** `BENCH_METRIC` is no longer synced; the report reads both deployments.
+  - **The scale card** is only in the inspector's "Scale" tab, with no odds-banner line.
+  - **`make kit-pick`'s bubble heuristic** becomes a documented `sql demo` query, and `make kit-previews` keeps the preview listing.
+  - **Transcript replay** is conditional on a key ([32]).
+  - **Kept:** `sims`, `whatif` and `refresh`, and the 2M cell.
+- **Alternatives:** keep everything.
+- **Rationale:** each cut item copied numbers the logs already hold, or added code that a query or a later decision covers. Fewer tasks before Nov 9.
+- **Promotes to ADR:** no
+
+### [40] Stage mechanics: the card after the dial, App B's refresh off, the dial's estimate, the terminal tab, the build, the offline gate (review m1–m4, m6, m12, §9)
+
+- **Decision:**
+  - **m1:** after the dial, `make bench-sync` runs in the open terminal tab (seconds, 0 calls). App A's inspector "Scale" tab then shows the laptop's refresh (read live) and the AWS dial run, both just watched. If the sync fails, the card shows the last synced run, "measured <date>".
+  - **m2:** the pre-show list has one terminal tab with `make bench-sync`, `make demo-abort` and `make demo-mode MODE=replay KIT=…` pasted and ready.
+  - **m3:** `make app-build` runs at T-2 h, and the preflight's `app` check fails without a current build.
+  - **m4:** App B runs with `APP_REFRESH=off`. Its refresh button is disabled with a reason, and the requests answer 403 `refresh_off`, so no misclick spends AWS calls or moves AWS.
+  - **m6:** the dial's confirmation quotes the plan's estimate, or "about a minute".
+  - **m12:** the Wi-Fi-off drill is a hard gate in 11.1 and 11.5; no dress rehearsal counts before it passes.
+  - **§9:** the two-instance test also posts an operator request to each instance with its own origin and with the other's.
+- **Alternatives:**
+  - m1: App B's card, whose laptop column would be the last synced run, not the one just watched.
+  - m4: a script line "never press Refresh in App B".
+- **Rationale:** the punchline shows both numbers the audience just saw. A flag cannot be forgotten on stage; a script line can.
+- **Promotes to ADR:** no
+
+### [41] Budget: 8 calls a week, captures before rehearsals, quota first, the demo-day chat cap (review §5, m8–m10)
+
+- **Decision:**
+  - **The cadence** costs 8 calls a week (refresh 4 + recording 4). Nov 1 costs 4, plus 4 only if an `aws-2026-w08` base exists. The planned total is unchanged: ≤ 43 for a demo on Nov 16–20 (≤ 47 with the Nov 1 recording), ≤ 53 with Nov 22, capped at 70.
+  - **m8:**
+    - each Sunday's capture runs before that week's rehearsals;
+    - a dress rehearsal starts only when the plan's room after it still covers every remaining capture (8 each) plus headroom.
+  - **m9:** `make weekly`'s first step is `quota`, because the key's pool is shared (Academic, `sharedPool`).
+  - **m10:**
+    - on demo day both apps run with `CHAT_DAILY_MAX_USD=3.00` and `CHAT_SESSION_MAX_USD=2.00` and share one spend file;
+    - the pre-show checklist names both values, and the preflight's `chat` check prints them and warns above 3.00;
+    - this plan's Anthropic spend, demo day included, is ≤ $9 of the approved ≤ $10;
+    - the MCP coda uses the owner's Claude subscription, not the API key.
+- **Alternatives:** a ledger sub-cap of ≤ 20 for rehearsals (review m8). It would need a second ledger plan name for one rule that the order of the calendar already enforces.
+- **Rationale:** a must-have capture can never lose its calls to a rehearsal, and the chat on stage is capped by a number the presenter can see.
+- **Promotes to ADR:** no
+
+### [42] The committed demo script keeps placeholders; the filled numbers stay in the kit (review m7)
+
+- **Decision:**
+  - `docs/demo-script.md` holds placeholders only (`{BUBBLE}`, `{PAIR}`, `{F.*}`), with no team name and no kit number.
+  - `make kit-facts` writes the filled copy `demo-script.filled.md` into the private kit.
+  - U8 also covers the team names and marks in the private screenshots and video, and the third-party dependency inventory.
+- **Alternatives:** an "Expected numbers" section filled in the committed file (the original 8.1).
+- **Rationale:** the same rule as `docs/benchmark.md`, which holds no team-level result. The repository is meant to go public.
+- **Promotes to ADR:** no
+
 ## Assumptions to verify
 
 | # | Assumption | Verify | If wrong |
 |---|---|---|---|
-| Q1 | CFBD's 2026 regular weeks end on Saturdays Oct 31 (w9), Nov 7 (w10), Nov 14 (w11), Nov 21 (w12); derived from Phase 4's stored schedule, with Army–Navy in week 15 on Dec 12 | Task 10.1: the 2026 rows of `CFB_MODEL.SEASON_WEEK` (or `CFB_CORE.CALENDAR`) after Phase 2's backfill | Shift the cadence and kit names by the offset; the rules (latest completed week) are unchanged |
-| Q2 | The demo is in the week of Nov 16, so the demo kit is `2026-w10-w11` | U6, a week ahead | Use the newest kit whose replay week is the latest completed week on demo day: `2026-w09-w10` before Nov 15, `2026-w11-w12` (task 10.8) after Nov 22 |
+| Q1 | CFBD's 2026 regular weeks end on Saturdays Oct 31 (w9), Nov 7 (w10), Nov 14 (w11) and Nov 21 (w12), and each next week's first kickoff is on the Tuesday after. Derived from Phase 4's stored schedule, with Army–Navy in week 15 on Dec 12 | Task 10.2: the 2026 rows of `CFB_MODEL.SEASON_WEEK` (or `CFB_CORE.CALENDAR`) after Phase 2's backfill | Shift the cadence, the windows and the kit names by the offset; the rules (latest completed week) are unchanged |
+| Q2 | The demo is in the week of Nov 16–20 (the orchestrator's reading of "around mid-November"), so the stage kit is `2026-w10-w11` | U6 (non-blocking) | Use the newest kit whose replay week is the latest completed week on demo day: `2026-w09-w10` before Nov 15, `2026-w11-w12` (10.6, 11.9) after Nov 22; move the freeze's `UNTIL` |
 | Q3 | Phase 6's session cookie has one name for every port | Read the merged `app/backend/security.py` in task 4.1 | Nothing to change if it already carries the port; the scenario still pins it |
 | Q4 | Phase 6's background-action machinery (action ids, follow key, run-id lookup) generalizes to a second action kind | Task 4.1, on the merged code | The dial stays CLI (`make simulate TARGET=aws` + `make publish`), with App B following the publication; the card is unaffected |
-| Q5 | Phase 7's turn-log lines (`chat/turn-log`: tool calls with validated inputs, app actions, answer) are enough to replay a turn, and tool calls can be grouped into model steps by their order within the line's `calls` | Task 5.3, on the merged code | Replay one tool call per step (the answer text is verbatim either way); if a field is missing, add it to the turn-log writer in 5.3 (X8-d) |
-| Q6 | Claude Desktop on Windows can run `uvx exasol-mcp-server@<version>` and reach the WSL local deployment at `localhost:8563` with `EXA_SSL_CERT_VALIDATION=false` | Task 10.6 with U4 (about 5 minutes) | Use `wsl.exe` as the entry's command, or Claude Code in WSL (`claude mcp add exasol-cfb …`) as the client |
-| Q7 | The starter kit's `exakit mcp-doctor` leaves a non-kit entry named `exasol-cfb` alone | After U4: `exakit mcp-doctor --json` (report only) | Keep the entry in Claude Code's user scope instead, or re-add it after any `mcp-doctor` repair |
+| Q5 | Phase 7's turn-log lines (`chat/turn-log`: tool calls with validated inputs, app actions, answer) are enough to replay a turn, and tool calls can be grouped into model steps by their order within the line's `calls` | Task 5.3 (only with a key), on the merged code | Replay one tool call per step (the answer text is verbatim either way); if a field is missing, add it to the turn-log writer in 5.3 (X8-d) |
+| Q6 | Claude Desktop on Windows runs `wsl.exe -e <absolute uvx> exasol-mcp-server@<version>`, and `WSLENV` passes the `EXA_*` variables into WSL, where the server reaches `localhost:8563` with `EXA_SSL_CERT_VALIDATION=false` | Task 11.6 with U4 (about 5 minutes) | Windows-native `uvx` with WSL localhost forwarding, or Claude Code in WSL (`claude mcp add exasol-cfb …`) as the client |
+| Q7 | The starter kit's `exakit mcp-doctor` leaves a non-kit entry named `exasol-cfb` alone | After U4: `exakit mcp-doctor --json` (report only; never the plain command, [38]) | Keep the entry in Claude Code's user scope instead, or re-add it after any `mcp-doctor` repair |
 | Q8 | Local Exasol starts with at least 8 instances after a restart with free memory | The preflight's `sizing` check at T-2 h | Close more applications and restart; else quote the measured seconds with the instance count (the script states sizing anyway) |
-| Q9 | AWS 1,000,000 sims run in ≤ 60 s (median) at the demo point, which has fewer remaining games than Phase 4's week-9 measurement, and 2,000,000 in ≤ 120 s | Task 10.4 | Show the 1M run anyway, with its time; drop the 2M cell from the report |
-| Q10 | `make rehearse` takes ≤ 6 min on the laptop (restore ≤ 5 min, Phase 2 target) | Task 10.2 | Reset only between rehearsals and before the show; the stage fallback never restores (decision [4]) |
-| Q11 | Phase 6's console `fan-out` slices are `/games/teams?seasonType=both&team=Michigan&year=2022`, `2023` and `2024` | `make kit` reads them from the merged console catalog (1.3) | Record whatever the catalog names; the kit takes the keys from code |
-| Q12 | Repeated rehearsals of one kit keep the graded predictions of week N+1 (frozen by the cadence) and freeze identical week-N+2 values (first freeze wins, same inputs) | `test_two_rehearsals_same_pages` and task 10.2's `kit-facts` diff | Report the difference in `kit-facts`, and freeze week N+2 in the cadence too (`make predict WEEK=N+1` on local before kickoff) |
+| Q9 | AWS 1,000,000 sims run in ≤ 60 s (median) at the demo point, which has fewer remaining games than Phase 4's week-9 measurement, and 2,000,000 in ≤ 120 s | Task 11.4 | Show the 1M run anyway, with its time; drop the 2M cell from the report |
+| Q10 | `make rehearse` takes ≤ 6 min on the laptop (restore ≤ 5 min, Phase 2 target) | Measured in task 11.1 and recorded in the verification document | Reset only between rehearsals and before the show; the stage never restores ([31], [33]) |
+| Q11 | Phase 6's console `fan-out` slices are `/games/teams?seasonType=both&team=Michigan&year=2022`, `2023` and `2024` | `make kit` reads them from the merged console catalog (1.3); until it merges, from `console_fanout_slices` in `demo/demo.yaml` | Record whatever the catalog names; the kit takes the keys from code |
+| Q12 | Repeated rehearsals of one kit keep the graded predictions of week N+1 (frozen by the cadence) and freeze identical week-N+2 values (first freeze wins, same inputs). Week-N+2 games already played in the recording ([34] allows a partly played week) become reconstructions on replay, and `kit.json` counts them | `test_two_rehearsals_same_pages` and task 11.1's `kit-facts` diff | Report the difference in `kit-facts`, and freeze week N+2 in the cadence too (`make predict WEEK=N+1` on local before kickoff) |
 | Q13 | CFBD's terms allow publishing the pinned OpenAPI spec (`vs/openapi/cfbd-openapi-5.33.0.json`) and derived numbers in `docs/` | U8 (CFBD terms or a question to CFBD) | `make generate` downloads the pinned spec by URL and checks its SHA-256 instead of committing it (the generated catalog stays) |
-| Q14 | The flattened `GAMES` table carries the week, season type, completion flag and both teams' classification, so the week checks can run on the recorded body and on the snapshot CSV | Task 1.3, against `vs/catalog/catalog.json` | Use the columns that exist (for example, FBS membership from `CONFERENCES_AFFILIATIONS` in the snapshot); the rule stays "every FBS game" |
-| Q15 | The laptop gets its own `CFBD_API` connection for a live refresh on stage | U2 | Replay is primary on the laptop; the live proof is App B's preview click on AWS (1 call under `app`) |
-| Q16 | An Anthropic key arrives before Nov 15 | U3 | The stub-mode beat with suggestions (decision [15]); Phase 7's 7.2/7.3 and the transcript recording stay open in task 10.6 and run once the key exists (P8-c) |
-| Q17 | A snapshot taken on AWS (2026.1.1) restores exactly on the laptop (2026.2): Phase 2's fingerprints, including the DOUBLE text-form rule [41], match across versions | Phase 2 task 9.5 (before 10.1) | Take the kit snapshots from the laptop: a live local refresh each Sunday (needs U2, 4 calls) or a replayed refresh of the newest kit, followed by `make snapshot TARGET=local` |
-| Q18 | Files copied into a new subdirectory `cfbd/kits/<kit>/` of the existing `default` bucket are readable by UDFs within a second (probe 1.4k covered files in an existing bucket) | Task 3.3: `make rehearse` does one replay read of the smallest recording after the switch | Wait and retry for up to 10 s; if still unreadable, install kits under the default `cfbd/replay` path with a kit-specific subdirectory created at deploy time |
+| Q14 | The flattened `GAMES` table carries the week, season type, completion flag and both teams' classification, so the week checks can run on the recorded body, on the snapshot CSV and on AWS's stored rows | Task 1.3, against `vs/catalog/catalog.json` | Use the columns that exist (for example, FBS membership from `CONFERENCES_AFFILIATIONS` in the snapshot); the rule stays "every FBS game" |
+| Q15 | The laptop needs no `CFBD_API` connection for the default stage mode ([31]) | — | It is needed only for the override (U11) or the Q17 fallback (U2) |
+| Q16 | An Anthropic key arrives before Nov 15 | U3 | The stub-mode beat with suggestions (decision [15]), or the coda alone in tier B. Phase 7's 7.2/7.3 stay open in task 11.6 and run once the key exists (P8-c). Task 5.3 is not built, and the recorder drops `demo/chat-beat`'s two transcript scenarios |
+| Q17 | A snapshot taken on AWS (2026.1.1) restores exactly on the laptop (2026.2): Phase 2's fingerprints, including the DOUBLE text-form rule [41], match across versions | Gate on Sat Oct 31: Phase 2 task 9.5, or task 10.1 | Decision [30]: a 0-call fix first; then U2 by Nov 1 and the laptop takes the snapshots (local backfill ≈ 217 calls on its own ledger line; 12 calls a week here) |
+| Q18 | Files copied into a new subdirectory `cfbd/kits/<kit>/` of the existing `default` bucket are readable by UDFs within a second (probe 1.4k covered files in an existing bucket; `exasol-bucketfs`: a fresh upload is usable once synchronized) | Task 3.3: `make rehearse` does one replay read of the smallest recording after the switch | Wait and retry for up to 10 s; if still unreadable, install kits under the default `cfbd/replay` path with a kit-specific subdirectory created at deploy time |
+| Q19 | `ALTER VIRTUAL SCHEMA … SET` neither hangs nor breaks another session's open transaction that read the virtual schema, and the new mode applies to every session's next query | Probe in task 3.2 (a), on the `TEST_` namespace, 0 calls | If it waits: `make demo-mode`'s 10 s limit fails with the reason, and the script switches modes only between beats with App A idle. If it rolls back the reader: the same rule. If the mode does not reach other sessions: `make demo-mode` also restarts App A's read pool (the app reconnects per action anyway) |
+| Q20 | After `KILL STATEMENT` of a running `REFRESH_WEEK`, the session is idle with its transaction open. The app's action then closes its connection, which ends it, and a refresh from another session neither waits nor collides once that session is closed | Probe in task 3.2 (b); test of task 3.6 | If a refresh collides while the killed session is still open: `make demo-abort` ends an app-started run's session with `KILL SESSION` after its wait. In tier C the presenter runs `ROLLBACK` in the SQL client |
+| Q21 | Phase 6's refresh progress can carry a deadline field without breaking its follow rules | Task 3.6, on the merged code | The frontend shows the notice from its own timer, based on the timeline's `FETCH` steps |
+| Q22 | The Claude Desktop configuration is readable from WSL under `/mnt/c/Users/*/AppData/Roaming/Claude/` | Task 1.1 on this machine | `CLAUDE_DESKTOP_CONFIG` names it; otherwise a `WARN` "not checked" (its password equals `.env`'s `CFB_CHAT_PASSWORD`, which is checked) |
 
 ## Review Findings
 
