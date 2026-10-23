@@ -27,7 +27,7 @@ ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check \
         app-deps app-build app-test app-lint \
-        app app-serve app-user app-e2e app-perf
+        app app-serve app-user app-e2e app-perf chat-user chat-rehearse
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -100,7 +100,8 @@ app-lint: app-deps
 # make app-e2e      browser smoke against the TEST_ stack; run it under the IT lock (flock <lock> make app-e2e)
 # make app-perf     times the fixed catalog of read endpoints, never a live endpoint
 ROTATE ?=
-APP_PURE_MODULES := app/backend/settings.py,app/backend/security.py,app/backend/spend.py,app/backend/sessions.py,app/backend/sqlcatalog.py,app/backend/explain.py,app/backend/console_catalog.py
+CHAT_PURE_MODULES := app/backend/chat/sqlguard.py,app/backend/chat/budget.py,app/backend/chat/prices.py,app/backend/chat/prompt.py,app/backend/chat/tools.py,app/backend/chat/rehearsal.py,app/backend/chat/turnlog.py,app/backend/chat/config.py,app/backend/chat/conformance.py
+APP_PURE_MODULES := app/backend/settings.py,app/backend/security.py,app/backend/spend.py,app/backend/sessions.py,app/backend/sqlcatalog.py,app/backend/explain.py,app/backend/console_catalog.py,$(CHAT_PURE_MODULES)
 
 app: db-check app-deps
 	$(PY) -m scripts.app dev
@@ -116,3 +117,21 @@ app-e2e: db-check app-build
 
 app-perf: db-check
 	$(PY) -m scripts.app perf
+
+# Chat (app/backend/chat; the panel needs ANTHROPIC_API_KEY, tests and stub runs never do).
+# make chat-user       creates the read-only chat user CFB_CHAT_WEB (role CFB_MCP); `ROTATE=yes` sets a
+#                      new password on an existing one. The password comes from CFB_CHAT_PASSWORD.
+# make chat-rehearse   runs the 15 rehearsed questions (scripts/chat_rehearse.py). Stub by default: the
+#                      scripted model, 0 Anthropic calls. NAMESPACE=test builds the integration-test
+#                      stack (run under the IT lock); NAMESPACE=deployed (default) runs as the chat user.
+#                      LIVE=yes calls Claude and refuses to start without ANTHROPIC_API_KEY and an
+#                      explicit MAX_USD. ARGS passes --dataset, --only, --repeat, --effort, --adversarial.
+NAMESPACE ?= deployed
+LIVE      ?=
+MAX_USD   ?=
+
+chat-user: db-check
+	$(PY) -m scripts.app chat-user $(if $(filter yes,$(ROTATE)),--rotate) $(ARGS)
+
+chat-rehearse: db-check
+	$(PY) -m scripts.chat_rehearse --namespace "$(NAMESPACE)" $(if $(filter yes,$(LIVE)),--live) $(if $(MAX_USD),--max-usd "$(MAX_USD)") $(ARGS)

@@ -21,10 +21,15 @@ app = [
     "starlette==1.8.0",
     "uvicorn==0.54.0",
 ]
+chat = [
+    "anthropic>=1.15,<2",
+]
 
 [tool.uv]
 package = false
-default-groups = ["dev", "app"]
+default-groups = ["dev", "app", "chat"]
+# 7-day rule (decision [18]): the newest release at least 7 days old on 2026-10-23, per package.
+exclude-newer-package = { anthropic = "2026-10-16T01:00:00Z", httpx2 = "2026-10-16T01:00:00Z", httpcore2 = "2026-10-16T01:00:00Z" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/cli"]
