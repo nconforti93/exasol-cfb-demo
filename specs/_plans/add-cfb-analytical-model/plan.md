@@ -167,10 +167,10 @@ The as-of helpers are parameter-dimension views: `AS_OF_POINT` is joined to the 
 | 130 | `VENUE` | view | venue | `VENUES` |
 | 140 | `TEAM` | view | team, listed or seen in games | `TEAMS`, `GAME` |
 | 150 | `CONFERENCE` | view | conference | `CONFERENCES` |
-| 160 | `RATING_SP` | view | season and SP+-rated team | `RATINGS_SP`, `TEAM`, `LOAD_SLICES` |
+| 160 | `RATING_SP` | view | season and SP+-rated team | `RATINGS_SP`, `TEAMS` (decision [34]), `LOAD_SLICES` |
 | 170 | `RANKING` | view | poll, season, season type, week and ranked team | `RANKINGS_POLLS_RANKS`, `POLL`, `SEASON_WEEK` |
 | 200 | `TEAM_GAME` | view | game and named participating team | `GAME` |
-| 210 | `TEAM_SEASON` | view | team and season with a game or a membership | `CONFERENCES_AFFILIATIONS`, `TEAM_GAME`, `GAME`, `TEAM`, `CONFERENCE_TIER`, `CLASSIFICATION_LABEL`, `CLASSIFICATION_TRANSITION`, `ERA`, `RATING_SP`, `RANKING` |
+| 210 | `TEAM_SEASON` | view | team and season with a game or a membership | `CONFERENCES_AFFILIATIONS`, `TEAM_GAME`, `TEAMS` (decision [34]), `CONFERENCE_TIER`, `CLASSIFICATION_LABEL`, `CLASSIFICATION_TRANSITION`, `ERA`, `RATING_SP`, `RANKING` |
 | 300 | `AS_OF_POINT` | view | season and as-of point (preseason + each week) | `SEASON_WEEK`, `SEASON` |
 | 310 | `CURRENT_AS_OF` | view | the current point (one row) | `AS_OF_POINT` |
 | 320 | `GAME_AS_OF` | view | as-of point and game of its season that is visible at the point | `AS_OF_POINT`, `GAME` |

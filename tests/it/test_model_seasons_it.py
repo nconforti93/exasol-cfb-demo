@@ -2,7 +2,8 @@
 
 Read-only module over the synthetic league (marker `model_readonly`). Expectations come from the
 spec and from the league's own bodies (calendar rows, kickoffs), never from the SQL under test.
-The division-label scenario reads `TEAM_SEASON` and belongs to `210_team_season.sql`.
+The division-label scenario reads `TEAM_SEASON` (`210_team_season.sql`); its expected labels come
+from the reference seeds (`tests/it/team_season_expect.py`).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any
 import pytest
 
 from tests.it.harness import Harness
+from tests.it.team_season_expect import division_label
 from tests.synthetic.league import CURRENT_SEASON, STORED_SEASONS, League, season_key
 from tests.synthetic.slices import mirror_columns, slice_rows
 
@@ -185,3 +187,35 @@ def test_every_week_with_games_is_listed(harness: Harness, league: League) -> No
         "WHERE GAME_COUNT > 0"
     )
     assert {(int(s), str(t), int(w)): int(c) for s, t, w, c in stored} == dict(expected)
+
+
+# --- division labels (TEAM_SEASON) -------------------------------------------------------------
+
+
+def labeled(harness: Harness, school: str, year: int) -> tuple[Any, ...]:
+    rows = harness.query(
+        "SELECT CLASSIFICATION, CLASSIFICATION_LABEL, IS_CLASSIFICATION_RETROACTIVE "
+        f"FROM {harness.model}.TEAM_SEASON WHERE SCHOOL = {{school}} AND SEASON = {year}",
+        {"school": school},
+    )
+    assert len(rows) == 1, (school, year)
+    return tuple(rows[0])
+
+
+def test_division_labels_follow_era(harness: Harness, league: League) -> None:
+    """Scenario seasons-eras: Division labels follow the era."""
+    assert labeled(harness, "Ashford", 1950) == ("fbs", "Major college", True)
+    assert labeled(harness, "Ashford", 1985) == ("fbs", "Division I-A", False)
+    assert labeled(harness, "Lowell", 1985) == ("fcs", "Division I-AA", False)
+    assert labeled(harness, "Ashford", 2024) == ("fbs", "FBS", False)
+
+
+def test_every_team_season_is_labeled_in_its_division_era(harness: Harness, league: League) -> None:
+    rows = harness.query(
+        "SELECT SEASON, CLASSIFICATION, CLASSIFICATION_LABEL, IS_CLASSIFICATION_RETROACTIVE "
+        f"FROM {harness.model}.TEAM_SEASON"
+    )
+    assert rows
+    for year, code, label, retroactive in rows:
+        assert (label, retroactive) == division_label(int(year), code), (year, code)
+    assert {code for _, code, _, _ in rows} == {"fbs", "fcs", None}

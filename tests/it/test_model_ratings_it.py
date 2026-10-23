@@ -4,9 +4,10 @@ Read-only module over the synthetic league (marker `model_readonly`). A test tha
 fetch of a row removes it again before it ends (`tests/it/mirror_edit.py`). The expectations are
 the league's own poll bodies and the spec's rules restated in Python (`expected_visible_at`,
 `expected_final`), never the SQL under test. The as-of parts (`RANKING_AS_OF`, the fetch-time
-horizon) belong to `330_ranking_as_of.sql`, `FINAL_CFP_RANK`, the SP+ prior and the SP+ checks
-(`SP_TEAM_UNMATCHED`, `DUPLICATE_SOURCE_ROW`, `SP_PRIOR_NOT_FINAL`) to `210_team_season.sql` and
-`500_model_checks.sql`. The stored-twice scenario for SP+ and the not-final prior slice are in
+horizon) belong to `330_ranking_as_of.sql`, the SP+ checks (`SP_TEAM_UNMATCHED`,
+`DUPLICATE_SOURCE_ROW`, `SP_PRIOR_NOT_FINAL`) to `500_model_checks.sql`. The `TEAM_SEASON` parts
+(SP+ of the season, the prior, final ranks) compare with `RATING_SP` and `RANKING`, whose own tests
+are above. The stored-twice scenario for SP+ and the not-final prior slice are in
 `tests/it/test_model_variants_it.py`.
 """
 
@@ -603,3 +604,107 @@ def test_a_team_name_matches_only_exactly(
     lower = rating_row(harness, 2024, "ashford")
     assert (lower["TEAM_ID"], lower["IS_TEAM_MATCHED"]) == (None, False)
     assert rating_row(harness, 2024, "Ashford")["TEAM_ID"] == ASHFORD
+
+
+def test_a_name_of_a_team_outside_the_team_list_stays_unmatched(
+    harness: Harness, league: League, sp_stored_twice: None
+) -> None:
+    """Scenario ratings-rankings: SP+ ratings attach to teams by name: TEAM_ID is the team of the
+    stored team list with that name, so a team seen only in games (Marston) does not match."""
+    mirror_edit.store_changed_copy(
+        harness,
+        "RATINGS_SP",
+        "YEAR_ = 2024 AND TEAM = 'Ashford'",
+        marker=SP_MARKER,
+        fetched_at=SP_LATER_FETCH,
+        row_offset=1000,
+        changes={"TEAM": "'Marston'"},
+    )
+    assert harness.query(
+        f"SELECT IS_IN_TEAM_LIST FROM {harness.model}.TEAM WHERE SCHOOL = 'Marston'"
+    ) == [(False,)]
+    marston = rating_row(harness, 2024, "Marston")
+    assert (marston["TEAM_ID"], marston["IS_TEAM_MATCHED"]) == (None, False)
+
+
+# --- TEAM_SEASON: SP+ of the season, the prior, final ranks ------------------------------------
+
+
+def team_season(harness: Harness, name: str, season: int) -> dict[str, Any]:
+    rows = harness.query_dicts(
+        f"SELECT * FROM {harness.model}.TEAM_SEASON "
+        f"WHERE TEAM_ID = {lt.team(name).id} AND SEASON = {season}"
+    )
+    assert len(rows) == 1, (name, season)
+    return rows[0]
+
+
+def test_sp_prior(harness: Harness, league: League) -> None:
+    """Scenario ratings-rankings: The previous season's SP+ is the prior."""
+    carrow = team_season(harness, "Carrow", 2024)
+    assert decimal(carrow["SP_PRIOR_RATING"]) == Decimal("20.00")
+    assert (carrow["HAS_SP_PRIOR"], carrow["SP_PRIOR_IS_FINAL"]) == (True, True)
+    ashford = team_season(harness, "Ashford", 2013)
+    assert ashford["SP_PRIOR_RATING"] is None
+    assert (ashford["HAS_SP_PRIOR"], ashford["SP_PRIOR_IS_FINAL"]) == (False, None)
+    stored_2013 = rating_row(harness, 2013, "Ashford")["SP_RATING"]
+    assert decimal(ashford["SP_RATING"]) == decimal(stored_2013)
+    assert decimal(team_season(harness, "Ashford", 2025)["SP_PRIOR_RATING"]) == Decimal("25.10")
+
+
+def test_sp_columns_come_from_rating_sp_of_the_season_and_the_one_before(
+    harness: Harness, league: League
+) -> None:
+    ratings = {
+        (row["SEASON"], row["TEAM_ID"]): row for row in rating_rows(harness, "TEAM_ID IS NOT NULL")
+    }
+    rows = harness.query_dicts(f"SELECT * FROM {harness.model}.TEAM_SEASON")
+    with_prior = 0
+    for row in rows:
+        key = (row["SEASON"], row["TEAM_ID"])
+        current = ratings.get(key)
+        prior = ratings.get((row["SEASON"] - 1, row["TEAM_ID"]))
+        assert decimal(row["SP_RATING"]) == (current and decimal(current["SP_RATING"])), key
+        assert decimal(row["SP_PRIOR_RATING"]) == (prior and decimal(prior["SP_RATING"])), key
+        assert row["HAS_SP_PRIOR"] is (prior is not None), key
+        assert row["SP_PRIOR_IS_FINAL"] == (prior and prior["IS_FINAL"]), key
+        with_prior += prior is not None
+    assert with_prior > 0
+    types = dict(
+        harness.query(
+            "SELECT COLUMN_NAME, COLUMN_TYPE FROM EXA_ALL_COLUMNS "
+            f"WHERE COLUMN_SCHEMA = '{harness.model}' AND COLUMN_TABLE = 'TEAM_SEASON'"
+        )
+    )
+    assert (types["SP_RATING"], types["SP_PRIOR_RATING"]) == ("DECIMAL(6,2)", "DECIMAL(6,2)")
+
+
+def test_final_ranks(harness: Harness, league: League) -> None:
+    """Scenario ratings-rankings: Final ranks belong to the team-season."""
+    done = team_season(harness, "Ashford", 2024)
+    assert (done["FINAL_AP_RANK"], done["FINAL_CFP_RANK"]) == (5, 1)
+    current = team_season(harness, "Ashford", CURRENT_SEASON)
+    assert (current["FINAL_AP_RANK"], current["FINAL_CFP_RANK"]) == (None, None)
+    assert harness.query(
+        f"SELECT COUNT(*) FROM {harness.model}.TEAM_SEASON "
+        f"WHERE SEASON = {CURRENT_SEASON} AND (FINAL_AP_RANK IS NOT NULL "
+        "OR FINAL_CFP_RANK IS NOT NULL)"
+    ) == [(0,)]
+
+
+def test_final_ranks_come_from_the_final_polls(harness: Harness, league: League) -> None:
+    finals: dict[tuple[int, int, str], int] = {}
+    for row in ranking_rows(harness, "IS_FINAL_POLL AND POLL_CODE IN ('AP', 'CFP')"):
+        key = (row["SEASON"], row["TEAM_ID"], row["POLL_CODE"])
+        assert key not in finals, key
+        finals[key] = row["POLL_RANK"]
+    rows = harness.query_dicts(
+        f"SELECT SEASON, TEAM_ID, FINAL_AP_RANK, FINAL_CFP_RANK FROM {harness.model}.TEAM_SEASON"
+    )
+    ranked = 0
+    for row in rows:
+        season, team_id = row["SEASON"], row["TEAM_ID"]
+        assert row["FINAL_AP_RANK"] == finals.get((season, team_id, "AP")), (season, team_id)
+        assert row["FINAL_CFP_RANK"] == finals.get((season, team_id, "CFP")), (season, team_id)
+        ranked += row["FINAL_AP_RANK"] is not None
+    assert ranked == len([key for key in finals if key[2] == "AP"]) > 0

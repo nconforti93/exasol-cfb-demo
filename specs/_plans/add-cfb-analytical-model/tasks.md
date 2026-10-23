@@ -31,7 +31,7 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [x] 3.7 Performance smoke on the scaled league (needs 1.6, 3.1, 3.3, 3.4 and a "local free" window)
 
 ## Group F
-- [ ] 3.8 `210_team_season.sql` : [expert]
+- [x] 3.8 `210_team_season.sql` : [expert]
 
 ## Group G
 - [ ] 3.9 `300_as_of_point.sql` … `340_team_season_as_of.sql`, per `model/as-of` : [expert]

@@ -26,6 +26,7 @@ Every table and view comment starts with its grain, "One row per ...". `Reads` l
 | `RATING_SP` | view | `160_rating_sp.sql` | One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins) |
 | `RANKING` | view | `170_ranking.sql` | One row per poll, season, season type, week and ranked team of CFB_CORE.RANKINGS_POLLS_RANKS (stored from 2014; the newest fetch wins, ties within a fetch by the poll's position in the response) |
 | `TEAM_GAME` | view | `200_team_game.sql` | One row per game and named participating team, from that team's side: the game's keys and week, the team and its opponent with conference and classification, the site (HOME, AWAY or NEUTRAL), the result (W, L or T), points for and against and the margin, the game's conference, championship and postseason flags, pregame Elo of both teams, and the pregame spread and win probability from the team's side as fixed-scale DECIMAL |
+| `TEAM_SEASON` | view | `210_team_season.sql` | One row per team and season in which the team has a stored game or a conference membership |
 
 ## ERA
 
@@ -354,16 +355,16 @@ Reads: `CFB_CORE.CONFERENCES`
 
 *View, `sql/model/160_rating_sp.sql`.*
 
-One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins). CFBD's national-averages row is not a team and is left out. TEAM_ID comes from the exact name match with TEAM.SCHOOL; a name without a match is kept with TEAM_ID NULL (MODEL_CHECKS: SP_TEAM_UNMATCHED). The overall, offense, defense and special-teams ratings are DECIMAL(6,2). A season's SP+ includes that season's games and historic seasons may use a later methodology: as a prior for season S use S - 1 (TEAM_SEASON.SP_PRIOR_RATING). The current season's rows are overwritten by each refresh, so the as-of views show them only from their FETCHED_AT.
+One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins). CFBD's national-averages row is not a team and is left out. TEAM_ID comes from the exact name match with the stored team list; a name without a match is kept with TEAM_ID NULL (MODEL_CHECKS: SP_TEAM_UNMATCHED). The overall, offense, defense and special-teams ratings are DECIMAL(6,2). A season's SP+ includes that season's games and historic seasons may use a later methodology: as a prior for season S use S - 1 (TEAM_SEASON.SP_PRIOR_RATING). The current season's rows are overwritten by each refresh, so the as-of views show them only from their FETCHED_AT.
 
-Reads: `CFB_CORE.RATINGS_SP`, `CFB_MODEL.TEAM`, `CFB_META.LOAD_SLICES`
+Reads: `CFB_CORE.RATINGS_SP`, `CFB_CORE.TEAMS`, `CFB_META.LOAD_SLICES`
 
 | Column | Comment |
 |---|---|
 | `SEASON` | Season the rating belongs to (CFBD year). It includes that season's games, so as a prior for season S use the rating of season S - 1 (TEAM_SEASON.SP_PRIOR_RATING does). CFBD may compute historic seasons with a later methodology than the current one |
-| `SCHOOL` | Team name exactly as CFBD reports it with the rating; CFBD gives no team id. Matched to TEAM.SCHOOL |
-| `TEAM_ID` | CFBD team id of the team whose TEAM.SCHOOL equals SCHOOL; NULL when no team has that name (IS_TEAM_MATCHED FALSE) |
-| `IS_TEAM_MATCHED` | TRUE when SCHOOL equals the name of a team in TEAM; FALSE keeps the row but without a team id (MODEL_CHECKS: SP_TEAM_UNMATCHED). CFBD's national-averages row is not kept at all |
+| `SCHOOL` | Team name exactly as CFBD reports it with the rating; CFBD gives no team id. Matched to the school names of the stored team list |
+| `TEAM_ID` | CFBD team id of the team of the stored team list whose school name equals SCHOOL (TEAM.SCHOOL of a listed team); NULL when no listed team has that name (IS_TEAM_MATCHED FALSE) |
+| `IS_TEAM_MATCHED` | TRUE when SCHOOL equals the name of a team in the stored team list; FALSE keeps the row but without a team id (MODEL_CHECKS: SP_TEAM_UNMATCHED). CFBD's national-averages row is not kept at all |
 | `CONFERENCE` | Conference as the SP+ row reports it (CFBD name) |
 | `SP_RATING` | Overall SP+ rating in points above or below an average team, cast to DECIMAL(6,2) (the cast rounds) |
 | `SP_RANKING` | Overall SP+ rank (1 = best) as CFBD reports it |
@@ -462,3 +463,46 @@ Reads: `CFB_MODEL.GAME`
 | `TEAM_SPREAD` | Pregame spread from the team's side, DECIMAL(6,2): the stored spread for the home team and its negation for the away team (negative when the team is favored); the cast rounds, and an exact binary tie may land one last place off. NULL without a line |
 | `TEAM_PREGAME_WIN_PROB` | Pregame win probability of the team, DECIMAL(5,4) (0 to 1): GAME.HOME_PREGAME_WIN_PROB for the home team, one minus it for the away team; the cast rounds, and an exact binary tie may land one last place off. NULL without a line |
 | `HAS_PREGAME_WP` | Coverage flag: TRUE when a pregame line is stored for the game (CFBD has them from 2013) |
+
+## TEAM_SEASON
+
+*View, `sql/model/210_team_season.sql`.*
+
+One row per team and season in which the team has a stored game or a conference membership. Membership spells speak only for the seasons their slice requested, the newest fetch wins, and same-fetch spells of different conferences are flagged. Without a membership the conference comes from the team's games with FIXED participants. Classification: CLASSIFICATION_TRANSITION, then those games, then the membership, with the division name of the time; the power tier of the era from CONFERENCE_TIER. Season records (all completed games) and conference records without championship games, points and CONF_POINT_DIFF, first pregame and last postgame Elo, SP+ of the season and the prior (SEASON - 1) as fixed-scale DECIMAL, and the final AP and committee ranks. Every column is the whole stored season; for the state as of a week use TEAM_SEASON_AS_OF. A conference season is a GROUP BY over this view.
+
+Reads: `CFB_CORE.CONFERENCES_AFFILIATIONS`, `CFB_MODEL.TEAM_GAME`, `CFB_CORE.TEAMS`, `CFB_MODEL.CLASSIFICATION_TRANSITION`, `CFB_MODEL.RANKING`, `CFB_MODEL.RATING_SP`, `CFB_MODEL.CONFERENCE_TIER`, `CFB_MODEL.ERA`, `CFB_MODEL.CLASSIFICATION_LABEL`
+
+| Column | Comment |
+|---|---|
+| `TEAM_ID` | CFBD team id (TEAM.TEAM_ID); with SEASON it identifies the row |
+| `SEASON` | Season |
+| `SCHOOL` | CFBD school name: the name in the stored team list (TEAM.SCHOOL), else the name on the team's latest stored game of the season, else the name of its membership |
+| `CONFERENCE_NAME` | Conference in the season (CFBD name): the membership's conference, else the one recorded on most of the team's games with FIXED participants that season; NULL when neither exists (CONFERENCE_SOURCE NONE) |
+| `CONFERENCE_DIVISION` | Division within the conference in the season, from the membership; NULL without a membership or when the conference had no divisions |
+| `CONFERENCE_SOURCE` | Where the conference comes from: AFFILIATION (a stored membership whose slice speaks for the season), GAMES (no membership: the conference on most games with FIXED participants; championship and postseason games do not count) or NONE |
+| `HAS_MEMBERSHIP_CONFLICT` | TRUE when the newest membership fetch holds spells of different conferences for the season; the spell with the later start year won (MODEL_CHECKS: MEMBERSHIP_CONFLICT) |
+| `CONFERENCE_TIER` | Tier of the conference in the season from CONFERENCE_TIER: AQ or NON_AQ (1998-2013), P5 or G5 (2014-2023), P4 or G6 (2024 on), INDEPENDENT for FBS Independents (engine input conf_tier). A conference without a named row takes the era's default tier when most of its team-seasons with a classification are fbs that season. NULL before 1998, for lower-division conferences and without a conference |
+| `IS_POWER_CONFERENCE` | TRUE for the tiers AQ, P5 and P4; FALSE for every other tier and without a tier |
+| `CLASSIFICATION` | CFBD classification code in the season: fbs, fcs, ii or iii, from the first rule that applies (CLASSIFICATION_SOURCE); NULL when none applies |
+| `CLASSIFICATION_SOURCE` | TRANSITION (a CLASSIFICATION_TRANSITION row for SCHOOL and the season), GAMES (the code on most of the team's games with FIXED participants; a tie goes to the latest such game), AFFILIATION (the membership's code) or NONE |
+| `CLASSIFICATION_LABEL` | Name of the classification at the time, from CLASSIFICATION_LABEL for the season's division era, for example Division I-A in 1985 or Major college in 1950; NULL without a classification |
+| `IS_CLASSIFICATION_RETROACTIVE` | TRUE when the classification code did not exist in the season (fbs and fcs before 1978, ii and iii before 1973); NULL without a classification |
+| `GAMES` | Stored games of the team in the season, of any status, postseason included; 0 for a season known only from a membership |
+| `FIXED_GAMES` | Of GAMES, those with FIXED participants (GAME.PARTICIPANTS_RULE), the games from which CONFERENCE_SOURCE GAMES and CLASSIFICATION_SOURCE GAMES come |
+| `WINS` | Completed games won, postseason and every opponent included (engine input wins); 0 without completed games |
+| `LOSSES` | Completed games lost, postseason and every opponent included (engine input losses); 0 without completed games |
+| `TIES` | Completed games tied (possible at the FBS level before 1996); 0 without completed games |
+| `CONF_WINS` | Completed conference games won (IS_CONFERENCE_GAME), without conference championship games (engine input conf_wins) |
+| `CONF_LOSSES` | Completed conference games lost, without conference championship games (engine input conf_losses) |
+| `CONF_TIES` | Completed conference games tied, without conference championship games |
+| `POINTS_FOR` | Points scored in completed games; 0 without completed games |
+| `POINTS_AGAINST` | Points allowed in completed games; 0 without completed games |
+| `CONF_POINT_DIFF` | Points for minus points against in the completed conference games that CONF_WINS, CONF_LOSSES and CONF_TIES count, so without championship games (engine input conf_pd); 0 without them |
+| `FIRST_PREGAME_ELO` | CFBD pregame Elo of the team's first game of the season that has one (by kickoff); NULL without Elo (CFBD has Elo from 1890) |
+| `LAST_POSTGAME_ELO` | CFBD postgame Elo of the team's last completed game of the season that has one (by kickoff), postseason included |
+| `SP_RATING` | SP+ rating of the season as last fetched (RATING_SP.SP_RATING), DECIMAL(6,2). It includes the season's own games, so it is not a prior; NULL without a matched SP+ row |
+| `SP_PRIOR_RATING` | SP+ rating of the previous season as last fetched, final or not (RATING_SP of SEASON - 1), DECIMAL(6,2): the prior of the score model; NULL without one |
+| `HAS_SP_PRIOR` | TRUE when the team has a matched SP+ row for the previous season |
+| `SP_PRIOR_IS_FINAL` | RATING_SP.IS_FINAL of the prior's row: FALSE when the previous season's slice is not final yet (MODEL_CHECKS: SP_PRIOR_NOT_FINAL); NULL without a prior |
+| `FINAL_AP_RANK` | Rank in the season's final AP poll (RANKING, IS_FINAL_POLL, the latest one); NULL when unranked or while the season runs |
+| `FINAL_CFP_RANK` | Rank in the committee's final ranking of the season (RANKING, IS_FINAL_POLL); NULL when unranked and for a season whose regular-season weeks are not all done |

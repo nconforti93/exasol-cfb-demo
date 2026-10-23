@@ -2,8 +2,8 @@
 
 Every test seeds its own league (`harness.seed_league(variant)` empties and re-seeds), and the
 per-test reset empties the data again, so no test order leaks state. A test that changes a model
-reference table restores it before it ends. Other parts of the shared scenarios (`MODEL_CHECKS`,
-`TEAM_SEASON`) are added with their views.
+reference table restores it before it ends. The `MODEL_CHECKS` parts of the shared scenarios are
+added with their view.
 """
 
 from __future__ import annotations
@@ -20,8 +20,11 @@ from tests.synthetic import league_teams as lt
 from tests.synthetic.league import (
     FETCHED_LATER,
     FETCHED_LATER_RANKINGS,
+    SP_OVERRIDES,
     with_duplicate_rows,
     with_nonfinal_prior,
+    with_renamed_conference,
+    with_unaffiliated_fbs_team,
 )
 
 PLAN_VARIANT = "model"
@@ -37,6 +40,18 @@ def model(harness: Harness, model_deployed: None) -> None:
 
 def moment(value: Any) -> datetime | None:
     return None if value is None else datetime.fromisoformat(str(value))
+
+
+def team_seasons(harness: Harness, where: str) -> list[dict[str, Any]]:
+    return harness.query_dicts(
+        f"SELECT * FROM {harness.model}.TEAM_SEASON WHERE {where} ORDER BY TEAM_ID, SEASON"
+    )
+
+
+def team_season(harness: Harness, name: str, season: int) -> dict[str, Any]:
+    rows = team_seasons(harness, f"TEAM_ID = {lt.team(name).id} AND SEASON = {season}")
+    assert len(rows) == 1, (name, season)
+    return rows[0]
 
 
 def test_duplicate_game_appears_once(harness: Harness) -> None:
@@ -108,8 +123,9 @@ def northam_transition(harness: Harness) -> Iterator[None]:
 
 
 def test_classification_from_transition_seed(harness: Harness, northam_transition: None) -> None:
-    """Scenario teams-conferences: A seeded transition overrides the recorded classification
-    (the `GAME` part: every 2014 game of Northam classifies Northam as `fcs`)."""
+    """Scenario teams-conferences: A seeded transition overrides the recorded classification:
+    every 2014 game of Northam classifies Northam as `fcs`, and so does `TEAM_SEASON` inside the
+    seeded range (source `TRANSITION`), while a later season falls back to the membership."""
     harness.seed_league()
     recorded = harness.query(
         "SELECT HOME_ID, HOME_CLASSIFICATION, AWAY_ID, AWAY_CLASSIFICATION "
@@ -134,6 +150,15 @@ def test_classification_from_transition_seed(harness: Harness, northam_transitio
         f"WHERE SEASON = 2024 AND HOME_TEAM_ID = {NORTHAM}"
     )
     assert outside in ([], [("fbs",)])
+    seasons = {
+        row["SEASON"]: (row["CLASSIFICATION"], row["CLASSIFICATION_SOURCE"])
+        for row in team_seasons(harness, f"TEAM_ID = {NORTHAM} AND SEASON BETWEEN 2013 AND 2015")
+    }
+    assert seasons == {
+        2013: ("fcs", "TRANSITION"),
+        2014: ("fcs", "TRANSITION"),
+        2015: ("fbs", "AFFILIATION"),
+    }
 
 
 def test_duplicate_ranking_appears_once(harness: Harness) -> None:
@@ -209,3 +234,69 @@ def test_nonfinal_previous_season_slice_is_not_final(harness: Harness) -> None:
         2025: (0, 0),
         2026: (0, 0),
     }
+
+
+def test_nonfinal_prior_reported(harness: Harness) -> None:
+    """Scenario ratings-rankings: A prior that is not final is used and reported (the
+    `TEAM_SEASON` part; `SP_PRIOR_NOT_FINAL` belongs to `MODEL_CHECKS`)."""
+    harness.seed_league(with_nonfinal_prior)
+    ashford = team_season(harness, "Ashford", 2026)
+    assert Decimal(str(ashford["SP_PRIOR_RATING"])) == Decimal(str(SP_OVERRIDES[(2025, "Ashford")]))
+    assert (ashford["HAS_SP_PRIOR"], ashford["SP_PRIOR_IS_FINAL"]) == (True, False)
+    final = team_season(harness, "Ashford", 2025)
+    assert (final["HAS_SP_PRIOR"], final["SP_PRIOR_IS_FINAL"]) == (True, True)
+    priors = harness.query(
+        f"SELECT DISTINCT SP_PRIOR_IS_FINAL FROM {harness.model}.TEAM_SEASON "
+        "WHERE SEASON = 2026 AND HAS_SP_PRIOR"
+    )
+    assert priors == [(False,)]
+
+
+def test_a_team_without_any_membership(harness: Harness) -> None:
+    """Quarry, an FBS team without a conference, is a 2026 team-season from its one game: no
+    conference, no tier, classified fbs by its game."""
+    harness.seed_league(with_unaffiliated_fbs_team)
+    quarry = harness.query_dicts(
+        f"SELECT * FROM {harness.model}.TEAM_SEASON WHERE TEAM_ID = {lt.QUARRY.id}"
+    )
+    assert len(quarry) == 1
+    row = quarry[0]
+    assert (row["SEASON"], row["SCHOOL"], row["GAMES"], row["WINS"]) == (2026, "Quarry", 1, 1)
+    assert (row["CONFERENCE_NAME"], row["CONFERENCE_SOURCE"]) == (None, "NONE")
+    assert (row["CLASSIFICATION"], row["CLASSIFICATION_SOURCE"]) == ("fbs", "GAMES")
+    assert (row["CONFERENCE_TIER"], row["IS_POWER_CONFERENCE"]) == (None, False)
+
+
+def test_a_renamed_power_conference_loses_its_tier(harness: Harness) -> None:
+    """A CFBD rename of a power conference falls to the default tier of the era, which is what
+    `POWER_CONFERENCE_MISSING` (model/refresh-step) stops the refresh for."""
+    harness.seed_league(with_renamed_conference)
+    renamed = team_season(harness, "Ashford", 2024)
+    assert (renamed["CONFERENCE_NAME"], renamed["CONFERENCE_TIER"]) == ("Southeastern", "G6")
+    assert renamed["IS_POWER_CONFERENCE"] is False
+    before = team_season(harness, "Ashford", 2023)
+    assert (before["CONFERENCE_NAME"], before["CONFERENCE_TIER"]) == ("SEC", "P5")
+    assert harness.query(
+        f"SELECT COUNT(*) FROM {harness.model}.TEAM_SEASON "
+        "WHERE SEASON = 2024 AND CONFERENCE_NAME = 'SEC'"
+    ) == [(0,)]
+
+
+def test_duplicate_rows_keep_one_row_per_team_season(harness: Harness) -> None:
+    """Scenario games and ratings-rankings: a game, a rating and a poll stored twice count once
+    in `TEAM_SEASON`."""
+    league = harness.seed_league(with_duplicate_rows)
+    target = league.game_id("carrow_dunmore_2026_w3")
+    keys = harness.query(f"SELECT TEAM_ID, SEASON FROM {harness.model}.TEAM_SEASON")
+    assert len(keys) == len(set(keys))
+    carrow = team_season(harness, "Carrow", 2026)
+    games = harness.query(
+        f"SELECT COUNT(*) FROM {harness.model}.TEAM_GAME "
+        f"WHERE SEASON = 2026 AND TEAM_ID = {lt.team('Carrow').id}"
+    )
+    assert carrow["GAMES"] == games[0][0]
+    assert harness.query(
+        f"SELECT COUNT(*) FROM {harness.model}.TEAM_GAME WHERE GAME_ID = {target}"
+    ) == [(2,)]
+    ashford = team_season(harness, "Ashford", 2026)
+    assert Decimal(str(ashford["SP_RATING"])) == Decimal("24.00")

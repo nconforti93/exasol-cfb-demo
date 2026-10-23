@@ -2,17 +2,19 @@
 -- fetch of a season and team name wins (REQ_AT, then the later slice key, then the later row), so a promoted
 -- team slice or an overlapping season slice never doubles a team. CFBD's national-averages row (team
 -- 'nationalAverages') is not a team and is left out before anything else. CFBD identifies a team only by
--- name: TEAM_ID is the team of the TEAM view whose SCHOOL equals the name exactly (for a team that is not in
--- the team list SCHOOL is the name of its latest stored game; if two teams carried one name, the listed one,
--- then the lower id, is taken). A name without a match is kept with TEAM_ID NULL and IS_TEAM_MATCHED FALSE.
+-- name: TEAM_ID is the team of the stored team list (CFB_CORE.TEAMS, newest fetch per team id) whose SCHOOL
+-- equals the name exactly (if two listed teams carried one name, the lower id is taken). A name without a
+-- match is kept with TEAM_ID NULL and IS_TEAM_MATCHED FALSE. The team list is read directly, not through
+-- TEAM: TEAM reads every stored game, and TEAM_SEASON, which joins this view, reads GAME already (decision
+-- [33]: GAME at most once per query).
 -- Overall, offense, defense and special-teams ratings are cast once to DECIMAL(6,2), because the score model
 -- reads them; the parts stay DOUBLE as CFBD reports them. IS_FINAL is the load log's verdict on the slice the
 -- row came from (CFB_META.LOAD_SLICES, the planned slices only: a slice outside the plan counts as not final).
 CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.RATING_SP (
   SEASON                 COMMENT IS 'Season the rating belongs to (CFBD year). It includes that season''s games, so as a prior for season S use the rating of season S - 1 (TEAM_SEASON.SP_PRIOR_RATING does). CFBD may compute historic seasons with a later methodology than the current one',
-  SCHOOL                 COMMENT IS 'Team name exactly as CFBD reports it with the rating; CFBD gives no team id. Matched to TEAM.SCHOOL',
-  TEAM_ID                COMMENT IS 'CFBD team id of the team whose TEAM.SCHOOL equals SCHOOL; NULL when no team has that name (IS_TEAM_MATCHED FALSE)',
-  IS_TEAM_MATCHED        COMMENT IS 'TRUE when SCHOOL equals the name of a team in TEAM; FALSE keeps the row but without a team id (MODEL_CHECKS: SP_TEAM_UNMATCHED). CFBD''s national-averages row is not kept at all',
+  SCHOOL                 COMMENT IS 'Team name exactly as CFBD reports it with the rating; CFBD gives no team id. Matched to the school names of the stored team list',
+  TEAM_ID                COMMENT IS 'CFBD team id of the team of the stored team list whose school name equals SCHOOL (TEAM.SCHOOL of a listed team); NULL when no listed team has that name (IS_TEAM_MATCHED FALSE)',
+  IS_TEAM_MATCHED        COMMENT IS 'TRUE when SCHOOL equals the name of a team in the stored team list; FALSE keeps the row but without a team id (MODEL_CHECKS: SP_TEAM_UNMATCHED). CFBD''s national-averages row is not kept at all',
   CONFERENCE             COMMENT IS 'Conference as the SP+ row reports it (CFBD name)',
   SP_RATING              COMMENT IS 'Overall SP+ rating in points above or below an average team, cast to DECIMAL(6,2) (the cast rounds)',
   SP_RANKING             COMMENT IS 'Overall SP+ rank (1 = best) as CFBD reports it',
@@ -58,12 +60,17 @@ WITH ratings AS (
            PARTITION BY r."YEAR_", r."TEAM"
            ORDER BY r."REQ_AT" DESC, r."REQ_SLICE" DESC, r."ROW_NO" DESC) = 1
 ),
-by_name AS (
-  SELECT t."SCHOOL", t."TEAM_ID"
-    FROM {MODEL_SCHEMA}."TEAM" t
+listed AS (
+  SELECT t."ID", t."SCHOOL"
+    FROM {CORE_SCHEMA}."TEAMS" t
  QUALIFY ROW_NUMBER() OVER (
-           PARTITION BY t."SCHOOL"
-           ORDER BY CASE WHEN t."IS_IN_TEAM_LIST" THEN 0 ELSE 1 END, t."TEAM_ID") = 1
+           PARTITION BY t."ID"
+           ORDER BY t."REQ_AT" DESC, t."REQ_SLICE" DESC, t."ROW_NO" DESC) = 1
+),
+by_name AS (
+  SELECT l."SCHOOL", l."ID" AS "TEAM_ID"
+    FROM listed l
+ QUALIFY ROW_NUMBER() OVER (PARTITION BY l."SCHOOL" ORDER BY l."ID") = 1
 ),
 slice_finality AS (
   SELECT s."SLICE_KEY",
@@ -110,4 +117,4 @@ SELECT CAST(r."YEAR_" AS DECIMAL(4,0)),
     ON n."SCHOOL" = r."TEAM"
   LEFT JOIN slice_finality sl
     ON sl."SLICE_KEY" = r."REQ_SLICE"
-COMMENT IS 'One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins). CFBD''s national-averages row is not a team and is left out. TEAM_ID comes from the exact name match with TEAM.SCHOOL; a name without a match is kept with TEAM_ID NULL (MODEL_CHECKS: SP_TEAM_UNMATCHED). The overall, offense, defense and special-teams ratings are DECIMAL(6,2). A season''s SP+ includes that season''s games and historic seasons may use a later methodology: as a prior for season S use S - 1 (TEAM_SEASON.SP_PRIOR_RATING). The current season''s rows are overwritten by each refresh, so the as-of views show them only from their FETCHED_AT.';
+COMMENT IS 'One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins). CFBD''s national-averages row is not a team and is left out. TEAM_ID comes from the exact name match with the stored team list; a name without a match is kept with TEAM_ID NULL (MODEL_CHECKS: SP_TEAM_UNMATCHED). The overall, offense, defense and special-teams ratings are DECIMAL(6,2). A season''s SP+ includes that season''s games and historic seasons may use a later methodology: as a prior for season S use S - 1 (TEAM_SEASON.SP_PRIOR_RATING). The current season''s rows are overwritten by each refresh, so the as-of views show them only from their FETCHED_AT.';
