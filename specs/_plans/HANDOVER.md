@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-23 by Codex at orchestrator takeover
+Last updated: 2026-10-23 by Codex after the first local simulation
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Codex took over on 2026-10-23.** Phase 4 task 1.4 is being completed first under the speq implementation workflow; no database run has started in this takeover. The two uncommitted task sets at handover are listed below. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row from the stopped Claude session, the run lock treats it as stale.
+**Codex took over on 2026-10-23.** Phase 4 task 1.4 is being completed first under the speq implementation workflow. Local `make model` and `make sim` passed; the first 10k simulation of 2026 after week 7 is `DONE` (run 1, 14.879 s, 143 teams, 377 games, zero CFBD calls). AWS quota baseline is 241 of the October project cap of 400. Focused code checks are finishing before AWS deployment. The two uncommitted task sets at handover are listed below. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row from the stopped Claude session, the run lock treats it as stale.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -126,6 +126,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-23: **Phase 4 first local simulation.** `make model` and `make sim` passed locally; 10k 2026-after-week-7 seasons stored as `DONE` run 1 in 14.879 s (engine 7.097 s), 143 teams and 377 games; zero CFBD calls. AWS quota baseline: 241/400.
 
 - 2026-10-23: **Codex took over as orchestrator.** Read `CLAUDE.md` and this handover, checked worktree state, and started Phase 4 task 1.4 with an implementation agent. No database or live API call yet.
 
