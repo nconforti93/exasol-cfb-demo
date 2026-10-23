@@ -130,7 +130,7 @@ def test_without_a_fallback_the_content_is_echoed_unchanged() -> None:
     assert model.echo_content(content) == content
 
 
-def test_after_a_fallback_only_text_before_it_and_everything_after_it_is_kept() -> None:
+def test_after_a_fallback_text_before_it_the_block_in_place_and_everything_after_are_kept() -> None:
     content: list[dict[str, Any]] = [
         {"type": "text", "text": "Brookvale's chances are"},
         THINKING,
@@ -140,14 +140,15 @@ def test_after_a_fallback_only_text_before_it_and_everything_after_it_is_kept() 
         {"type": "tool_use", "id": "t2", "name": "describe_view", "input": {"view": "TEAMS"}},
     ]
     echoed = model.echo_content(content)
-    assert [block["type"] for block in echoed] == ["text", "thinking", "tool_use"]
+    assert [block["type"] for block in echoed] == ["text", "fallback", "thinking", "tool_use"]
     assert echoed[0]["text"] == "Brookvale's chances are"
-    assert echoed[2]["id"] == "t2"
+    assert echoed[1] == FALLBACK
+    assert echoed[3]["id"] == "t2"
     assert [call["id"] for call in model.tool_calls(echoed)] == ["t2"]
     assert model.fallback_blocks(content) == [FALLBACK]
 
 
-def test_with_two_fallbacks_everything_before_the_last_is_judged() -> None:
+def test_with_two_fallbacks_both_stay_in_place_and_everything_before_the_last_is_judged() -> None:
     content: list[dict[str, Any]] = [
         {"type": "text", "text": "one"},
         FALLBACK,
@@ -158,7 +159,18 @@ def test_with_two_fallbacks_everything_before_the_last_is_judged() -> None:
         {"type": "tool_use", "id": "t3", "name": "run_sql", "input": {}},
     ]
     echoed = model.echo_content(content)
-    assert [block["type"] for block in echoed] == ["text", "text", "tool_use"]
+    assert [block["type"] for block in echoed] == [
+        "text",
+        "fallback",
+        "text",
+        "fallback",
+        "tool_use",
+    ]
+
+
+def test_a_fallback_before_any_output_keeps_every_block() -> None:
+    content: list[dict[str, Any]] = [FALLBACK, THINKING, {"type": "text", "text": "ok"}]
+    assert model.echo_content(content) == content
 
 
 def test_an_unknown_internal_block_before_the_last_fallback_is_dropped() -> None:
@@ -167,7 +179,17 @@ def test_an_unknown_internal_block_before_the_last_fallback_is_dropped() -> None
         FALLBACK,
         {"type": "text", "text": "x"},
     ]
-    assert model.echo_content(content) == [{"type": "text", "text": "x"}]
+    assert model.echo_content(content) == [FALLBACK, {"type": "text", "text": "x"}]
+
+
+def test_a_blank_text_block_is_not_echoed() -> None:
+    content: list[dict[str, Any]] = [
+        THINKING,
+        {"type": "text", "text": "\n\n"},
+        {"type": "text", "text": ""},
+        {"type": "tool_use", "id": "t", "name": "x", "input": {}},
+    ]
+    assert [block["type"] for block in model.echo_content(content)] == ["thinking", "tool_use"]
 
 
 def test_text_of_joins_text_blocks() -> None:
@@ -384,7 +406,7 @@ def test_a_fallback_block_arrives_as_content_and_the_model_that_served(
     (marker,) = model.fallback_blocks(response.content)
     assert marker["from"] == {"model": "claude-opus-5-5"}
     assert marker["to"] == {"model": "claude-opus-5"}
-    assert model.echo_content(response.content) == [{"type": "text", "text": "ok"}]
+    assert model.echo_content(response.content) == [marker, {"type": "text", "text": "ok"}]
 
 
 @pytest.mark.parametrize("raw", ['{"sql": "SELECT 1", ]', "not json at all"])

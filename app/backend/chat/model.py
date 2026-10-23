@@ -132,16 +132,23 @@ class ModelResponse:
 def echo_content(content: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """The blocks of a response in the form that enters the history.
 
-    After a fallback the blocks before the last `fallback` block are left out, except text blocks:
+    After a fallback, the blocks before the last `fallback` block are left out except text blocks:
     `thinking`, `redacted_thinking`, `tool_use` and any other model-internal block there belong to
-    the model that declined. The `fallback` blocks themselves are markers and are left out too."""
+    the model that declined. The `fallback` blocks stay exactly where they appeared, because the API
+    validates the thinking blocks around them by their position (decision [28]). Text blocks that
+    are empty or blank are left out everywhere: the API refuses them in a request, and its
+    preserved-thinking check ignores them."""
     blocks = [dict(block) for block in content]
     last = max((i for i, block in enumerate(blocks) if block.get("type") == "fallback"), default=-1)
-    if last < 0:
-        return blocks
-    before = [block for block in blocks[:last] if block.get("type") == "text"]
-    after = [block for block in blocks[last + 1 :] if block.get("type") != "fallback"]
-    return before + after
+    echoed = []
+    for index, block in enumerate(blocks):
+        kind = block.get("type")
+        if kind == "text" and not str(block.get("text", "")).strip():
+            continue
+        if index < last and kind not in ("text", "fallback"):
+            continue
+        echoed.append(block)
+    return echoed
 
 
 def fallback_blocks(content: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

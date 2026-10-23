@@ -180,24 +180,33 @@ def test_rule_6_the_last_message_is_not_an_assistant_message() -> None:
     assert 6 in rules_of(conformance.check_stateless(messages))
 
 
+FALLBACK = {"type": "fallback", "from": {"model": "a"}, "to": {"model": "b"}}
+THINKING = {"type": "thinking", "thinking": "", "signature": "s"}
+
+
 def test_rule_7_no_thinking_or_tool_call_before_a_fallback_block() -> None:
-    fallback = {"type": "fallback", "from": {"model": "a"}, "to": {"model": "b"}}
-    thinking = {"type": "thinking", "thinking": "", "signature": "s"}
-    for early in (thinking, {"type": "redacted_thinking", "data": "x"}, tool_use("t1")):
-        messages = [user("Q"), assistant(early, fallback, text("A")), user("Q2")]
+    for early in (THINKING, {"type": "redacted_thinking", "data": "x"}, tool_use("t1")):
+        messages = [user("Q"), assistant(early, FALLBACK, text("A")), user("Q2")]
         assert 7 in rules_of(conformance.check_stateless(messages))
 
 
-def test_rule_7_no_fallback_block_at_all_in_the_history() -> None:
-    fallback = {"type": "fallback", "from": {"model": "a"}, "to": {"model": "b"}}
-    messages = [user("Q"), assistant(fallback, text("A")), user("Q2")]
-    assert 7 in rules_of(conformance.check_stateless(messages))
+def test_rule_7_no_internal_block_of_any_type_before_the_last_fallback_block() -> None:
+    unknown = [user("Q"), assistant({"type": "server_tool_use", "id": "s"}, FALLBACK, text("A"))]
+    assert 7 in rules_of(conformance.check_stateless([*unknown, user("Q2")]))
+    between = [user("Q"), assistant(text("a"), FALLBACK, THINKING, FALLBACK, text("b"))]
+    violations = conformance.check_stateless([*between, user("Q2")])
+    assert [v.position for v in violations if v.rule == 7] == [1]
+
+
+def test_rule_7_a_fallback_block_in_its_place_is_valid() -> None:
+    messages = [user("Q"), assistant(FALLBACK, THINKING, text("A")), user("Q2")]
+    assert conformance.check_stateless(messages) == ()
 
 
 def test_a_fallback_echoed_response_is_valid() -> None:
     messages = [
         user("Q"),
-        assistant(text("partial"), tool_use("t2")),
+        assistant(text("partial"), FALLBACK, THINKING, tool_use("t2")),
         user(tool_result("t2")),
     ]
     assert conformance.check_stateless(messages) == ()

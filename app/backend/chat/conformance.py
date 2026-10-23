@@ -15,8 +15,9 @@ API would accept what the loop builds. A violation names the rule and the positi
    exactly one `tool_result` per call, in the same order, before any other block; a `tool_result`
    appears nowhere else.
 6. The last message is a `user` or `system` message (no assistant prefill).
-7. No `assistant` message holds a `thinking`, `redacted_thinking` or `tool_use` block before a
-   `fallback` block, and none holds a `fallback` block (echoing a response drops them).
+7. No `assistant` message holds a `thinking`, `redacted_thinking`, `tool_use` or other
+   model-internal block before its last `fallback` block: only text and `fallback` blocks may come
+   before it. The `fallback` blocks themselves stay where they appeared (decision [28]).
 8. `system` and `tools` are byte-identical to those of the conversation's first request.
 9. Every `assistant` message equals a response the model returned in this conversation (after the
    fallback echo rule), and every message before it equals, byte for byte, the messages of the
@@ -30,7 +31,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-PRE_FALLBACK_BLOCKS = frozenset({"thinking", "redacted_thinking", "tool_use"})
+BEFORE_FALLBACK = frozenset({"text", "fallback"})
 
 Message = Mapping[str, Any]
 
@@ -240,5 +241,9 @@ def _fallback_blocks(messages: Sequence[Message], found: list[Violation]) -> Non
         if message.get("role") != "assistant":
             continue
         types = [block.get("type") for block in _blocks(message)]
-        if "fallback" in types:
-            found.append(Violation(7, index, "the assistant message holds a fallback block"))
+        last = max((i for i, kind in enumerate(types) if kind == "fallback"), default=0)
+        early = [kind for kind in types[:last] if kind not in BEFORE_FALLBACK]
+        if early:
+            found.append(
+                Violation(7, index, f"a {early[0]} block comes before the last fallback block")
+            )

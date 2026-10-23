@@ -14,7 +14,7 @@ Worktree: ../exasol-cfb-demo-p7 (branch add-cfb-chat, from add-cfb-app)
 - [x] 1.9 (see plan)
 
 ## Group B
-- [~] 2.1 `chat/loop.py`, `chat/sessions.py` and `chat/appstate.py` (the pure part [expert]
+- [x] 2.1 `chat/loop.py`, `chat/sessions.py` and `chat/appstate.py` (the pure part [expert]
 
 ## Group C
 - [ ] 3.0 (see plan)
@@ -50,3 +50,5 @@ Worktree: ../exasol-cfb-demo-p7 (branch add-cfb-chat, from add-cfb-app)
 - [ ] V.1 Checklist
 - [ ] V.2 Scenario coverage audit
 - [ ] V.3 Manual testing and verification-report.md
+
+- [ ] FU-2 Add `chat/appstate.py`, `chat/loop.py`, `chat/sessions.py` to `CHAT_PURE_MODULES` coverage in the Makefile (from 2.1 report; coverage 94–98 %).

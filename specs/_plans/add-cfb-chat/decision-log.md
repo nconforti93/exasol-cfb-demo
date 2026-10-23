@@ -63,7 +63,7 @@ The independent review (`review.md`) approved the plan with changes: ten major f
 **A:** Accept.
 - The question and app state are added to history together with the first assistant reply. If a turn stops before the first reply, nothing is appended and history stays valid.
 - A refusal appends no message with empty content.
-- Follow the skill's fallback echo rules: drop the `thinking` and `tool_use` blocks that come before the final fallback block, and don't run those tools.
+- Follow the skill's fallback echo rules: drop the `thinking` and `tool_use` blocks that come before the final fallback block, and don't run those tools. (Amended by [28]: the `fallback` blocks themselves stay in place; blank text blocks are dropped.)
 - Take back partial streamed text after a refusal.
 - Add a default case for unknown stop reasons.
 - Turn the history check into a full API-conformance validator, and run it on every request the scripted model sees.
