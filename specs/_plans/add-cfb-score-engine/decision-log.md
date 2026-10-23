@@ -738,6 +738,13 @@ The owner changed the process; the orchestrator relayed the brief and the planne
 - **Rationale:** NULLs in emitted DataFrames were never probed; S3 emitted strings, and the split filters by `ROW_KIND` anyway.
 - **Promotes to ADR:** no
 
+### [58] Restore the Pac-12 championship flag from 2026
+
+- **Decision:** add `('Pac-12', 2026, NULL)` to the Phase 3 `CONFERENCE_CHAMPIONSHIP` seed, leaving its 2011–2023 interval intact. Redeploy the model before simulating. The 2026 rebuilt conference plays a championship game, so its teams need `HAS_CCG = TRUE` in the engine snapshot.
+- **Alternatives:** keep the old seed and treat the Pac-12 as a conference without a title game in the simulation.
+- **Rationale:** the old seed covered the two-member gap in 2024–2025 but excluded the current season. The interval keeps that gap and restores the current format; it affects conference-title odds and the resume path.
+- **Promotes to ADR:** yes
+
 ### Status of [1]–[43] under the light plan
 
 | Status | Decisions |
@@ -774,7 +781,7 @@ The owner changed the process; the orchestrator relayed the brief and the planne
 |---|---|
 | Q1, Q2 | Task 3.3 (cfp.org) |
 | Q3 | Non-FBS teams without Elo take `NON_FBS_RATING` from the fit; the fit prints the share |
-| Q4 | Affects only `P_CONF_CHAMPION` of the Pac-12 (no title-game row for 2026 in Phase 3's seed) |
+| Q4 | Resolved by [58]: the Phase 3 seed includes the Pac-12 again from 2026; model redeploy updates `HAS_CCG` |
 | Q5, Q11, Q12 | Replaced by Q18 and [54]; no wide DDL, strings up to 2,000 games |
 | Q6, Q14, Q16 | Moot (no backtest, no selection-week view, no phases) |
 | Q7, Q8 | Task 3.2 report |

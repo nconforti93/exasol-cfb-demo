@@ -97,13 +97,16 @@ def test_the_engine_script_and_its_comment_run_inside_the_transaction_after_the_
     assert comment == script + 1
     assert '"TEST_CFB_INFRA"."SIM_ENGINE"' in statements[script]
     assert f"ENGINE_VERSION {report.engine_version}" in statements[comment]
+    simulate = next(i for i, s in enumerate(statements) if "CREATE OR REPLACE LUA SCRIPT" in s)
+    assert "TEST_CFB_INFRA.SIMULATE" in statements[simulate]
     objects = [
         i
         for i, s in enumerate(statements)
-        if s.startswith(("CREATE OR REPLACE", "CREATE TABLE")) and i != script
+        if s.startswith(("CREATE OR REPLACE", "CREATE TABLE")) and i not in (script, simulate)
     ]
-    assert script > max(objects) and script < statements.index("COMMIT")
+    assert max(objects) < script < simulate < statements.index("COMMIT")
     assert any("script TEST_CFB_INFRA.SIM_ENGINE: replaced" in line for line in report.lines)
+    assert any("script TEST_CFB_INFRA.SIMULATE: replaced" in line for line in report.lines)
 
 
 def test_nothing_is_dropped_or_emptied_and_the_data_tables_are_created_if_missing(
@@ -203,7 +206,7 @@ def test_lint_only_sends_nothing_and_opens_no_connection(
 ) -> None:
     assert run_cli(None, options, "deploy", "--lint-only") == cli.EXIT_OK
     out = capsys.readouterr().out
-    assert out.startswith("lint ok: 18 objects, engine script ")
+    assert out.startswith("lint ok: 20 objects, engine script ")
     assert "nothing sent, 0 CFBD calls" in out
 
 

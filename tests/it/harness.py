@@ -591,7 +591,7 @@ class Harness:
         chosen = options or sim_deploy.SimOptions()
         report = sim_deploy.deploy_sim(self.owner, self.namespace, chosen)
         self._sim_digest = sim_support.deploy_digest(
-            chosen.directory, chosen.data_directory, chosen.engine_directory
+            chosen.directory, chosen.data_directory, chosen.engine_directory, chosen.lua_directory
         )
         self.sim_report = report
         return report
@@ -603,13 +603,13 @@ class Harness:
         """
         real = sim_deploy.SimOptions()
         wanted = sim_support.deploy_digest(
-            real.directory, real.data_directory, real.engine_directory
+            real.directory, real.data_directory, real.engine_directory, real.lua_directory
         )
         if self._sim_digest != wanted:
             self.deploy_sim()
 
     @contextmanager
-    def set_sim_params(self, **values: int | float | str) -> Iterator[None]:
+    def set_sim_params(self, **values: int | float | str | Decimal) -> Iterator[None]:
         """Overwrite constants of `SIM_PARAMS` for the block (keys as in the seed, numbers as
         text or numbers), then put the deployed values back. The reference table is not part of
         the per-test reset, so a test changes it only through this.
