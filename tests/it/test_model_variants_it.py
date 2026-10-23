@@ -8,6 +8,7 @@ added with their view.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterator
 from datetime import datetime
 from decimal import Decimal
@@ -21,11 +22,16 @@ from tests.synthetic.league import (
     FETCHED_LATER,
     FETCHED_LATER_RANKINGS,
     SP_OVERRIDES,
+    League,
+    mutate_after,
+    season_key,
     with_duplicate_rows,
     with_nonfinal_prior,
     with_renamed_conference,
+    with_thursday_result,
     with_unaffiliated_fbs_team,
 )
+from tests.synthetic.league_games import game_week_seq
 
 PLAN_VARIANT = "model"
 pytestmark = pytest.mark.it
@@ -105,7 +111,12 @@ def test_duplicate_calendar_week_appears_once(harness: Harness) -> None:
     assert len(week) == 1
     newest = tuple(moment(cell) for cell in stored[0])
     assert (moment(week[0]["START_AT"]), moment(week[0]["END_AT"])) == newest[:2]
-    assert moment(week[0]["FIRST_GAME_AT"]) == newest[2]
+    kickoff = harness.query(
+        f"SELECT MIN(START_DATE) FROM {harness.core}.GAMES "
+        "WHERE SEASON = 2024 AND SEASON_TYPE = 'regular' AND WEEK = 14"
+    )
+    # FIRST_GAME_AT is the week's first kickoff, not the calendar's (decision [39]).
+    assert moment(week[0]["FIRST_GAME_AT"]) == moment(kickoff[0][0]) != newest[2]
 
 
 @pytest.fixture
@@ -300,3 +311,68 @@ def test_duplicate_rows_keep_one_row_per_team_season(harness: Harness) -> None:
     ) == [(2,)]
     ashford = team_season(harness, "Ashford", 2026)
     assert Decimal(str(ashford["SP_RATING"])) == Decimal("24.00")
+
+
+# --- as-of (model/as-of) ---------------------------------------------------------------------
+
+AS_OF_VIEWS = ("GAME_AS_OF", "TEAM_SEASON_AS_OF", "RANKING_AS_OF")
+
+
+def test_current_as_of_ignores_partly_played_week(harness: Harness) -> None:
+    """Scenario as-of: A partly played week does not move the current point."""
+    league = harness.seed_league(with_thursday_result)
+    thursday = league.game_id("thursday_2026_w10")
+    assert harness.query(
+        f"SELECT IS_COMPLETED FROM {harness.model}.GAME WHERE GAME_ID = {thursday}"
+    ) == [(True,)]
+    current = harness.query(
+        f"SELECT AS_OF_SEASON, AS_OF_WEEK, AS_OF_SEASON_TYPE FROM {harness.model}.CURRENT_AS_OF"
+    )
+    assert current == [(2026, 9, "regular")]
+
+
+def as_of_rows(harness: Harness, season: int, sequence: int) -> dict[str, list[tuple[str, ...]]]:
+    """Every row of the three as-of views for the point, as sorted text tuples."""
+    result = {}
+    for view in AS_OF_VIEWS:
+        rows = harness.query(
+            f"SELECT * FROM {harness.model}.{view} "
+            f"WHERE AS_OF_SEASON = {season} AND AS_OF_WEEK_SEQ = {sequence}"
+        )
+        result[view] = sorted(tuple(str(value) for value in row) for row in rows)
+    return result
+
+
+def with_changed_score(season: int, sequence: int) -> Any:
+    """A variant that adds a point to the home score of one completed game of the point's week."""
+
+    def change(league: League) -> League:
+        games = league.get("GAMES", season_key("GAMES", season))
+        body = [dict(game) for game in games.body]
+        target = next(
+            g for g in body if game_week_seq(g) == sequence and g.get("homePoints") is not None
+        )
+        target["homePoints"] += 1
+        return league.with_slices(
+            dataclasses.replace(games, body=body) if item is games else item
+            for item in league.slices
+        )
+
+    return change
+
+
+@pytest.mark.parametrize(("season", "sequence"), [(2024, 9), (2026, 5)])
+def test_leak_free_invariant(harness: Harness, season: int, sequence: int) -> None:
+    """Scenario as-of: No fact after the point changes an as-of answer, and the comparison detects a
+    change of a visible fact (positive control)."""
+    harness.seed_league()
+    recorded = as_of_rows(harness, season, sequence)
+    assert all(recorded[view] for view in AS_OF_VIEWS), recorded.keys()
+    harness.seed_league(lambda league: mutate_after(league, season, sequence))
+    after = as_of_rows(harness, season, sequence)
+    for view in AS_OF_VIEWS:
+        assert after[view] == recorded[view], view
+    harness.seed_league(with_changed_score(season, sequence))
+    control = as_of_rows(harness, season, sequence)
+    assert control["GAME_AS_OF"] != recorded["GAME_AS_OF"]
+    assert control["TEAM_SEASON_AS_OF"] != recorded["TEAM_SEASON_AS_OF"]

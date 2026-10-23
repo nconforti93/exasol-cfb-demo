@@ -34,9 +34,9 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [x] 3.8 `210_team_season.sql` : [expert]
 
 ## Group G
-- [ ] 3.9 `300_as_of_point.sql` … `340_team_season_as_of.sql`, per `model/as-of` : [expert]
-- [ ] 3.10 `400_season_coverage.sql`
-- [ ] 3.11 `500_model_checks.sql`
+- [x] 3.9 `300_as_of_point.sql` … `340_team_season_as_of.sql`, per `model/as-of` : [expert]
+- [x] 3.10 `400_season_coverage.sql`
+- [x] 3.11 `500_model_checks.sql`
 
 ## Group H
 - [ ] 4.1 `model/lua/refresh_model.lua` per Key Interfaces, every statement through `pquery`:

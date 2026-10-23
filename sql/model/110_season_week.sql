@@ -3,6 +3,10 @@
 -- both branches (probe 1.1g); a FULL OUTER JOIN on COALESCE keys would hide it. Calendar weeks are
 -- deduplicated by (season, season type, week), newest fetch first. IS_DONE needs at least one game
 -- for its "all games completed" half, so an empty future calendar week never counts as done.
+-- FIRST_GAME_AT is the first kickoff of the week's games, and the calendar's FIRST_GAME_START only for
+-- a week without stored games: on the real data CFBD's firstGameStart equals the week's startDate
+-- (midnight Pacific), not a kickoff, and 61 lower-division games of 2026 week 1 kick off before it
+-- (decision [39]). It is the as-of cutoff of the week before (AS_OF_POINT.CUTOFF_AT).
 -- Two restructurings from the performance smoke (task 3.7):
 -- - The season-wide GAMES_FETCHED_AT is a window over the grouped weeks in its own step, not inside
 --   the GROUP BY step: a window over a GROUP BY result stops the season filter from reaching GAMES.
@@ -19,7 +23,7 @@ CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.SEASON_WEEK (
   START_AT             COMMENT IS 'Start of the week in UTC: the stored calendar''s start date when DATES_SOURCE is CALENDAR, else the first kickoff of the week''s games',
   END_AT               COMMENT IS 'End of the week in UTC: the stored calendar''s end date when DATES_SOURCE is CALENDAR, else the last kickoff of the week''s games',
   DATES_SOURCE         COMMENT IS 'Where START_AT and END_AT come from: CALENDAR (CFB_CORE.CALENDAR has the week; stored from 2013) or GAMES (the week''s kickoffs)',
-  FIRST_GAME_AT        COMMENT IS 'First kickoff of the week in UTC: the calendar''s first game start when stored, else the first kickoff of the week''s games. The as-of cutoff of the week before (CUTOFF_AT)',
+  FIRST_GAME_AT        COMMENT IS 'First kickoff of the week in UTC: the first kickoff of the week''s games, else (a week without stored games) the stored calendar''s first game start, which CFBD sets to the start of the week. The as-of cutoff of the week before (AS_OF_POINT.CUTOFF_AT)',
   GAME_COUNT           COMMENT IS 'Number of games of the week in GAME (0 for a calendar week without stored games)',
   COMPLETED_GAME_COUNT COMMENT IS 'Number of those games that are completed',
   GAMES_FETCHED_AT     COMMENT IS 'When the season''s games were last fetched (the newest GAME.FETCHED_AT of the season, UTC); NULL for a season without games',
@@ -97,7 +101,7 @@ SELECT d."SEASON",
        d."WEEK_START",
        d."WEEK_END",
        CASE WHEN d."HAS_CALENDAR" = 1 THEN 'CALENDAR' ELSE 'GAMES' END,
-       COALESCE(d."CALENDAR_FIRST_GAME", d."FIRST_KICKOFF_AT"),
+       COALESCE(d."FIRST_KICKOFF_AT", d."CALENDAR_FIRST_GAME"),
        CAST(d."GAME_COUNT" AS DECIMAL(9,0)),
        CAST(d."COMPLETED_GAME_COUNT" AS DECIMAL(9,0)),
        d."GAMES_FETCHED_AT",

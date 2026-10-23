@@ -1,10 +1,8 @@
 -- Team-seasons (model/teams-conferences): one row per team id and season with a stored game or a
 -- conference membership.
--- Memberships: every affiliation spell is expanded only over the seasons its slice requested (P_YEAR,
--- else P_MIN_YEAR to P_MAX_YEAR; an open spell of a request without a year runs to the year of its
--- fetch), with a 300-row VALUES list as the season generator (no SYS.DUAL dependency). Per team and
--- season the newest fetch wins (REQ_AT, then the later slice key); within it the later START_YEAR (then
--- the later row) wins, and spells of different conferences set HAS_MEMBERSHIP_CONFLICT.
+-- Memberships come from TEAM_MEMBERSHIP (the games-free rules: each slice speaks only for the seasons
+-- it requested, the newest fetch wins, a later start year wins within it, conflicts are flagged), which
+-- TEAM_SEASON_AS_OF shares.
 -- Games: TEAM_GAME is read once. Conference and classification from games count only games with FIXED
 -- participants (the code on most of them; a tie goes to the latest such game), so a championship or
 -- postseason game, whose participants depend on results, never decides them. Records count every
@@ -49,50 +47,7 @@ CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.TEAM_SEASON (
   FINAL_AP_RANK                 COMMENT IS 'Rank in the season''s final AP poll (RANKING, IS_FINAL_POLL, the latest one); NULL when unranked or while the season runs',
   FINAL_CFP_RANK                COMMENT IS 'Rank in the committee''s final ranking of the season (RANKING, IS_FINAL_POLL); NULL when unranked and for a season whose regular-season weeks are not all done'
 ) AS
-WITH requests AS (
-  SELECT a."TEAM_ID", a."TEAM", a."CONFERENCE", a."CONFERENCE_DIVISION", a."CLASSIFICATION",
-         a."START_YEAR", a."END_YEAR", a."REQ_AT", a."REQ_SLICE", a."ROW_NO",
-         COALESCE(a."P_YEAR", a."P_MIN_YEAR", 1869) AS "ASKED_FROM",
-         COALESCE(a."P_YEAR", a."P_MAX_YEAR", EXTRACT(YEAR FROM a."REQ_AT")) AS "ASKED_TO"
-    FROM {CORE_SCHEMA}."CONFERENCES_AFFILIATIONS" a
-   WHERE a."TEAM_ID" IS NOT NULL
-),
-spells AS (
-  SELECT r.*,
-         GREATEST(COALESCE(r."START_YEAR", r."ASKED_FROM"), r."ASKED_FROM") AS "FROM_SEASON",
-         LEAST(COALESCE(r."END_YEAR", r."ASKED_TO"), r."ASKED_TO") AS "TO_SEASON"
-    FROM requests r
-),
-numbers AS (
-  SELECT u."N" + 10 * t."N" + 100 * h."N" AS "N"
-    FROM (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)) AS u("N")
-   CROSS JOIN (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)) AS t("N")
-   CROSS JOIN (VALUES (0), (1), (2)) AS h("N")
-),
-spell_seasons AS (
-  SELECT CAST(1869 + n."N" AS DECIMAL(4,0)) AS "SEASON", s.*
-    FROM spells s
-    JOIN numbers n
-      ON 1869 + n."N" BETWEEN s."FROM_SEASON" AND s."TO_SEASON"
-),
-newest_fetch AS (
-  SELECT s.*,
-         DENSE_RANK() OVER (
-           PARTITION BY s."TEAM_ID", s."SEASON"
-           ORDER BY s."REQ_AT" DESC, s."REQ_SLICE" DESC) AS "FETCH_NO"
-    FROM spell_seasons s
-),
-memberships AS (
-  SELECT f.*,
-         ROW_NUMBER() OVER (
-           PARTITION BY f."TEAM_ID", f."SEASON"
-           ORDER BY f."START_YEAR" DESC NULLS LAST, f."ROW_NO" DESC) AS "SPELL_NO",
-         MIN(f."CONFERENCE") OVER (PARTITION BY f."TEAM_ID", f."SEASON") AS "LOW_NAME",
-         MAX(f."CONFERENCE") OVER (PARTITION BY f."TEAM_ID", f."SEASON") AS "HIGH_NAME"
-    FROM newest_fetch f
-   WHERE f."FETCH_NO" = 1
-),
-votes AS (
+WITH votes AS (
   SELECT g."TEAM_ID", g."SEASON", g."GAME_ID", g."START_AT", g."TEAM_NAME", g."TEAM_CONFERENCE",
          g."TEAM_CLASSIFICATION", g."HAS_RESULT", g."GAME_RESULT", g."POINTS_FOR",
          g."POINTS_AGAINST", g."MARGIN", g."TEAM_PREGAME_ELO", g."TEAM_POSTGAME_ELO",
@@ -162,16 +117,15 @@ game_seasons AS (
 ),
 facts AS (
   SELECT m."TEAM_ID", m."SEASON",
-         1 AS "IS_MEMBER", m."TEAM" AS "MEMBER_NAME", m."CONFERENCE" AS "MEMBER_CONFERENCE",
+         1 AS "IS_MEMBER", m."SCHOOL" AS "MEMBER_NAME", m."CONFERENCE_NAME" AS "MEMBER_CONFERENCE",
          m."CONFERENCE_DIVISION" AS "MEMBER_DIVISION", m."CLASSIFICATION" AS "MEMBER_CLASSIFICATION",
-         CASE WHEN m."LOW_NAME" <> m."HIGH_NAME" THEN 1 ELSE 0 END AS "MEMBER_CONFLICT",
+         CASE WHEN m."HAS_MEMBERSHIP_CONFLICT" THEN 1 ELSE 0 END AS "MEMBER_CONFLICT",
          NULL AS "GAMES", NULL AS "FIXED_GAMES", NULL AS "GAME_NAME", NULL AS "GAME_CONFERENCE",
          NULL AS "GAME_CLASSIFICATION", NULL AS "WINS", NULL AS "LOSSES", NULL AS "TIES",
          NULL AS "CONF_WINS", NULL AS "CONF_LOSSES", NULL AS "CONF_TIES", NULL AS "POINTS_FOR",
          NULL AS "POINTS_AGAINST", NULL AS "CONF_POINT_DIFF", NULL AS "FIRST_PREGAME_ELO",
          NULL AS "LAST_POSTGAME_ELO"
-    FROM memberships m
-   WHERE m."SPELL_NO" = 1
+    FROM {MODEL_SCHEMA}."TEAM_MEMBERSHIP" m
   UNION ALL
   SELECT g."TEAM_ID", CAST(g."SEASON" AS DECIMAL(4,0)),
          0, NULL, NULL, NULL, NULL, NULL,

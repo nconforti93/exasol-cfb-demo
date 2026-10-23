@@ -16,6 +16,7 @@ Conferences change over time: teams move, divisions come and go, and the set of 
     All of them are NULL for a team that is not in the list, and a logo is NULL when the array has no URL at its position.
   - `FIRST_SEASON` and `LAST_SEASON` are the first and last season with a stored game.
 - `CONFERENCE`: one row per conference in `CFB_CORE.CONFERENCES`.
+- `TEAM_MEMBERSHIP`: one row per team and season with a stored membership whose slice speaks for the season, by the membership rules of `TEAM_SEASON` below (conference, division, classification of the winning spell, `HAS_MEMBERSHIP_CONFLICT`). It reads no games; `TEAM_SEASON` and `TEAM_SEASON_AS_OF` share it.
 - `TEAM_SEASON`: one row per team and season in which the team has a stored game or a conference membership.
   - **Membership** comes from `CFB_CORE.CONFERENCES_AFFILIATIONS`. Each row there is a spell: team, conference, division and classification from `START_YEAR` to `END_YEAR` (open while NULL).
     - A stored slice speaks only for the seasons it was requested for: the season of a `year` slice, or `P_MIN_YEAR`–`P_MAX_YEAR` of a range slice.
