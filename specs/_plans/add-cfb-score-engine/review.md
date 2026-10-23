@@ -1,5 +1,7 @@
 # Review: add-cfb-score-engine
 
+> **Note (2026-10-23):** this review covers the heavy plan (commit 29fb149). The plan was then replanned light and demo-first (decision-log [44]–[57], `tasks.md`). The review's majors are handled there as follows: M1 kept ([29], [46]); M2 and M3 moot (no calibration gate, no phases: [45]); M4 replaced by layout A and engine tallies ([47], [48]) with a timing check in task 1.5; M5 kept in slice 3 (task 3.1); M6 replaced by `SEASON_RULES.SELECTION_AT` ([50]). The Phase 5 items P5-M3 and P5-m13 are moot: no DDL is generated and no run is dropped.
+
 Reviewer: independent plan review, 2026-10-22. Read-only: no DB session, no CFBD calls. Files read: `plan.md`, `decision-log.md`, all 9 `sim-engine/*/spec.md`; `specs/mission.md`, `docs/roadmap.md` (Phases 4–5, demo flow), `specs/architecture.md` § Engine contract, `docs/spikes/s3-*.md`, `docs/spikes/s4-*.md`, the Phase 3 plan (Key Interfaces, `model/as-of`, `model/teams-conferences`, `model/games`, `model/ratings-rankings`), the Phase 2 specs `loader/refresh-week` and `loader/run-logs`, and the Phase 2 worktree (`sql/meta/load_run.sql`, `loader/plan.py`). Skills loaded first: `exasol:exasol-udfs`, `exasol:exasol-database`, `exasol:exasol-distributed-ml`. `speq plan validate add-cfb-score-engine` → **passed (9 delta specs)**.
 
 ## Verdict: **Approve with changes**
