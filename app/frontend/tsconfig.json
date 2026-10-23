@@ -20,5 +20,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node", "vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src", "scripts", "e2e", "playwright.config.ts", "vite.config.ts", "vitest.setup.ts", "eslint.config.js"]
+  "include": ["src", "preview", "scripts", "e2e", "playwright.config.ts", "vite.config.ts", "vitest.setup.ts", "eslint.config.js"]
 }

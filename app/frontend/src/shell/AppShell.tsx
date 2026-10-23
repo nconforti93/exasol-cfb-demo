@@ -70,6 +70,12 @@ function ShellLayout({ pages, refreshPanel: RefreshPanel, inspector, chatPanel }
       <a className="skip-link" href="#main">
         Skip to the page
       </a>
+      {import.meta.env['VITE_CFB_PREVIEW'] === '1' && (
+        <div className="banner banner-warning" role="status">
+          <strong>PREVIEW · sample data</strong>
+          <span>Served from fixtures: nothing here is real, and no action touches a database or CFBD.</span>
+        </div>
+      )}
       <Header refreshPanel={<RefreshPanel />} />
       <div className="shell-notices">
         <LoadError />

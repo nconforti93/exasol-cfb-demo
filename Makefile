@@ -27,7 +27,7 @@ ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check \
         app-deps app-build app-test app-lint \
-        app app-serve app-user app-e2e app-perf
+        app app-serve app-user app-e2e app-perf app-preview
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -107,6 +107,11 @@ app: db-check app-deps
 
 app-serve: db-check
 	$(PY) -m scripts.app serve
+
+# make app-preview  the frontend on http://127.0.0.1:5173 with /api/* served from the test fixtures (sample data;
+#                   no database, no CFBD, no AWS). PORT is fixed by vite.config.ts; stop it with Ctrl-C.
+app-preview: app-deps
+	cd "$(FRONTEND)" && CFB_PREVIEW=1 VITE_CFB_PREVIEW=1 npx vite
 
 app-user: db-check
 	$(PY) -m scripts.app user $(if $(filter yes,$(ROTATE)),--rotate) $(ARGS)
