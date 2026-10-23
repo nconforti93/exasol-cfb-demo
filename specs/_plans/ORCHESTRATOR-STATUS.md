@@ -20,19 +20,18 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 5. **AWS `default` is FREE** (exasol-cfb-demo-a4 confirmed at 14:06; add-engine-spikes is finished with both DBs). The AWS DB has no schemas; the `CFBD_API` connection should still exist, and 9.2 verifies it via `EXA_DBA_CONNECTIONS`. Never stop the instance (mandate). It also holds the shared files `docs/roadmap.md`, `specs/architecture.md` and `CLAUDE.md` until it sends "4.1 done". Check with ListAgents and SendMessage after the restart, because that session may also have restarted.
 6. Then continue with the queue under "Next steps".
 
-## Plan pipeline (updated 2026-10-23 early morning)
+## Plan pipeline (updated 2026-10-23 morning)
 
 | Plan | Phase | Where | State |
 |---|---|---|---|
-| add-cfbd-vs-foundation | 0 S1/S2 + 1 | main | **Recorded**, all tasks done; live on AWS; ledger 21 calls |
-| add-engine-spikes | 0 S3/S4 | parallel session | Done (D19/D20) |
-| add-cfb-persistence-refresh | 2 | worktree p2 | Groups A–G done (`20e0a9d`). Group H (7.3, 7.4 quality gate) running; then group I docs, code review, then live group J on AWS (217 calls) |
-| add-cfb-analytical-model | 3 | worktree p3 (merged p2) | Group A done; group B (2.1–2.4) running |
-| add-cfb-score-engine | 4 | main (plan) | Reviewed and revised; implementation follows Phase 3 |
-| add-cfb-analyses | 5 | main (plan) | Reviewed and revised; U3 confirmed |
-| add-cfb-app | 6 | main (plan) | Reviewed; revision running |
-| add-cfb-chat | 7 | main (plan) | Planning |
-| Phase 8 | | | Not planned yet |
+| add-cfbd-vs-foundation | 1 | main | **Recorded**. Live on AWS. Ledger 21 calls |
+| add-cfb-persistence-refresh | 2 | worktree p2 | All groups A–I and code review done. **Review fixes F.1 running**. Then verification and the live group J on AWS (217 calls; Oct 31 restore gate) |
+| add-cfb-analytical-model | 3 | worktree p3 | Groups A–B done. **Group C running** (3.1 GAME+X1, 2.5, 3.2) |
+| add-cfb-score-engine | 4 | main (plan) | Reviewed and revised. Starts after Phase 3 group C/D |
+| add-cfb-analyses | 5 | main (plan) | Reviewed and revised |
+| add-cfb-app | 6 | worktree p6 | Group A done (backend core + whole frontend, 582 FE tests). **2.1 db/operator running**. Rest gated on Phases 2–5 merging |
+| add-cfb-chat | 7 | worktree p7 (from p6) | Reviewed and revised. **Group A running** |
+| add-cfb-demo-hardening | 8 | main (plan) | Reviewed. **Revision running** |
 
 ## Inputs for Phase 4 (from add-engine-spikes, 2026-10-22)
 
