@@ -30,6 +30,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 - **Decisions:** decide yourself and log them in the plan's `decision-log.md`. Stop and ask Nico only for irreversible, money-costing or outward-facing actions.
 - **Permission denials:** if your sandbox or the user denies a command, don't work around it. Use a sanctioned alternative or skip, and add it to "Blocked on Nico" below.
 - **Phase 7 chat:** there is no Anthropic API key. Build and test with the scripted/stub model, but never call the real API.
+- **Secrets location (owner, 2026-10-23):** app/console/chat passwords and `ANTHROPIC_API_KEY` live in `~/.cfb-demo/app.env` (0600), never in the repo `.env` (the repo is on OneDrive, which syncs to the cloud).
 - **Logos:** team logos are cached locally in `~/.cfb-demo/logos/`, outside the repo and OneDrive. Never commit them and never hotlink ESPN at runtime.
 - **Commit trailer:** end commit messages with the co-author line your tool uses. Claude used `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; Codex should use its own or none.
 
@@ -63,7 +64,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 | 3 Analytical model | add-cfb-analytical-model | p3 | Through 3.8 done; Phase 2 merged in (ebb877f). **`CFB_MODEL` deployed on AWS and local** (`make model TARGET=…`; 0 calls). Real-data fixes: 2025 title games ([36]), `TEAM` app columns COLOR/ALTERNATE_COLOR/LOGO_URL/LOGO_DARK_URL/LATITUDE/LONGITUDE ([37]); spot checks match (Indiana 2025 16-0, SP+ 32.4, AP 1). AWS timings: TEAM ~1 s, TEAM_SEASON ~2–3 s (cache in app). **Running:** 3.9 as-of, 3.10 coverage, 3.11 MODEL_CHECKS (light). **Open after:** 4.1 refresh_model.lua, 4.2 examples, docs, record, merge to main |
 | 4 Score engine | add-cfb-score-engine | main tree (plan only) | Plan reviewed. Starts after Phase 3 3.9 (as-of). Python UDF simulation; inputs from spikes S3/S4 (see ORCHESTRATOR-STATUS "Inputs for Phase 4"). Owner idea to consider: store a calibration file in BucketFS as an Exasol showcase beat |
 | 5 Analyses / CFB_API | add-cfb-analyses | main tree (plan only) | Plan reviewed. **Thin slice first:** the views the UI needs (TEAMS with colors/coords, GAMES, TEAM_SEASONS, RANKINGS, SP_RATINGS, TEAM_TRAVEL, CURRENT_POINT, AS_OF_POINTS); see Phase 6 hand-offs P6-UI-b/c/d |
-| 6 Web app | add-cfb-app | p6 | Backend core, old frontend pages, fixture preview (`make app-preview`, port 5173) done. **UI revision planned** (674ff29: map home, `/team/:id`, `/league/*`, tasks 9.0–9.8). 9.5 logos done (15779cc): all 138 FBS logos (light+dark) cached in `~/.cfb-demo/logos` from CFBD's CDN (decision [43]); all FBS teams have coords and colors in `CFB_CORE.TEAMS`. 9.0 foundation done (3342b9c: tokens, `src/ui` components, routing, contract). 9.1 shell + 9.2 map (3545207) and 9.3 team page + 9.4 league (7003bcb) done. Preview needs `CHOKIDAR_USEPOLLING=1` on /mnt/c. **9.6 done (a307279): the preview runs on REAL data** (`make app-fixtures TARGET=aws` → `~/.cfb-demo/fixtures/latest`, then `make app-preview REAL=1`; snapshot 2026 after week 7). Real: map, team pages, this week, stats, search. Still sample: odds, predictions, upsets, H2H, outlooks. **Open question to Nico:** move app passwords out of OneDrive (`~/.cfb-demo/app.env` instead of repo `.env`). **Running also:** 9.6 real-data preview snapshot (`make app-fixtures TARGET=aws` → `~/.cfb-demo/fixtures/`, `make app-preview REAL=1`). **Next:** then 9.7 routes (needs Phase 5 thin views), 9.8 outlook (needs Phases 4–5) |
+| 6 Web app | add-cfb-app | p6 | Backend core, old frontend pages, fixture preview (`make app-preview`, port 5173) done. **UI revision planned** (674ff29: map home, `/team/:id`, `/league/*`, tasks 9.0–9.8). 9.5 logos done (15779cc): all 138 FBS logos (light+dark) cached in `~/.cfb-demo/logos` from CFBD's CDN (decision [43]); all FBS teams have coords and colors in `CFB_CORE.TEAMS`. 9.0 foundation done (3342b9c: tokens, `src/ui` components, routing, contract). 9.1 shell + 9.2 map (3545207) and 9.3 team page + 9.4 league (7003bcb) done. Preview needs `CHOKIDAR_USEPOLLING=1` on /mnt/c. **9.6 done (a307279): the preview runs on REAL data** (`make app-fixtures TARGET=aws` → `~/.cfb-demo/fixtures/latest`, then `make app-preview REAL=1`; snapshot 2026 after week 7). Real: map, team pages, this week, stats, search. Still sample: odds, predictions, upsets, H2H, outlooks. **Running:** move app secrets to `~/.cfb-demo/app.env` (owner approved 2026-10-23). **Running also:** 9.6 real-data preview snapshot (`make app-fixtures TARGET=aws` → `~/.cfb-demo/fixtures/`, `make app-preview REAL=1`). **Next:** then 9.7 routes (needs Phase 5 thin views), 9.8 outlook (needs Phases 4–5) |
 | 7 Chat | add-cfb-chat | p7 | Groups A–B done (89f21ae). Group C+ blocked until Phases 5 and 6 merge (gate task 3.0) |
 | 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed. Due items: freeze rule + CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
 
@@ -90,9 +91,11 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relevant: U3 `ANTHROPIC_API_KEY` in `.env` when he has it; U4 Claude Desktop MCP entry by Nov 13; U6 confirm demo date and venue network; U8 license/CFBD terms/team marks.
 
-**Blocked on Nico:** none. Pending answer: app passwords file location (proposed `~/.cfb-demo/app.env`, 0600, outside OneDrive).
+**Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-23: Nico approved moving app secrets to ~/.cfb-demo/app.env; change running in p6.
 
 - 2026-10-23: 9.6 real-data preview live at http://127.0.0.1:5173/ (a307279).
 
