@@ -301,20 +301,40 @@
   }
 }
 
-/* Placeholders of the pages that follow task 9.0; each page task replaces its own and deletes these rules. */
+/* Probability bar */
 
-.placeholder-row {
+.prob-bar {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: calc(var(--space-8) * 1.5);
+  height: var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--seq-track);
+  vertical-align: middle;
+}
+
+.prob-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--prob-share);
+  border-radius: inherit;
+  background: var(--seq-bar);
+}
+
+/* Section heading between card rows */
+
+.section-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3) var(--space-5);
+  gap: var(--space-3);
 }
 
-.placeholder-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+.section-title {
   margin: 0;
-  padding: 0;
-  list-style: none;
+  font: var(--text-page);
+  letter-spacing: -0.01em;
 }

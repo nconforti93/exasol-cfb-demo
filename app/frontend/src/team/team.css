@@ -1,0 +1,486 @@
+/* Team page. Tokens only; the team color appears as the card stripe and the chart line, never as text. */
+
+.team-page {
+  gap: var(--grid-gap);
+}
+
+/* Hero */
+
+.card.team-hero {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5) var(--space-7);
+  padding: var(--space-5) var(--space-6);
+}
+
+.team-hero-id {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.team-hero-text {
+  min-width: 0;
+}
+
+.team-hero-text .card-eyebrow {
+  margin: 0 0 var(--space-2);
+}
+
+.team-hero-name {
+  margin: 0;
+  font: var(--text-hero);
+  letter-spacing: -0.02em;
+}
+
+.team-hero-mascot {
+  margin: var(--space-1) 0 0;
+  font: var(--text-body);
+  color: var(--ink-secondary);
+}
+
+.team-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5) 0;
+  margin-left: auto;
+}
+
+.team-hero-stats .stat-tile {
+  padding: 0 var(--space-4);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.team-hero-stats .stat-tile:first-child {
+  border-left: 0;
+}
+
+.team-hero-stats .rank-tag {
+  font: inherit;
+  color: inherit;
+}
+
+.team-hero-sql {
+  margin-top: var(--space-3);
+}
+
+/* Schedule */
+
+.team-table-scroll {
+  overflow-x: auto;
+}
+
+.team-schedule {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.team-schedule th {
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.team-schedule td {
+  padding: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: middle;
+  font: var(--text-body);
+}
+
+.game-next-row td {
+  background: var(--page);
+}
+
+.game-week,
+.game-date {
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+
+.game-next {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.game-opponent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.game-site {
+  min-width: calc(var(--space-5) + var(--space-1));
+  font: var(--text-small);
+  color: var(--ink-muted);
+}
+
+.game-result {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.game-result-w {
+  color: var(--status-good-text);
+}
+
+.game-result-l {
+  color: var(--status-critical-text);
+}
+
+.game-result .num {
+  color: var(--ink-primary);
+}
+
+.game-upcoming {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.game-upcoming-main {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+
+.game-line,
+.game-meta {
+  font: var(--text-small);
+  color: var(--ink-secondary);
+}
+
+.game-upcoming .game-meta {
+  white-space: nowrap;
+}
+
+.game-link {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Ratings and polls */
+
+.team-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+}
+
+.rating-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rating-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.rating-row p {
+  margin: 0;
+}
+
+.rating-label {
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.rating-now {
+  font: var(--text-kpi);
+  font-size: calc(var(--space-6) + var(--space-1));
+  letter-spacing: -0.02em;
+}
+
+.rating-rank {
+  margin-left: var(--space-2);
+  font: var(--text-label);
+  color: var(--ink-secondary);
+}
+
+.rating-before {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  font: var(--text-small);
+  color: var(--ink-secondary);
+}
+
+.team-side .chart-frame {
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.team-side .chart-title {
+  font: var(--text-small);
+  color: var(--ink-secondary);
+}
+
+
+.team-outlook .chart-frame {
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.team-outlook .chart-title {
+  font: var(--text-small);
+  color: var(--ink-secondary);
+}
+
+/* Outlook */
+
+.team-outlook {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.odds-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-7);
+}
+
+.odds-whatif-line,
+.watch-conditional {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  font: var(--text-small);
+}
+
+.week-opponent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.week-opponent p {
+  margin: 0;
+}
+
+.week-opponent-name {
+  font: var(--text-title);
+}
+
+.week-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.week-facts dt {
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.week-facts dd {
+  margin: 0;
+  font: var(--text-title);
+}
+
+.watch-group + .watch-group {
+  margin-top: var(--space-3);
+}
+
+.watch-group-title {
+  margin: 0 0 var(--space-2);
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.watch-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.watch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.watch-game {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.watch-game p {
+  margin: 0;
+}
+
+.watch-marks {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.watch-matchup {
+  font: var(--text-body);
+  font-weight: 600;
+}
+
+.watch-root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: var(--text-small);
+  color: var(--status-good-text);
+}
+
+.watch-root strong {
+  color: var(--ink-primary);
+}
+
+.watch-effect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  max-width: 100%;
+}
+
+.watch-leverage {
+  font: var(--text-label);
+}
+
+.flag-low {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: var(--text-small);
+}
+
+.team-whatif .whatif {
+  max-height: calc(var(--space-8) * 8);
+  padding: 0;
+  overflow-y: auto;
+  background: none;
+  border: 0;
+}
+
+.team-whatif .whatif h3 {
+  font: var(--text-title);
+}
+
+/* Rivalries */
+
+.rivalry-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--space-8) * 4), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rivalry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+
+.rivalry p {
+  margin: 0;
+}
+
+.rivalry-id {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.rivalry-name {
+  font: var(--text-title);
+}
+
+.rivalry-record {
+  font: var(--text-kpi);
+  letter-spacing: -0.02em;
+}
+
+.series-split {
+  display: flex;
+  width: 100%;
+  height: var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--seq-track);
+}
+
+.series-split-wins {
+  flex: var(--wins) 1 0;
+  background: var(--seq-bar);
+}
+
+.series-split-ties {
+  flex: var(--ties) 1 0;
+  background: var(--axis);
+}
+
+.series-split-losses {
+  flex: var(--losses) 1 0;
+  background: var(--move-down);
+}
+
+/* Empty state */
+
+.card.empty-panel {
+  border-style: dashed;
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.empty-ghost {
+  width: 100%;
+  max-width: calc(var(--space-8) * 3);
+  height: auto;
+  fill: var(--border-subtle);
+}

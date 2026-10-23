@@ -1,11 +1,17 @@
-import { useAppState } from '../state/react.tsx'
 import { usePageData } from '../state/pageData.tsx'
+import { useAppState } from '../state/react.tsx'
 import { teamAccent } from '../theme/teamColor.ts'
 import { useTheme } from '../theme/useTheme.ts'
-import { AppLink, Card, Note, RankTag, RecordLine, StatTile, TeamMark } from '../ui/index.ts'
-import { formatInteger } from '../format/format.ts'
+import { AppLink, Note } from '../ui/index.ts'
+import { Outlook } from './Outlook.tsx'
+import { PollsCard } from './PollsCard.tsx'
+import { RatingsCard } from './RatingsCard.tsx'
+import { ScheduleCard } from './ScheduleCard.tsx'
+import './team.css'
+import { TeamHero } from './TeamHero.tsx'
+import { nextGameId, ratingPair } from './teamModel.ts'
 
-/** Placeholder for the team page (task 9.3): loads `/api/team/<id>` and shows the hero and the ratings. */
+/** A team's own page at `/team/<id>`: hero, schedule and results, ratings and polls, then the outlook from the published run. */
 export function TeamPage() {
   const teamId = useAppState((state) => state.focusTeam)
   const theme = useTheme()
@@ -14,7 +20,13 @@ export function TeamPage() {
     [teamId],
   )
 
-  if (teamId === null) return <Note>No team chosen. <AppLink to={{ page: 'home' }}>Back to the map</AppLink></Note>
+  if (teamId === null) {
+    return (
+      <Note>
+        No team chosen. <AppLink to={{ page: 'home' }}>Back to the map</AppLink>
+      </Note>
+    )
+  }
   if (page.status === 'loading') return <p role="status">Loading the team…</p>
   if (page.data === null) {
     return (
@@ -23,24 +35,20 @@ export function TeamPage() {
       </p>
     )
   }
-  const { team, sp, queries } = page.data
-  const latest = sp[0]
+  const { team, games, sp, polls, queries, point } = page.data
+  const accent = teamAccent(team, theme)
+  const { current, previous } = ratingPair(sp)
   return (
-    <section className="page-stack" aria-label={team.school}>
-      <Card accent={teamAccent(team, theme)} sqlEntry={queries['hero'] ?? null}>
-        <div className="placeholder-row">
-          <TeamMark team={team} size={96} labelled />
-          <div>
-            <h2 className="page-title">{team.school}</h2>
-            <p className="page-subtitle">
-              {team.mascot} · <RecordLine wins={team.wins} losses={team.losses} confWins={team.conf_wins} confLosses={team.conf_losses} conference={team.conference} />{' '}
-              <RankTag rank={team.ap_rank} poll="AP" />
-            </p>
-          </div>
-          {latest !== undefined && <StatTile label={`SP+ ${latest.season}`} value={formatInteger(Math.round(latest.overall))} detail={`rank ${latest.overall_rank}`} />}
+    <section className="page-stack team-page" aria-label={team.school}>
+      <TeamHero team={team} accent={accent} polls={polls} rating={current} pointLabel={point.label} sqlEntry={queries['hero'] ?? null} />
+      <div className="grid">
+        <ScheduleCard teamId={team.team_id} school={team.school} season={point.season} games={games} nextId={nextGameId(games)} sqlEntry={queries['schedule'] ?? null} />
+        <div className="span-4 team-side">
+          <RatingsCard current={current} previous={previous} sqlEntry={queries['ratings'] ?? null} />
+          <PollsCard polls={polls} accent={accent} sqlEntry={queries['polls'] ?? null} />
         </div>
-        <Note>The schedule, polls and outlook arrive with the team page.</Note>
-      </Card>
+      </div>
+      <Outlook teamId={team.team_id} school={team.school} accent={accent} games={games} />
     </section>
   )
 }

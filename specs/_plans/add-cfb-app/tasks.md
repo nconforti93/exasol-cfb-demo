@@ -11,8 +11,8 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 ## Group UI-B (after 9.0)
 - [ ] 9.1 Shell: nav (Map · League · Head-to-head), team search, League page hosting the built Odds/Predictions/Upsets as tabs, TeamMark in their rows, restyle to cards/grid
 - [ ] 9.2 Map home (`src/map`): d3-geo 3.1.1, topojson-client 3.1.0, us-atlas 3.0.1 (+ @types/d3-geo 3.1.1, @types/topojson-client 3.1.5), `layout.ts` relaxation + leader lines, conference zoom, list view
-- [ ] 9.3 Team page (`src/team`): hero, schedule/results, SP+/polls; outlook panels (odds + trajectory, this week, games to watch + what-if, rivalries) with empty states
-- [ ] 9.4 League This week + Stats (`src/league/WeekPage.tsx`, `StatsPage.tsx`): matchup order/upset alert; road warriors, SP+ movers, conference strength, streaks; SQL buttons
+- [x] 9.3 Team page (`src/team`): hero, schedule/results, SP+/polls; outlook panels (odds + trajectory, this week, games to watch + what-if, rivalries) with empty states
+- [x] 9.4 League This week + Stats (`src/league/WeekPage.tsx`, `StatsPage.tsx`): matchup order/upset alert; road warriors, SP+ movers, conference strength, streaks; SQL buttons
 - [ ] 9.6 Real-data snapshot: `scripts/app_fixtures.py` + `make app-fixtures` + `make app-preview REAL=1` (owner, stored tables only, 0 CFBD calls, output `~/.cfb-demo/fixtures/`); run once on AWS after the backfill + Phase 3 views + `make logos`
 
 ## Group UI-R (gate: 2.2, Phase 2 merged, Phase 5 thin views P6-UI-b/c/d deployed)
