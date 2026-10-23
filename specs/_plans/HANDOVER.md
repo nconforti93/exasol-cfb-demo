@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-23 by Codex after the AWS 1M simulation
+Last updated: 2026-10-23 by Codex at the user-requested shutdown pause
 
 ---
 
@@ -59,15 +59,15 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Codex took over on 2026-10-23.** Phase 4 task 1.4 is committed as `3fa2fbc` after 2 focused IT tests passed (190.40 s), focused unit tests, mypy and Ruff. Local 10k simulation of 2026 after week 7 is `DONE` (run 1, 14.879 s). The model correction and simulation objects are deployed on AWS (DEPLOY runs 22 and 23). AWS 100k run 1 is `DONE` in 14.496 s; Auburn P(CFP) is 4.94% now, 11.33% if it beats LSU. AWS 1M run 2 is `DONE` in 32.672 s; Auburn P(CFP) is 4.94% now, 11.20% if it beats LSU (366,207 matching seasons, 0.155 s query). Both use 143 teams and 377 games. Post-run AWS quota is unchanged at 241/400, confirming zero CFBD calls. Task 1.5 verification write-up is in progress. The p5 uncommitted task set at handover is listed below. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row from the stopped Claude session, the run lock treats it as stale.
+**Paused at Nico's request before shutdown.** No agent or database statement is running. Phase 4 task 1.4 is committed as `3fa2fbc`; task 1.5 verification and decision are committed as `61708de`. Local 10k simulation passed. AWS 100k run 1 finished in 14.496 s; AWS 1M run 2 finished in 32.672 s. From the 1M run, Auburn P(CFP) is 4.94% now, 11.20% if it beats LSU, and 1.31% if it loses. One-team what-if p95 was 0.163 s at k=1 and 0.148 s at k=3; layout A stays. AWS quota was unchanged at 241/400: zero CFBD calls. Phase 4 task 2.1 has uncommitted code in p4 and staged copies in `/tmp/p4pred/`; SQL/Lua still need DB verification. Phase 5 task 1.1 has one new test in p5 and staged, unapplied implementation in `/tmp/p5-stage/`. `/tmp` staging may not survive the shutdown; the p4 worktree code does. The first action on resume is the focused p4 unit test, followed by local `make sim` and `make predict` under the shared IT lock. Complete the p5 first serving slice after that. If `CFB_META.LOAD_RUN` shows an old `RUNNING` row, the run lock treats it as stale.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
 | 1 VS foundation | add-cfbd-vs-foundation | recorded | **Done.** Live on AWS |
 | 2 Persistence & refresh | add-cfb-persistence-refresh | recorded | **Done.** 221 live calls. AWS `CFB_CORE`: 155k rows (GAMES 1869–2026, SP+/WP 2013–2026, polls 2014–2026, TEAMS 1933, VENUES 852). 2026 is refreshed through regular week 7. The local DB has an identical copy (snapshot restore; Oct 31 restore gate **passed**) |
 | 3 Analytical model | add-cfb-analytical-model | recorded, **`main` = 2a26584** | **Done.** `CFB_MODEL` is live on AWS and local. 8 derived tables are rebuilt by refresh step 100 `CFB_INFRA.REFRESH_MODEL`, registered on both targets. Also as-of views and `MODEL_CHECKS`. ADR-031..046. Page queries run in 0.07–0.8 s on AWS. **Rule:** filter as-of views with literal `AS_OF_SEASON`/`AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF` |
-| 4 Score engine | add-cfb-score-engine | **p4** (HEAD 3fa2fbc) | Light plan 513455b: 14 tasks in 3 slices; see `tasks.md`. **Done:** 1.1 engine core (a70c7fc), 1.2 `CFB_SIM` schema + `CFB_INFRA.SIM_ENGINE` UDF (74af62c), 1.3 fitted params + engine input views (5395e21; HFA 3.14, SIGMA_1 16.6, TAU 2.83; margin RMSE 16.9 vs the CFBD line's 15.7), 1.4 stored runs and what-if (3fa2fbc; local 10k smoke and focused IT passed), 1.5 AWS 100k/1M runs and Auburn what-if passed; write-up in progress. **Next:** slice 2 task 2.1 predictions freeze/grade (**deadline below**), 2.2 movement + rooting guide, 2.3 live. Then slice 3 |
-| 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 1af6214) | Light plan 1af6214: 8 tasks. Slice A 1.1→1.5 is 20 engine-free `CFB_API` views, roles `CFB_APP`/`CFB_MCP`, `make api`. Slice B 2.1–2.3 is thin views over Phase 4 objects, gated on Phase 4 1.4/2.1/2.2 being merged into p5. **1.1 is in progress, uncommitted (see below)** |
+| 4 Score engine | add-cfb-score-engine | **p4** (HEAD 61708de) | Tasks 1.1–1.5 done. AWS 1M run and Auburn what-if verified; `docs/engine-verification.md` committed. **2.1 in progress, uncommitted:** prediction table, four views, Lua freeze and `PREDICT` entry, deploy/CLI wiring and focused tests. Need focused tests, local deploy/predict under lock, then AWS before the Oct 27 cutoff. Then 2.2 movement + guide, 2.3 live, slice 3 |
+| 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 1af6214) | Slice A 1.1→1.5 is 20 engine-free `CFB_API` views, roles and `make api`. **1.1 staged, not applied:** existing seven generalized deployer WIP files in p5, one new `tests/unit/test_api_sql.py`; remaining draft implementation in `/tmp/p5-stage/` (may not survive shutdown). No DB or CFBD calls. Slice B waits on Phase 4 2.1/2.2 |
 | 6 Web app | add-cfb-app | **p6** (HEAD b900208) | UI revision done:<br>• 9.0 foundation 3342b9c<br>• 9.1 shell + 9.2 US map 3545207<br>• 9.3 team page + 9.4 league week/stats 7003bcb<br>• 9.5 logos 15779cc (138 FBS logos in `~/.cfb-demo/logos`, from cdn.collegefootballdata.com, [43])<br>• 9.6 real-data snapshot preview a307279<br>• secrets loader bc401d0 ([44])<br>**The preview runs at http://127.0.0.1:5173/** (`make app-preview REAL=1` with `CHOKIDAR_USEPOLLING=1`; it serves JSON from `~/.cfb-demo/fixtures/latest`, a snapshot taken 2026-10-23 08:01 UTC, **not live DB**). Real: map, team pages, this week, stats, search. Sample: odds, predictions, upsets, H2H, outlooks. **Next:** 2.2 `app/backend/main.py` + `scripts/app.py` (serve/user; users `CFB_APP_WEB`/`CFB_CONSOLE_WEB`, passwords from `~/.cfb-demo/app.env`), 9.7 live routes over `CFB_API` (needs Phase 5 slice A), 9.8 outlook (needs Phase 4 slice 1–2 + Phase 5 slice B). The logo route `make_router` is not mounted yet |
 | 7 Chat | add-cfb-chat | p7 (HEAD 89f21ae) | Groups A–B done. Group C+ is blocked until Phases 5 and 6 merge (gate 3.0). Hand-off `P7-secrets`: adopt `vs/host/appenv.py`. There is no Anthropic key, so build and test only |
 | 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed under the heavy process; do a light replan first. Due: the freeze rule and CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
@@ -95,13 +95,19 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 **p5 task 1.1** (`make api`, first `CFB_API` views):
 - **Modified:** `vs/host/sqlobjects.py`, `vs/host/namespace.py`, `vs/host/metaddl.py` and their unit tests.
-- **Where it stopped:** it had just started taking Phase 4's generalized deployer text, which plan decision [56] says to copy identically from p4. Compare these three files with p4's HEAD versions; if p4's are a superset, take p4's text.
-- **Then:** build the 1.1 views, deploy, and continue 1.2→1.5.
+- **At shutdown pause:** the generalized deployer files were verified byte-identical to p4 HEAD. `tests/unit/test_api_sql.py` is new in p5. Draft implementation (eight views, deploy, grants, CLI and build wiring) is in `/tmp/p5-stage/`, not yet applied; `/tmp` may be lost on shutdown. Its targeted test was interrupted before a result. Review the staged SQL and grants, apply with sanctioned write approval, wire `scripts/deploy.py`, then run the focused test and lint.
+- **Then:** deploy and continue 1.2→1.5.
 - **Source for the view SQL:** reuse `../exasol-cfb-demo-p6/scripts/app_fixtures.py`, which has working real-data SQL for the map, team, week and stats.
 
+**p4 task 2.1** (prediction freeze and grades, uncommitted in p4):
+- **New:** `sql/sim/data/prediction.sql`, views `400`–`430`, `engine/lua/predict.lua`, `tests/unit/test_prediction_bundle.py`.
+- **Modified:** `engine/lua/simlib.lua`, `engine/deploy.py`, `scripts/sim.py`, `Makefile`, `tests/unit/test_sim_deploy.py`. Copies are in `/tmp/p4pred/`, but the p4 worktree holds the code if `/tmp` is wiped.
+- **Verified:** 2 new unit tests passed, deploy lint-only found 25 objects and made zero DB calls, mypy on changed Python sources and Ruff passed. Five stale deploy-test assertions were corrected but not rerun. No DB call yet for this task.
+- **Resume:** `env UV_CACHE_DIR=/tmp/cfb-uv-cache uv run pytest tests/unit/test_sim_deploy.py tests/unit/test_simulate_bundle.py tests/unit/test_prediction_bundle.py -q -p no:cacheprovider` in p4. Then review changes, take the shared IT lock for `make sim TARGET=local` and `make predict SEASON=2026 WEEK=7 TARGET=local`, and run focused IT. AWS deploy/predict follows verification.
+
 ### Recommended next steps (in order)
-1. **p4: finish 1.4 and 1.5.** This gives the first real odds and the Auburn what-if, which Nico asked about directly. Report the numbers to Nico.
-2. **p4: 2.1 predictions freeze/grade, plus refresh week 8, before Tue 2026-10-27 23:00 UTC**, so week-9 predictions count as made in advance. Week 8 completes Sat Oct 24; refresh it Sun Oct 25 or Mon Oct 26 with `make refresh SEASON=2026 WEEK=8 TARGET=aws CONFIRM=yes` (about 4 calls).
+1. **Done: p4 1.4 and 1.5.** The first real odds and Auburn what-if are verified on AWS; see `docs/engine-verification.md` in p4.
+2. **Resume p4 2.1 predictions freeze/grade, plus refresh week 8, before Tue 2026-10-27 23:00 UTC**, so week-9 predictions count as made in advance. Week 8 completes Sat Oct 24; refresh it Sun Oct 25 or Mon Oct 26 with `make refresh SEASON=2026 WEEK=8 TARGET=aws CONFIRM=yes` (about 4 calls).
 3. **p5: slice A (1.1→1.5)**, deployed on both targets.
 4. **p6: 2.2 backend main + users, then 9.7 live routes** over `CFB_API`, then retire the snapshot as the default. This is the point where the app reads the DB live. Nico explicitly wants this.
 5. **p4: 2.2/2.3, then p5 slice B, then p6 9.8**, so the outlook, odds tab and what-if are live.
@@ -126,6 +132,10 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-23: **Paused at Nico's shutdown request.** No agent or DB statement running. Phase 4 2.1 has uncommitted p4 code; focused tests and local DB verification next. Phase 5 1.1 has one new test in p5 and unapplied draft files in `/tmp/p5-stage/`.
+
+- 2026-10-23: **Phase 4 task 1.5 committed** (61708de). `docs/engine-verification.md` records AWS 100k/1M timings, Auburn win/loss, 20-run what-if p95, AP comparison and sizing; decision [47] keeps layout A. Quota unchanged at 241/400.
 
 - 2026-10-23: **AWS 1M simulation and Auburn what-if passed.** Run 2 `DONE` in 32.672 s, engine 25.182 s, 12 instances on 3 nodes; Auburn P(CFP) 4.94% now vs 11.20% if it beats LSU (366,207 matching seasons, 0.155 s query). Post-run quota unchanged at 241/400: zero CFBD calls.
 
