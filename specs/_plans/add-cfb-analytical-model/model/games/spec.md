@@ -155,8 +155,8 @@ Every stored game since 1869 is one row with its result, its pregame Elo and, fr
 
 ### Scenario: The head-to-head series comes from stored games
 
-* *GIVEN* the stored meetings of Ashford and Brookvale: a 7–7 tie in 1950, a Brookvale win in 2014, an Ashford win in 2024 week 14, and the unplayed 2026 week-12 game
+* *GIVEN* the stored meetings of Ashford and Brookvale: a 7–7 tie in 1950, an Ashford 28–14 win in the 1985 SEC championship game, a Brookvale win in 2014, an Ashford win in 2024 week 14, and the unplayed 2026 week-12 game
 * *WHEN* the example analysis `head_to_head.sql` runs for Ashford and Brookvale
-* *THEN* it MUST report 3 meetings with 1 Ashford win, 1 Brookvale win and 1 tie
+* *THEN* it MUST report 4 meetings with 2 Ashford wins, 1 Brookvale win and 1 tie
 * *AND* it MUST name 2024 week 14 as the last meeting and 2026 week 12 as the next one
 * *AND* the mock API MUST NOT receive any request

@@ -1,6 +1,7 @@
 """`make model`, `make model-check`, `make model-docs`, `make model-perf`: the analytical model.
 
     python -m scripts.model deploy [--target local|aws] [--dsn HOST:PORT] [--prefix PREFIX_]
+                                   [--lint-only]
     python -m scripts.model check --season Y --week W [--season-type regular|postseason] [...]
     python -m scripts.model docs
     python -m scripts.model perf [...]
@@ -14,6 +15,8 @@
   as `sys` to the target (`vs/host/target.py`), takes the loader's run lock as kind `DEPLOY` and
   installs `CFB_MODEL` in one transaction (`model/deploy.py`). It refuses while a loader run,
   a snapshot or a restore holds the lock. Zero CFBD calls: the model never reads the virtual schema.
+  `--lint-only` lints and renders only: no target is resolved, no connection is opened. Exit 0 and
+  "lint ok", or 2 with every problem listed.
 - `check` prints `MODEL_CHECKS` for the point `REFRESH_WEEK(season, week, season_type)` addresses,
   without the step script and without writing a log. Exit 1 when an ERROR check failed.
 - `docs` regenerates `docs/model-dictionary.md` from the files (no database).
@@ -89,7 +92,10 @@ class _Command:
 
     def deploy(self) -> int:
         namespace = Namespace(self._args.prefix)
-        model_deploy.prepare(namespace, self._options.directory)
+        objects = model_deploy.prepare(namespace, self._options.directory)
+        if self._args.lint_only:
+            _print(f"lint ok: {len(objects)} objects; nothing sent, 0 CFBD calls")
+            return EXIT_OK
         connection = self._connector(self._resolve(self._args.target, dsn=self._args.dsn))
         try:
             report = model_deploy.deploy_model(connection, namespace, self._options)
@@ -187,7 +193,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     common = _common()
-    commands.add_parser("deploy", parents=[common], help="lint and deploy CFB_MODEL")
+    deploy = commands.add_parser("deploy", parents=[common], help="lint and deploy CFB_MODEL")
+    deploy.add_argument(
+        "--lint-only",
+        action="store_true",
+        help="lint and render sql/model/ only: no connection, exit 0 or 2",
+    )
     check = commands.add_parser("check", parents=[common], help="print MODEL_CHECKS of a point")
     check.add_argument("--season", type=int, required=True)
     check.add_argument("--week", type=int, required=True)

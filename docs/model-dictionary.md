@@ -21,6 +21,10 @@ Every table and view comment starts with its grain, "One row per ...". `Reads` l
 | `SEASON_WEEK` | view | `110_season_week.sql` | One row per season, season type and week that has games or a stored calendar week (regular and postseason only) |
 | `SEASON` | view | `120_season.sql` | One row per season from 1869 to the newest season with stored games, including seasons without games (a gap such as 1871 has HAS_GAMES FALSE) |
 | `VENUE` | view | `130_venue.sql` | One row per venue, as CFBD stored it in CFB_CORE.VENUES (newest fetch wins) |
+| `TEAM` | view | `140_team.sql` | One row per team: every team of the stored team list (CFB_CORE.TEAMS, newest fetch wins) plus every team that appears only in stored games, such as historic programs (IS_IN_TEAM_LIST FALSE, named by its most recent game) |
+| `CONFERENCE` | view | `150_conference.sql` | One row per conference of CFB_CORE.CONFERENCES (newest fetch wins): its CFBD name, short name, abbreviation and classification |
+| `RANKING` | view | `170_ranking.sql` | One row per poll, season, season type, week and ranked team of CFB_CORE.RANKINGS_POLLS_RANKS (stored from 2014; the newest fetch wins, ties within a fetch by the poll's position in the response) |
+| `TEAM_GAME` | view | `200_team_game.sql` | One row per game and named participating team, from that team's side: the game's keys and week, the team and its opponent with conference and classification, the site (HOME, AWAY or NEUTRAL), the result (W, L or T), points for and against and the margin, the game's conference, championship and postseason flags, pregame Elo of both teams, and the pregame spread and win probability from the team's side as fixed-scale DECIMAL |
 
 ## ERA
 
@@ -303,3 +307,113 @@ Reads: `CFB_CORE.VENUES`
 | `IS_DOME` | TRUE when the venue is a dome; NULL when CFBD does not say |
 | `HAS_LOCATION` | TRUE when both latitude and longitude are known, which is when GEO_POINT is not NULL |
 | `GEO_POINT` | Location as a GEOMETRY point with SRID 4326 (x = longitude, y = latitude, degrees); NULL when HAS_LOCATION is FALSE. ST_DISTANCE on it is planar, in degrees: use GREAT_CIRCLE_KM for kilometres, and compare with ST_WITHIN against a polygon cast to GEOMETRY(4326) |
+
+## TEAM
+
+*View, `sql/model/140_team.sql`.*
+
+One row per team: every team of the stored team list (CFB_CORE.TEAMS, newest fetch wins) plus every team that appears only in stored games, such as historic programs (IS_IN_TEAM_LIST FALSE, named by its most recent game). CURRENT_* values are as of the last load of the team list; for any past season use TEAM_SEASON.
+
+Reads: `CFB_CORE.TEAMS`, `CFB_MODEL.GAME`
+
+| Column | Comment |
+|---|---|
+| `TEAM_ID` | CFBD team id |
+| `SCHOOL` | CFBD school name: the name in the stored team list, else the name on the team's most recent stored game. SP+ ratings and games identify teams by this name |
+| `MASCOT` | Mascot as the team list reports it; NULL for a team that is not in the list |
+| `ABBREVIATION` | Abbreviation as the team list reports it; NULL for a team that is not in the list |
+| `ALTERNATE_NAMES` | Alternate names as the team list reports them (a JSON array as text); NULL for a team that is not in the list |
+| `CURRENT_CONFERENCE` | Conference as of the last load of the team list, CFBD name. Not a historical value: use TEAM_SEASON for the conference of any past season. NULL for a team that is not in the list |
+| `CURRENT_DIVISION` | Division as of the last load of the team list; NULL when none or when the team is not in the list. Use TEAM_SEASON for past seasons |
+| `CURRENT_CLASSIFICATION` | Classification (fbs, fcs, ii or iii) as of the last load of the team list; NULL for a team that is not in the list. Use TEAM_SEASON for the classification of a past season |
+| `HOME_VENUE_ID` | CFBD id of the team's current home venue (VENUE.VENUE_ID); NULL for a team that is not in the list |
+| `IS_IN_TEAM_LIST` | TRUE when the team is in the stored team list (CFB_CORE.TEAMS); FALSE for a team that appears only in stored games |
+| `FIRST_SEASON` | First season with a stored game of the team; NULL when no stored game has it |
+| `LAST_SEASON` | Last season with a stored game of the team; NULL when no stored game has it |
+| `LISTED_AT` | When the team list row shown was fetched (REQ_AT, UTC); NULL for a team that is not in the list |
+
+## CONFERENCE
+
+*View, `sql/model/150_conference.sql`.*
+
+One row per conference of CFB_CORE.CONFERENCES (newest fetch wins): its CFBD name, short name, abbreviation and classification. Members, divisions and counts depend on the season: group TEAM_SEASON.
+
+Reads: `CFB_CORE.CONFERENCES`
+
+| Column | Comment |
+|---|---|
+| `CONFERENCE_ID` | CFBD conference id |
+| `CONFERENCE_NAME` | CFBD conference name; the name that games, rankings and memberships carry and that the tier seeds use |
+| `SHORT_NAME` | Short name as CFBD reports it |
+| `ABBREVIATION` | Abbreviation as CFBD reports it |
+| `CLASSIFICATION` | Classification of the conference as CFBD reports it (fbs, fcs, ii or iii); as of the last load of the conference list |
+| `FETCHED_AT` | When the conference row shown was fetched (REQ_AT, UTC) |
+
+## RANKING
+
+*View, `sql/model/170_ranking.sql`.*
+
+One row per poll, season, season type, week and ranked team of CFB_CORE.RANKINGS_POLLS_RANKS (stored from 2014; the newest fetch wins, ties within a fetch by the poll's position in the response). It codes the poll, places the label in the week order (regular week n = n, postseason week n = 100 + n), says from which week the ranking is known (VISIBLE_AT_WEEK_SEQ: the label runs ahead of the games, and the committee's selection ranking is known at the last regular week) and derives IS_FINAL_POLL. For the state at a point use RANKING_AS_OF.
+
+Reads: `CFB_CORE.RANKINGS_POLLS_RANKS`, `CFB_MODEL.SEASON_WEEK`, `CFB_MODEL.POLL`
+
+| Column | Comment |
+|---|---|
+| `SEASON` | Season of the poll |
+| `SEASON_TYPE` | Season type as CFBD labels the poll: regular or postseason |
+| `WEEK` | Week as CFBD labels the poll within the season type. The label can run ahead of the games it reflects: an AP poll labeled week 10 is released after the games of week 9 |
+| `WEEK_SEQ` | Week sequence of the label: regular week n = n, postseason week n = 100 + n, so regular week 1 and postseason week 1 stay separate; NULL for another season type |
+| `POLL_NAME` | CFBD poll name as it appears in the rankings data |
+| `POLL_CODE` | Code from the POLL seed: AP, COACHES, CFP, FCS_COACHES, D2_COACHES or D3_COACHES; OTHER for a poll name that is not in the seed (MODEL_CHECKS: POLL_UNKNOWN) |
+| `POLL_RANK` | Position in the poll (1 = best); tied teams share a position as CFBD reports it |
+| `TEAM_ID` | CFBD team id of the ranked team (TEAM.TEAM_ID) |
+| `SCHOOL` | School name as the poll reports it |
+| `CONFERENCE` | Conference of the team as the poll reports it (CFBD name) |
+| `FIRST_PLACE_VOTES` | First-place votes as CFBD reports them; NULL for polls without votes, such as the committee |
+| `POINTS` | Poll points as CFBD reports them |
+| `VISIBLE_AT_WEEK_SEQ` | Week sequence from which the ranking is known by the label rule: the label's WEEK_SEQ minus the poll's label lead for regular labels (0 = before the first game), the label's own WEEK_SEQ for postseason labels, and the last regular week of the season for a poll whose final ranking comes before the postseason (the committee's selection ranking). The as-of views also show a ranking fetched before the point's cutoff; historic seasons use the label rule alone. NULL when WEEK_SEQ is NULL |
+| `IS_FINAL_POLL` | Derived, as the stored ranks do not carry CFBD's isFinal: TRUE for postseason-labeled polls released after the postseason, and for the committee's last stored ranking of a season whose regular-season weeks are all done (SEASON_WEEK.IS_DONE); FALSE for a season in progress |
+| `FETCHED_AT` | When the row shown was fetched from CFBD (REQ_AT, UTC); the as-of views compare it with the cutoff |
+
+## TEAM_GAME
+
+*View, `sql/model/200_team_game.sql`.*
+
+One row per game and named participating team, from that team's side: the game's keys and week, the team and its opponent with conference and classification, the site (HOME, AWAY or NEUTRAL), the result (W, L or T), points for and against and the margin, the game's conference, championship and postseason flags, pregame Elo of both teams, and the pregame spread and win probability from the team's side as fixed-scale DECIMAL. A game gives two rows; a side that CFBD lists without a team id gives none, so a placeholder game has no row. The shape for records, head-to-head series and upset analyses; earlier seasons are fully known. For a state as of a week use GAME_AS_OF.
+
+Reads: `CFB_MODEL.GAME`
+
+| Column | Comment |
+|---|---|
+| `GAME_ID` | CFBD game id (GAME.GAME_ID); with TEAM_ID it identifies the row |
+| `SEASON` | Season of the game |
+| `SEASON_TYPE` | CFBD season type of the game: regular or postseason |
+| `WEEK` | Week as CFBD labels it within the season type |
+| `WEEK_SEQ` | Week sequence (SEASON_WEEK.WEEK_SEQ): regular week n = n, postseason week n = 100 + n; NULL for other season types |
+| `START_AT` | Kickoff in UTC as stored; historic games often carry a date with a nominal time |
+| `TEAM_ID` | CFBD team id of the team whose side the row shows; never NULL |
+| `TEAM_NAME` | CFBD school name of the team |
+| `TEAM_CONFERENCE` | Conference recorded on the game for the team (CFBD name); NULL for independents of early eras |
+| `TEAM_CLASSIFICATION` | Classification of the team in the game: fbs, fcs, ii or iii (GAME.HOME_CLASSIFICATION or AWAY_CLASSIFICATION) |
+| `OPPONENT_ID` | CFBD team id of the other team; NULL when CFBD lists the game with one team only |
+| `OPPONENT_NAME` | CFBD school name of the other team |
+| `OPPONENT_CONFERENCE` | Conference recorded on the game for the other team (CFBD name) |
+| `OPPONENT_CLASSIFICATION` | Classification of the other team in the game: fbs, fcs, ii or iii |
+| `IS_HOME_TEAM` | TRUE when CFBD lists the team as the home (first-listed) team, also at a neutral site, where SITE is NEUTRAL for both teams; FALSE for the away team |
+| `SITE` | Where the team played: HOME, AWAY, or NEUTRAL for both teams of a neutral-site game |
+| `HAS_RESULT` | Coverage flag: TRUE when the game is completed with both scores (GAME.HAS_RESULT) |
+| `GAME_RESULT` | Result for the team: W (won), L (lost) or T (tie); NULL without a result |
+| `POINTS_FOR` | Points of the team; NULL without a result |
+| `POINTS_AGAINST` | Points of the opponent; NULL without a result |
+| `MARGIN` | Points for minus points against, DECIMAL(9,0), from the team's side (the home team's GAME.MARGIN, or its negation for the away team); NULL without a result |
+| `IS_CONFERENCE_GAME` | CFBD conferenceGame of the game (GAME.IS_CONFERENCE_GAME); conference records leave out conference championship games |
+| `IS_CONF_CHAMPIONSHIP` | TRUE when the game is a detected conference championship game (GAME.IS_CONF_CHAMPIONSHIP) |
+| `POSTSEASON_KIND` | NULL outside the postseason; else CFP (College Football Playoff), BOWL (any other postseason game with an FBS team) or NON_FBS (postseason game without an FBS team) |
+| `CFP_ROUND` | CFP games only: CFBD playoff round code, for example firstRound, quarterfinal, semifinal or championship |
+| `PARTICIPANTS_RULE` | When the teams of the game were known (GAME.PARTICIPANTS_RULE): CONF_CHAMPIONSHIP, SELECTION, PREVIOUS_ROUND or FIXED |
+| `TEAM_PREGAME_ELO` | CFBD pregame Elo of the team (integer); CFBD fits Elo on all seasons, so historic values may embed later methodology |
+| `OPPONENT_PREGAME_ELO` | CFBD pregame Elo of the opponent (integer) |
+| `TEAM_POSTGAME_ELO` | CFBD postgame Elo of the team (integer); set for completed games |
+| `TEAM_SPREAD` | Pregame spread from the team's side, DECIMAL(6,2): the stored spread for the home team and its negation for the away team (negative when the team is favored); the cast rounds, and an exact binary tie may land one last place off. NULL without a line |
+| `TEAM_PREGAME_WIN_PROB` | Pregame win probability of the team, DECIMAL(5,4) (0 to 1): GAME.HOME_PREGAME_WIN_PROB for the home team, one minus it for the away team; the cast rounds, and an exact binary tie may land one last place off. NULL without a line |
+| `HAS_PREGAME_WP` | Coverage flag: TRUE when a pregame line is stored for the game (CFBD has them from 2013) |

@@ -147,6 +147,34 @@ def test_lint_errors_are_listed_and_nothing_is_sent(
     assert calls.targets == []
 
 
+def test_lint_only_lints_and_renders_without_a_connection(
+    calls: Calls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(calls, "deploy", "--lint-only") == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert out.startswith("lint ok: 4 objects") and out.rstrip().endswith("0 CFBD calls")
+    assert calls.connections == [] and calls.targets == []
+
+
+def test_lint_only_lists_every_problem_and_exits_2(
+    calls: Calls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(calls, "deploy", "--lint-only", options=BROKEN) == cli.EXIT_ERROR
+    captured = capsys.readouterr()
+    assert "nothing was sent" in captured.err and "100_game_a.sql" in captured.err
+    assert "lint ok" not in captured.out
+    assert calls.connections == [] and calls.targets == []
+
+
+def test_lint_only_accepts_a_prefix_and_rejects_a_bad_one(
+    calls: Calls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(calls, "deploy", "--lint-only", "--prefix", "TEST_") == cli.EXIT_OK
+    assert run(calls, "deploy", "--lint-only", "--prefix", "test") == cli.EXIT_ERROR
+    assert "prefix" in capsys.readouterr().err
+    assert calls.connections == []
+
+
 def test_a_held_run_lock_is_a_refusal_with_exit_1(
     calls: Calls, capsys: pytest.CaptureFixture[str]
 ) -> None:

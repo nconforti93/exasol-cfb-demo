@@ -22,9 +22,9 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [x] 3.2 `020_great_circle_km.sql`, `130_venue.sql`
 
 ## Group D
-- [ ] 3.3 `140_team.sql`, `150_conference.sql` (read `GAME`)
-- [ ] 3.4 `200_team_game.sql` (reads `GAME`)
-- [ ] 3.5 `170_ranking.sql` (reads `SEASON_WEEK`)
+- [x] 3.3 `140_team.sql`, `150_conference.sql` (read `GAME`)
+- [x] 3.4 `200_team_game.sql` (reads `GAME`)
+- [x] 3.5 `170_ranking.sql` (reads `SEASON_WEEK`)
 
 ## Group E
 - [ ] 3.6 `160_rating_sp.sql` (reads `TEAM`)

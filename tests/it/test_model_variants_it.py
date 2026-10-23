@@ -17,7 +17,7 @@ import pytest
 
 from tests.it.harness import Harness
 from tests.synthetic import league_teams as lt
-from tests.synthetic.league import FETCHED_LATER, with_duplicate_rows
+from tests.synthetic.league import FETCHED_LATER, FETCHED_LATER_RANKINGS, with_duplicate_rows
 
 PLAN_VARIANT = "model"
 pytestmark = pytest.mark.it
@@ -129,3 +129,31 @@ def test_classification_from_transition_seed(harness: Harness, northam_transitio
         f"WHERE SEASON = 2024 AND HOME_TEAM_ID = {NORTHAM}"
     )
     assert outside in ([], [("fbs",)])
+
+
+def test_duplicate_ranking_appears_once(harness: Harness) -> None:
+    """Scenario ratings-rankings: A rating or a ranking stored twice appears once (the `RANKING`
+    part: the 2026 AP poll labeled week 9 is in the season slice and in a later week slice)."""
+    harness.seed_league(with_duplicate_rows)
+    where = "SEASON = 2026 AND SEASON_TYPE = 'regular' AND WEEK = 9 AND POLL = 'AP Top 25'"
+    stored = harness.query(
+        "SELECT COUNT(*), COUNT(DISTINCT TEAM_ID) "
+        f"FROM {harness.core}.RANKINGS_POLLS_RANKS WHERE {where}"
+    )
+    assert stored[0][0] == 2 * stored[0][1] > 0
+    rows = harness.query_dicts(
+        f"SELECT * FROM {harness.model}.RANKING WHERE SEASON = 2026 AND WEEK = 9 "
+        "AND POLL_NAME = 'AP Top 25' ORDER BY POLL_RANK"
+    )
+    assert len(rows) == stored[0][1]
+    assert len({row["TEAM_ID"] for row in rows}) == len(rows)
+    assert {moment(row["FETCHED_AT"]) for row in rows} == {FETCHED_LATER_RANKINGS}
+    others = harness.query(
+        f"SELECT COUNT(*) FROM {harness.model}.RANKING WHERE SEASON = 2026 AND NOT "
+        "(WEEK = 9 AND POLL_NAME = 'AP Top 25')"
+    )
+    expected = harness.query(
+        f"SELECT COUNT(*) FROM {harness.core}.RANKINGS_POLLS_RANKS WHERE SEASON = 2026 AND NOT "
+        "(WEEK = 9 AND POLL = 'AP Top 25')"
+    )
+    assert others == expected
