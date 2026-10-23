@@ -162,7 +162,7 @@ The as-of helpers are parameter-dimension views: `AS_OF_POINT` is joined to the 
 | 020 | `GREAT_CIRCLE_KM` | function | one value per call | — |
 | 090 | `CONFERENCE_CHAMPIONSHIP_GAME` | view | detected conference championship game | `GAMES`, `CONFERENCE_CHAMPIONSHIP`, `CONFERENCE_TIER` (power-conference championship week, X1) |
 | 100 | `GAME` | view | game (deduplicated by game id) | `GAMES`, `METRICS_WP_PREGAME`, `VENUES`, `CONFERENCE_CHAMPIONSHIP_GAME`, `CLASSIFICATION_TRANSITION`, `DATASET` (`PLAYS_ACCESS`) |
-| 110 | `SEASON_WEEK` | view | season, season type and week | `GAME`, `CALENDAR` |
+| 110 | `SEASON_WEEK` | view | season, season type and week | `GAMES` (deduplicated like `GAME`, decision [33]), `CALENDAR` |
 | 120 | `SEASON` | view | season from 1869 to the newest season with games | `ERA`, `GAME`, `GAMES` (newest season) |
 | 130 | `VENUE` | view | venue | `VENUES` |
 | 140 | `TEAM` | view | team, listed or seen in games | `TEAMS`, `GAME` |

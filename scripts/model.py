@@ -4,7 +4,7 @@
                                    [--lint-only]
     python -m scripts.model check --season Y --week W [--season-type regular|postseason] [...]
     python -m scripts.model docs
-    python -m scripts.model perf [...]
+    python -m scripts.model perf [--prefix PERF_] [--season Y] [--week-seq N] [--drop] [...]
 
     make model [TARGET=local|aws] [ARGS="--prefix TEST_"]
     make model-check SEASON=y WEEK=w [SEASON_TYPE=postseason] [TARGET=local|aws]
@@ -20,9 +20,14 @@
 - `check` prints `MODEL_CHECKS` for the point `REFRESH_WEEK(season, week, season_type)` addresses,
   without the step script and without writing a log. Exit 1 when an ERROR check failed.
 - `docs` regenerates `docs/model-dictionary.md` from the files (no database).
-- `perf` is implemented with the performance smoke (task 3.7) and refuses until then.
+- `perf` seeds the scaled synthetic league into the `PERF_` namespace when it is not stored yet
+  (`tests/it/model_support.py`, no CFBD call, no virtual schema), deploys the model there under the
+  run lock, times the probes of `model/perf.py` (3 warm-ups, 5 runs, query cache off) and prints
+  median, worst and a verdict per probe. `--drop` removes the namespace afterwards, also when a
+  probe fails. It only runs against the `PERF_` namespace, never the real one.
 
-Exit codes: 0 ok, 1 refused (the run lock is held, or an ERROR check failed), 2 error.
+Exit codes: 0 ok, 1 refused (the run lock is held, an ERROR check failed, or a probe is over its
+target), 2 error.
 """
 
 from __future__ import annotations
@@ -36,6 +41,7 @@ from typing import Any
 from loader.runlock import RunLockError, RunLockRefused
 from model import deploy as model_deploy
 from model import dictionary
+from model import perf as model_perf
 from model.deploy import ModelLintError, ModelOptions
 from vs.cfbd_vs.sqlrender import qualified_name, string_literal
 from vs.host import target
@@ -59,7 +65,10 @@ EXIT_OK = 0
 EXIT_REFUSED = 1
 EXIT_ERROR = 2
 
+PERF_PREFIX = "PERF_"
+
 Connector = Callable[[target.Target], Any]
+Seeder = Callable[[Any, Namespace, Callable[[str], None]], None]
 
 
 class Refused(Exception):
@@ -69,6 +78,13 @@ class Refused(Exception):
 def connect_sys(deployment: target.Target) -> Any:
     """A sys connection to the target; the password comes from its secrets file."""
     return deployment.connect()
+
+
+def seed_scaled_league(connection: Any, namespace: Namespace, log: Callable[[str], None]) -> None:
+    """Deploy the foundation of `namespace` and store the scaled league unless it is stored."""
+    from tests.it import model_support
+
+    model_support.seed_scaled_namespace(connection, namespace, log=log)
 
 
 def _print(line: str) -> None:
@@ -83,12 +99,14 @@ class _Command:
         resolve: Callable[..., target.Target],
         options: ModelOptions,
         docs_path: Path,
+        seeder: Seeder,
     ) -> None:
         self._args = args
         self._connector = connector
         self._resolve = resolve
         self._options = options
         self._docs_path = docs_path
+        self._seeder = seeder
 
     def deploy(self) -> int:
         namespace = Namespace(self._args.prefix)
@@ -125,10 +143,53 @@ class _Command:
         return EXIT_OK
 
     def perf(self) -> int:
-        raise DeployError(
-            "model-perf is implemented with the performance smoke (task 3.7 of "
-            "add-cfb-analytical-model); it does nothing yet"
+        if self._args.prefix != PERF_PREFIX:
+            raise DeployError(
+                f"perf runs only in the {PERF_PREFIX} namespace (got prefix "
+                f"{self._args.prefix!r}); the real model is never seeded with synthetic games"
+            )
+        namespace = Namespace(self._args.prefix)
+        connection = self._connector(self._resolve(self._args.target, dsn=self._args.dsn))
+        try:
+            try:
+                timings = self._measure(connection, namespace)
+            finally:
+                if self._args.drop:
+                    _drop_namespace(connection, namespace)
+        finally:
+            connection.close()
+        for line in model_perf.report(timings):
+            _print(line)
+        over = model_perf.misses(timings)
+        if over:
+            names = ", ".join(t.probe.name for t in over)
+            raise Refused(f"{len(over)} probe(s) over target: {names}")
+        return EXIT_OK
+
+    def _measure(self, connection: Any, namespace: Namespace) -> list[model_perf.Timing]:
+        self._seeder(connection, namespace, _print)
+        for line in model_deploy.deploy_model(connection, namespace, self._options).lines:
+            _print(line)
+        probes = model_perf.probes(
+            namespace, season=self._args.season, week_seq=self._args.week_seq
         )
+        return model_perf.run_probes(
+            connection, probes, warmups=self._args.warmups, runs=self._args.runs
+        )
+
+
+def _drop_namespace(connection: Any, namespace: Namespace) -> None:
+    schemas = (
+        namespace.model_schema,
+        namespace.stage_schema,
+        namespace.restore_schema,
+        namespace.core_schema,
+        namespace.meta_schema,
+        namespace.infra_schema,
+    )
+    for schema in schemas:
+        connection.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+    _print(f"dropped {', '.join(schemas)}")
 
 
 def _checks(
@@ -204,7 +265,15 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--week", type=int, required=True)
     check.add_argument("--season-type", default="regular", choices=SEASON_TYPES)
     commands.add_parser("docs", help="regenerate docs/model-dictionary.md")
-    commands.add_parser("perf", parents=[common], help="time the model on the scaled league")
+    timing = commands.add_parser(
+        "perf", parents=[_common()], help="time the model on the scaled league (PERF_ namespace)"
+    )
+    timing.set_defaults(prefix=PERF_PREFIX)
+    timing.add_argument("--season", type=int, default=model_perf.DEFAULT_SEASON)
+    timing.add_argument("--week-seq", type=int, default=model_perf.DEFAULT_WEEK_SEQ)
+    timing.add_argument("--warmups", type=int, default=model_perf.DEFAULT_WARMUPS)
+    timing.add_argument("--runs", type=int, default=model_perf.DEFAULT_RUNS)
+    timing.add_argument("--drop", action="store_true", help="drop the namespace afterwards")
     return parser
 
 
@@ -215,9 +284,10 @@ def main(
     resolve: Callable[..., target.Target] = target.resolve,
     options: ModelOptions | None = None,
     docs_path: Path = dictionary.DICTIONARY_PATH,
+    seeder: Seeder = seed_scaled_league,
 ) -> int:
     args = _parser().parse_args(argv)
-    command = _Command(args, connector, resolve, options or ModelOptions(), docs_path)
+    command = _Command(args, connector, resolve, options or ModelOptions(), docs_path, seeder)
     try:
         run: Callable[[], int] = getattr(command, args.command)
         return run()

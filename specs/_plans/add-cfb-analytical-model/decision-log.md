@@ -391,6 +391,21 @@ Coverage flags must say what is trustworthy per season.
 | Q12 | SP+ team names equal `TEAMS.SCHOOL` for 2013–2026, and the national-averages row is the team `nationalAverages` | `SP_TEAM_UNMATCHED` passes; `SELECT DISTINCT TEAM FROM CFB_CORE.RATINGS_SP WHERE TEAM NOT IN (SELECT SCHOOL FROM CFB_CORE.TEAMS)` | Add an alias seed (name → team id) and match through it; fix the pseudo-team name |
 | Q13 | 0.95 of completed FBS-vs-FBS games have a pregame line in every finished season from 2013 | `SELECT SEASON, MEASURED_SHARE, TRUST_LEVEL FROM CFB_MODEL.SEASON_COVERAGE WHERE DATASET_CODE = 'PREGAME_WP' ORDER BY 1` | Set `DATASET.COMPLETE_SHARE` for `PREGAME_WP` just below the typical share of finished seasons, and record the shares |
 
+### [33] Pushdown-driven restructurings from the performance smoke (task 3.7)
+
+- **Decision:**
+  - `SEASON_WEEK` reads `CFB_CORE.GAMES` with `GAME`'s deduplication rule, instead of reading `GAME`.
+  - Window functions sit in their own step, never in the `GROUP BY` step.
+  - `TEAM_GAME` reads `GAME` once, cross-joined with `(VALUES (1),(2)) AS x(SIDE)`, instead of a two-branch `UNION ALL`.
+  - Later as-of views read `GAME` at most once per query.
+- **Alternatives:** keep the plan's read graph and materialize the slow views (3.7b).
+- **Rationale:** measured on the 252k-game scaled league, with output proven identical by `MINUS` in both directions.
+  - Exasol evaluated a view referenced twice in one query once, without the season filter. Example: one as-of point read all 250k games, 1.75 s → 0.37 s.
+  - A window in the `GROUP BY` step blocked the season filter: one season of `SEASON_WEEK` took 1.0 s → 0.2 s.
+  - Cost: the dedup rule exists twice (`GAME` and `SEASON_WEEK`).
+  - All 16 probes pass their targets, and 3.7b is not needed.
+- **Promotes to ADR:** no
+
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. -->

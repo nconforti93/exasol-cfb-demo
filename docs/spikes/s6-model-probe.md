@@ -109,3 +109,53 @@ Layout: `F` (120,000 rows = 30 seasons × 2,000 games × 2 `REQ_AT` versions), a
 - **3.11 `MODEL_CHECKS`:** the `UNION ALL` season pushdown works, so no fallback and no inlining in `REFRESH_MODEL` or `make model-check`. Keep the per-branch season filter anyway for the ad-hoc case of a branch that joins a non-seasoned table (not probed).
 - **1.3 lint:** comments over 2000 characters, and everything in the existing plan. **2.3:** read comments from `EXA_ALL_OBJECTS` / `EXA_ALL_COLUMNS` / `EXA_ALL_FUNCTIONS` after the compile pass.
 - **Tests and harness:** open pyexasol with `fetch_mapper=pyexasol.exasol_mapper` where `DECIMAL` values are compared.
+
+## Performance smoke
+
+Task 3.7 of `add-cfb-analytical-model` (review M4), run on the model as it stood after group D: `GAME` stack, `SEASON_WEEK`, `SEASON`, `VENUE`, `TEAM`, `CONFERENCE`, `RANKING`, `TEAM_GAME`. Not yet built: `RATING_SP`, `TEAM_SEASON`, the as-of views, `SEASON_COVERAGE`, `MODEL_CHECKS`, `REFRESH_MODEL` (task 4.3 measures those).
+
+- **Command:** `make model-perf ARGS="--prefix PERF_ [--drop]"` (`scripts/model.py perf`, probes and verdicts in `model/perf.py`). It stores the scaled league in `PERF_` if it is not stored, deploys the model there under the run lock, switches the query cache off, runs each probe 3 times unmeasured and 5 times measured (rows fetched), and prints the median and the worst run. `--drop` removes the six `PERF_CFB_*` schemas afterwards. Exit 1 when a median is over its target. It refuses any prefix but `PERF_`.
+- **Data:** the scaled league, 251,830 games over 1869-2026 (about 2,100 games in a modern season), 8,037 pregame lines (from 2013), 12,225 poll ranks (from 2014), 320 teams, 325 venues, 195 calendar rows. Seeding takes about 45 s.
+- **Runtime:** Exasol Personal local `2026.2.0-nano.3`, 1 node, as `sys`. Zero CFBD calls, no AWS, no virtual schema. The runs were held under the shared IT lock. Per-season probes use season 2019; seasons 2026 (week 7) and 1950 (week 5) gave the same picture for the as-of prototype (0.36 s and 0.36 s, loaded machine).
+- **Targets:** `plan` targets are the Requirements' own. `derived` targets are mine, because the plan names no target for the other views: one season or one as-of point 1 s, a full scan of a narrow view 2 s (the `GAME` grouping's class), a wide unfiltered report 3 s (the `SEASON_COVERAGE` class). The 2x gate applies to both.
+
+### Result
+
+The first column is the last run on the final model, on an idle machine. The second column is the range of the medians over five runs of the final model: run-to-run spread was up to 3x (the same `GAME` grouping took 0.7 to 2.3 s), correlated with host load, so read the range as the honest error bar.
+
+| Probe | Basis | Target s | Median s (idle) | Range of medians s | Rows | Verdict |
+|---|---|---|---|---|---|---|
+| `SELECT SEASON, COUNT(*) FROM GAME GROUP BY SEASON` | plan | 2 | 0.72 | 0.72-2.30 | 157 | pass; at the top of the range 1.15x over |
+| `GAME` one season | derived | 1 | 0.22 | 0.22-0.86 | 2120 | pass |
+| `TEAM_GAME` one season | derived | 1 | 0.26 | 0.26-1.00 | 4240 | pass (after restructuring, below) |
+| `TEAM_GAME` grouped by season | derived | 3 | 0.76 | 0.76-2.75 | 157 | pass |
+| `CONFERENCE_CHAMPIONSHIP_GAME` in full | derived | 2 | 0.70 | 0.59-2.04 | 198 | pass; marginal under load |
+| `CONFERENCE_CHAMPIONSHIP_GAME` one season | derived | 1 | 0.06 | 0.06-0.38 | 10 | pass |
+| `SEASON_WEEK` in full | derived | 2 | 0.27 | 0.27-1.41 | 1920 | pass (after restructuring) |
+| `SEASON_WEEK` one season | derived | 1 | 0.07 | 0.04-0.28 | 14 | pass (after restructuring) |
+| `SEASON` in full | derived | 2 | 0.77 | 0.72-2.09 | 158 | pass; marginal under load |
+| `TEAM` in full | derived | 3 | 1.32 | 1.32-3.68 | 320 | pass; 1.2x over at the top of the range |
+| `CONFERENCE` in full | derived | 2 | 0.03 | 0.01-0.05 | 31 | pass |
+| `VENUE` in full | derived | 2 | 0.02 | 0.02-0.06 | 325 | pass |
+| `RANKING` one season | derived | 1 | 0.07 | 0.07-0.21 | 975 | pass (after restructuring `SEASON_WEEK`) |
+| `RANKING` in full | derived | 3 | 0.41 | 0.35-1.11 | 12225 | pass |
+| as-of prototype, one point (`SEASON_WEEK` x `GAME`, participants filter) | plan | 1 | 0.20 | 0.16-0.51 | 2025 | pass (after restructuring `SEASON_WEEK`) |
+| as-of prototype, every point of one season | derived | 3 | 0.27 | 0.24-0.68 | 28505 | pass |
+
+No probe was ever more than 2x over its target in any run, so the materialization fallback (decision [2], task 3.7b) is **not needed**. The probes nearest their targets are the two that read all 250,000 games through the `GAME` stack: the `GAME` grouping and `TEAM`. Re-measure them on the full model (4.3) and on AWS (7.3).
+
+### Restructurings
+
+Two views were restructured, and one was left alone although it benefits. Same-session before and after numbers (the machine was loaded, so the absolute values are higher than in the table above).
+
+1. **`SEASON_WEEK`: season-wide window moved out of the `GROUP BY` step.** `MAX(MAX(FETCHED_AT)) OVER (PARTITION BY SEASON)` sat in the same `SELECT` as the `GROUP BY` of the weeks; with it, the season filter did not reach `GAMES` (the profile shows all 251,830 rows through the dedupe window and 1,920 groups, filtered only at the end). The window is now its own step (`dated`) over the grouped weeks. Same rows. One season: 1.0 s to 0.2 s.
+2. **`SEASON_WEEK`: reads `CFB_CORE.GAMES` with `GAME`'s deduplication instead of `GAME`.** The weeks need six columns of the game and none of `GAME`'s venue, line, classification, round and championship logic. More important, the as-of views join `SEASON_WEEK` to `GAME`; with both reading `GAME`, Exasol evaluated `GAME` once for the whole query without the season filter, so one as-of point scanned all 250,000 games. Full view 0.95 s to 0.44 s, one season 0.2 s to 0.09 s, and the one-point join (a `GAME_AS_OF` shaped view over both, filtered on its columns) 1.75 s to 0.37 s. `IS_COMPLETED`, `START_AT` and `FETCHED_AT` are `GAME`'s own definitions of those columns. Output identical to the previous version (`MINUS` both ways, 0 rows). Cost: the deduplication rule exists twice, and the plan's dependency table (`SEASON_WEEK` reads `GAME`, `CALENDAR`) becomes `GAMES`, `CALENDAR`. This change is below the 2x gate (the one-point prototype was 1.2 to 1.4 s against 1 s); it is made because 3.9 builds on it. Reverting it is the single file `sql/model/110_season_week.sql`.
+3. **`TEAM_GAME`: `GAME` is read once.** The home and away branches were a `UNION ALL` over two references to `GAME`. The profile shows the championship detection under the second reference running over every season (251,830 rows through a window) while the first branch was filtered to the season. `GAME` is now crossed with a two-row `VALUES` list (`SIDE` 1 = home, 2 = away) and each column picks its side. (`SELECT 1 UNION ALL SELECT 2` also works but adds a `SYS.DUAL` dependency, which the model's dependency integration test rejects.) One season 1.1 s to 0.36 s, grouped by season 3.2 s to 1.5 s. Output identical to the previous version over all 503,660 rows (`MINUS` both ways, 0 rows).
+4. **`TEAM`: not changed.** It has the same two-branch `GAME` unpivot (`sides`). The same cross join measured 30 % faster (2.3 s to 1.6 s, 3.6 s to 2.6 s, loaded) with identical output. `TEAM` is inherently unfiltered and within 2x of its target, so it stays as it is; apply the cross join if 4.3 or 7.3 finds `TEAM` over target.
+
+### What Exasol does with these views (for 3.8 to 3.11)
+
+- **A window over a `GROUP BY` result in the same step stops the season filter from reaching the scan.** Keep each window in its own step over the grouped rows.
+- **A view that appears twice in one query is evaluated once, without either occurrence's filter, when the two references share a sub-expression.** That is how `UNION ALL` of two `GAME` branches, and `SEASON_WEEK` next to `GAME`, lost the season filter. `TEAM_SEASON`, `TEAM_SEASON_AS_OF` and `GAME_AS_OF` will combine `GAME`, `TEAM_GAME`, `RANKING` and `SEASON_WEEK`: read `GAME` at most once per query, directly or through another view, and measure each as-of view with the profile (`EXA_USER_PROFILE_LAST_DAY`, rows out of the scan of `GAMES`) as well as the clock.
+- **A constant filter reaches both sides of an equi-join on the season only when it sits above the join.** In `SEASON_WEEK` x `GAME ON SEASON`, a filter inside the points side left `GAME` unfiltered (1.2 s); the same filter on the view's `AS_OF_SEASON` column above the join read 2,120 games (0.37 s). Filter the as-of views through their `AS_OF_*` columns, as the plan has it, and put no season constant inside one side.
+- **Run-to-run spread is large on this host** (up to 3x). Compare restructurings in one session, side by side, and judge a target by the idle median plus the range.

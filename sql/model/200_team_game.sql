@@ -1,10 +1,12 @@
 -- The game from each participating team's side (model/games): one row per game and named team, built
 -- from GAME (which already holds the deduplicated newest fetch), so a game stored more than once still
 -- gives two rows. A side without a team id has no row (a placeholder, decision [30]), so a game with
--- one named team gives one row whose opponent columns are NULL. UNION ALL of the home and the away
--- branch over GAME: a season filter reaches the scans of both (probe 1.1g), and there is no join to a
--- prior season. Real values keep GAME's fixed scale; the cast rounds (probe 1.1i), the negation and
--- the complement stay inside DECIMAL(6,2) and DECIMAL(5,4).
+-- one named team gives one row whose opponent columns are NULL. GAME is read once and crossed with
+-- a two-row VALUES list (1 = home, 2 = away; a SELECT without FROM would add a SYS.DUAL dependency):
+-- a season filter reaches the scan, and there is no join to a prior season. A UNION ALL of two GAME
+-- branches read it twice, and Exasol then evaluated the championship detection under it over every
+-- season (task 3.7: 3x slower for one season). Real values keep GAME's fixed scale; the cast rounds
+-- (probe 1.1i), the negation and the complement stay inside DECIMAL(6,2) and DECIMAL(5,4).
 CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.TEAM_GAME (
   GAME_ID                COMMENT IS 'CFBD game id (GAME.GAME_ID); with TEAM_ID it identifies the row',
   SEASON                 COMMENT IS 'Season of the game',
@@ -45,71 +47,39 @@ SELECT g.GAME_ID,
        g.WEEK,
        g.WEEK_SEQ,
        g.START_AT,
-       g.HOME_TEAM_ID,
-       g.HOME_TEAM,
-       g.HOME_CONFERENCE,
-       g.HOME_CLASSIFICATION,
-       g.AWAY_TEAM_ID,
-       g.AWAY_TEAM,
-       g.AWAY_CONFERENCE,
-       g.AWAY_CLASSIFICATION,
-       TRUE,
-       CASE WHEN g.IS_NEUTRAL_SITE THEN 'NEUTRAL' ELSE 'HOME' END,
+       CASE WHEN x.SIDE = 1 THEN g.HOME_TEAM_ID ELSE g.AWAY_TEAM_ID END,
+       CASE WHEN x.SIDE = 1 THEN g.HOME_TEAM ELSE g.AWAY_TEAM END,
+       CASE WHEN x.SIDE = 1 THEN g.HOME_CONFERENCE ELSE g.AWAY_CONFERENCE END,
+       CASE WHEN x.SIDE = 1 THEN g.HOME_CLASSIFICATION ELSE g.AWAY_CLASSIFICATION END,
+       CASE WHEN x.SIDE = 1 THEN g.AWAY_TEAM_ID ELSE g.HOME_TEAM_ID END,
+       CASE WHEN x.SIDE = 1 THEN g.AWAY_TEAM ELSE g.HOME_TEAM END,
+       CASE WHEN x.SIDE = 1 THEN g.AWAY_CONFERENCE ELSE g.HOME_CONFERENCE END,
+       CASE WHEN x.SIDE = 1 THEN g.AWAY_CLASSIFICATION ELSE g.HOME_CLASSIFICATION END,
+       x.SIDE = 1,
+       CASE WHEN g.IS_NEUTRAL_SITE THEN 'NEUTRAL' WHEN x.SIDE = 1 THEN 'HOME' ELSE 'AWAY' END,
        g.HAS_RESULT,
        CASE WHEN g.HAS_RESULT
-            THEN CASE WHEN g.IS_TIE THEN 'T' WHEN g.WINNER_TEAM_ID = g.HOME_TEAM_ID THEN 'W' ELSE 'L' END
+            THEN CASE WHEN g.IS_TIE THEN 'T'
+                      WHEN g.WINNER_TEAM_ID = CASE WHEN x.SIDE = 1 THEN g.HOME_TEAM_ID ELSE g.AWAY_TEAM_ID END THEN 'W'
+                      ELSE 'L' END
        END,
-       g.HOME_POINTS,
-       g.AWAY_POINTS,
-       CAST(g.MARGIN AS DECIMAL(9,0)),
+       CASE WHEN x.SIDE = 1 THEN g.HOME_POINTS ELSE g.AWAY_POINTS END,
+       CASE WHEN x.SIDE = 1 THEN g.AWAY_POINTS ELSE g.HOME_POINTS END,
+       CAST(CASE WHEN x.SIDE = 1 THEN g.MARGIN ELSE -g.MARGIN END AS DECIMAL(9,0)),
        g.IS_CONFERENCE_GAME,
        g.IS_CONF_CHAMPIONSHIP,
        g.POSTSEASON_KIND,
        g.CFP_ROUND,
        g.PARTICIPANTS_RULE,
-       g.HOME_PREGAME_ELO,
-       g.AWAY_PREGAME_ELO,
-       g.HOME_POSTGAME_ELO,
-       CAST(g.PREGAME_SPREAD AS DECIMAL(6,2)),
-       CAST(g.HOME_PREGAME_WIN_PROB AS DECIMAL(5,4)),
+       CASE WHEN x.SIDE = 1 THEN g.HOME_PREGAME_ELO ELSE g.AWAY_PREGAME_ELO END,
+       CASE WHEN x.SIDE = 1 THEN g.AWAY_PREGAME_ELO ELSE g.HOME_PREGAME_ELO END,
+       CASE WHEN x.SIDE = 1 THEN g.HOME_POSTGAME_ELO ELSE g.AWAY_POSTGAME_ELO END,
+       CAST(CASE WHEN x.SIDE = 1 THEN g.PREGAME_SPREAD ELSE -g.PREGAME_SPREAD END AS DECIMAL(6,2)),
+       CAST(CASE WHEN x.SIDE = 1 THEN g.HOME_PREGAME_WIN_PROB ELSE 1 - g.HOME_PREGAME_WIN_PROB END
+            AS DECIMAL(5,4)),
        g.HAS_PREGAME_WP
   FROM {MODEL_SCHEMA}.GAME g
- WHERE g.HOME_TEAM_ID IS NOT NULL
-UNION ALL
-SELECT g.GAME_ID,
-       g.SEASON,
-       g.SEASON_TYPE,
-       g.WEEK,
-       g.WEEK_SEQ,
-       g.START_AT,
-       g.AWAY_TEAM_ID,
-       g.AWAY_TEAM,
-       g.AWAY_CONFERENCE,
-       g.AWAY_CLASSIFICATION,
-       g.HOME_TEAM_ID,
-       g.HOME_TEAM,
-       g.HOME_CONFERENCE,
-       g.HOME_CLASSIFICATION,
-       FALSE,
-       CASE WHEN g.IS_NEUTRAL_SITE THEN 'NEUTRAL' ELSE 'AWAY' END,
-       g.HAS_RESULT,
-       CASE WHEN g.HAS_RESULT
-            THEN CASE WHEN g.IS_TIE THEN 'T' WHEN g.WINNER_TEAM_ID = g.AWAY_TEAM_ID THEN 'W' ELSE 'L' END
-       END,
-       g.AWAY_POINTS,
-       g.HOME_POINTS,
-       CAST(-g.MARGIN AS DECIMAL(9,0)),
-       g.IS_CONFERENCE_GAME,
-       g.IS_CONF_CHAMPIONSHIP,
-       g.POSTSEASON_KIND,
-       g.CFP_ROUND,
-       g.PARTICIPANTS_RULE,
-       g.AWAY_PREGAME_ELO,
-       g.HOME_PREGAME_ELO,
-       g.AWAY_POSTGAME_ELO,
-       CAST(-g.PREGAME_SPREAD AS DECIMAL(6,2)),
-       CAST(1 - g.HOME_PREGAME_WIN_PROB AS DECIMAL(5,4)),
-       g.HAS_PREGAME_WP
-  FROM {MODEL_SCHEMA}.GAME g
- WHERE g.AWAY_TEAM_ID IS NOT NULL
+ CROSS JOIN (VALUES (1), (2)) AS x(SIDE)
+ WHERE (x.SIDE = 1 AND g.HOME_TEAM_ID IS NOT NULL)
+    OR (x.SIDE = 2 AND g.AWAY_TEAM_ID IS NOT NULL)
 COMMENT IS 'One row per game and named participating team, from that team''s side: the game''s keys and week, the team and its opponent with conference and classification, the site (HOME, AWAY or NEUTRAL), the result (W, L or T), points for and against and the margin, the game''s conference, championship and postseason flags, pregame Elo of both teams, and the pregame spread and win probability from the team''s side as fixed-scale DECIMAL. A game gives two rows; a side that CFBD lists without a team id gives none, so a placeholder game has no row. The shape for records, head-to-head series and upset analyses; earlier seasons are fully known. For a state as of a week use GAME_AS_OF.';

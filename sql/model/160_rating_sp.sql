@@ -1,0 +1,113 @@
+-- SP+ ratings (model/ratings-rankings): one row per season and team name of CFB_CORE.RATINGS_SP. The newest
+-- fetch of a season and team name wins (REQ_AT, then the later slice key, then the later row), so a promoted
+-- team slice or an overlapping season slice never doubles a team. CFBD's national-averages row (team
+-- 'nationalAverages') is not a team and is left out before anything else. CFBD identifies a team only by
+-- name: TEAM_ID is the team of the TEAM view whose SCHOOL equals the name exactly (for a team that is not in
+-- the team list SCHOOL is the name of its latest stored game; if two teams carried one name, the listed one,
+-- then the lower id, is taken). A name without a match is kept with TEAM_ID NULL and IS_TEAM_MATCHED FALSE.
+-- Overall, offense, defense and special-teams ratings are cast once to DECIMAL(6,2), because the score model
+-- reads them; the parts stay DOUBLE as CFBD reports them. IS_FINAL is the load log's verdict on the slice the
+-- row came from (CFB_META.LOAD_SLICES, the planned slices only: a slice outside the plan counts as not final).
+CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.RATING_SP (
+  SEASON                 COMMENT IS 'Season the rating belongs to (CFBD year). It includes that season''s games, so as a prior for season S use the rating of season S - 1 (TEAM_SEASON.SP_PRIOR_RATING does). CFBD may compute historic seasons with a later methodology than the current one',
+  SCHOOL                 COMMENT IS 'Team name exactly as CFBD reports it with the rating; CFBD gives no team id. Matched to TEAM.SCHOOL',
+  TEAM_ID                COMMENT IS 'CFBD team id of the team whose TEAM.SCHOOL equals SCHOOL; NULL when no team has that name (IS_TEAM_MATCHED FALSE)',
+  IS_TEAM_MATCHED        COMMENT IS 'TRUE when SCHOOL equals the name of a team in TEAM; FALSE keeps the row but without a team id (MODEL_CHECKS: SP_TEAM_UNMATCHED). CFBD''s national-averages row is not kept at all',
+  CONFERENCE             COMMENT IS 'Conference as the SP+ row reports it (CFBD name)',
+  SP_RATING              COMMENT IS 'Overall SP+ rating in points above or below an average team, cast to DECIMAL(6,2) (the cast rounds)',
+  SP_RANKING             COMMENT IS 'Overall SP+ rank (1 = best) as CFBD reports it',
+  OFFENSE_RATING         COMMENT IS 'Offense SP+ rating, DECIMAL(6,2)',
+  OFFENSE_RANKING        COMMENT IS 'Offense SP+ rank as CFBD reports it',
+  DEFENSE_RATING         COMMENT IS 'Defense SP+ rating, DECIMAL(6,2); CFBD reports a better defense as a lower value',
+  DEFENSE_RANKING        COMMENT IS 'Defense SP+ rank as CFBD reports it',
+  SPECIAL_TEAMS_RATING   COMMENT IS 'Special-teams SP+ rating, DECIMAL(6,2)',
+  OFFENSE_SUCCESS        COMMENT IS 'Offense success rate as CFBD reports it',
+  OFFENSE_EXPLOSIVENESS  COMMENT IS 'Offense explosiveness as CFBD reports it',
+  OFFENSE_RUSHING        COMMENT IS 'Offense rushing component as CFBD reports it',
+  OFFENSE_PASSING        COMMENT IS 'Offense passing component as CFBD reports it',
+  OFFENSE_STANDARD_DOWNS COMMENT IS 'Offense standard-downs component as CFBD reports it',
+  OFFENSE_PASSING_DOWNS  COMMENT IS 'Offense passing-downs component as CFBD reports it',
+  OFFENSE_PACE           COMMENT IS 'Offense pace as CFBD reports it',
+  OFFENSE_RUN_RATE       COMMENT IS 'Offense run rate as CFBD reports it',
+  DEFENSE_SUCCESS        COMMENT IS 'Defense success rate as CFBD reports it',
+  DEFENSE_EXPLOSIVENESS  COMMENT IS 'Defense explosiveness as CFBD reports it',
+  DEFENSE_RUSHING        COMMENT IS 'Defense rushing component as CFBD reports it',
+  DEFENSE_PASSING        COMMENT IS 'Defense passing component as CFBD reports it',
+  DEFENSE_STANDARD_DOWNS COMMENT IS 'Defense standard-downs component as CFBD reports it',
+  DEFENSE_PASSING_DOWNS  COMMENT IS 'Defense passing-downs component as CFBD reports it',
+  DEFENSE_HAVOC_TOTAL    COMMENT IS 'Defense havoc rate, total, as CFBD reports it',
+  DEFENSE_HAVOC_FRONT_SEVEN COMMENT IS 'Defense havoc rate of the front seven as CFBD reports it',
+  DEFENSE_HAVOC_DB       COMMENT IS 'Defense havoc rate of the defensive backs as CFBD reports it',
+  STRENGTH_OF_SCHEDULE   COMMENT IS 'Strength of schedule as CFBD reports it (CFBD field sos)',
+  SECOND_ORDER_WINS      COMMENT IS 'Second-order wins as CFBD reports them',
+  IS_FINAL               COMMENT IS 'TRUE when the slice the row came from is registered as final in the load log (CFB_META.LOAD_SLICES.IS_FINAL: a season is final once it was loaded after 15 February of the following year); FALSE for a current season, for a slice that is not final, and for a slice outside the load plan, such as a promoted team slice',
+  FETCHED_AT             COMMENT IS 'When the row shown was fetched from CFBD (REQ_AT, UTC); the as-of views compare it with the cutoff'
+) AS
+WITH ratings AS (
+  SELECT r."YEAR_", r."TEAM", r."CONFERENCE", r."RATING", r."RANKING", r."OFFENSE_RATING",
+         r."OFFENSE_RANKING", r."DEFENSE_RATING", r."DEFENSE_RANKING", r."SPECIAL_TEAMS_RATING",
+         r."OFFENSE_SUCCESS", r."OFFENSE_EXPLOSIVENESS", r."OFFENSE_RUSHING", r."OFFENSE_PASSING",
+         r."OFFENSE_STANDARD_DOWNS", r."OFFENSE_PASSING_DOWNS", r."OFFENSE_PACE", r."OFFENSE_RUN_RATE",
+         r."DEFENSE_SUCCESS", r."DEFENSE_EXPLOSIVENESS", r."DEFENSE_RUSHING", r."DEFENSE_PASSING",
+         r."DEFENSE_STANDARD_DOWNS", r."DEFENSE_PASSING_DOWNS", r."DEFENSE_HAVOC_TOTAL",
+         r."DEFENSE_HAVOC_FRONT_SEVEN", r."DEFENSE_HAVOC_DB", r."SOS", r."SECOND_ORDER_WINS",
+         r."REQ_SLICE", r."REQ_AT"
+    FROM {CORE_SCHEMA}."RATINGS_SP" r
+   WHERE COALESCE(r."TEAM", '') <> 'nationalAverages'
+ QUALIFY ROW_NUMBER() OVER (
+           PARTITION BY r."YEAR_", r."TEAM"
+           ORDER BY r."REQ_AT" DESC, r."REQ_SLICE" DESC, r."ROW_NO" DESC) = 1
+),
+by_name AS (
+  SELECT t."SCHOOL", t."TEAM_ID"
+    FROM {MODEL_SCHEMA}."TEAM" t
+ QUALIFY ROW_NUMBER() OVER (
+           PARTITION BY t."SCHOOL"
+           ORDER BY CASE WHEN t."IS_IN_TEAM_LIST" THEN 0 ELSE 1 END, t."TEAM_ID") = 1
+),
+slice_finality AS (
+  SELECT s."SLICE_KEY",
+         MAX(CASE WHEN s."IS_FINAL" THEN 1 ELSE 0 END) AS "FINAL"
+    FROM {META_SCHEMA}."LOAD_SLICES" s
+   WHERE s."TABLE_NAME" = 'RATINGS_SP'
+   GROUP BY s."SLICE_KEY"
+)
+SELECT CAST(r."YEAR_" AS DECIMAL(4,0)),
+       r."TEAM",
+       n."TEAM_ID",
+       n."TEAM_ID" IS NOT NULL,
+       r."CONFERENCE",
+       CAST(r."RATING" AS DECIMAL(6,2)),
+       r."RANKING",
+       CAST(r."OFFENSE_RATING" AS DECIMAL(6,2)),
+       r."OFFENSE_RANKING",
+       CAST(r."DEFENSE_RATING" AS DECIMAL(6,2)),
+       r."DEFENSE_RANKING",
+       CAST(r."SPECIAL_TEAMS_RATING" AS DECIMAL(6,2)),
+       r."OFFENSE_SUCCESS",
+       r."OFFENSE_EXPLOSIVENESS",
+       r."OFFENSE_RUSHING",
+       r."OFFENSE_PASSING",
+       r."OFFENSE_STANDARD_DOWNS",
+       r."OFFENSE_PASSING_DOWNS",
+       r."OFFENSE_PACE",
+       r."OFFENSE_RUN_RATE",
+       r."DEFENSE_SUCCESS",
+       r."DEFENSE_EXPLOSIVENESS",
+       r."DEFENSE_RUSHING",
+       r."DEFENSE_PASSING",
+       r."DEFENSE_STANDARD_DOWNS",
+       r."DEFENSE_PASSING_DOWNS",
+       r."DEFENSE_HAVOC_TOTAL",
+       r."DEFENSE_HAVOC_FRONT_SEVEN",
+       r."DEFENSE_HAVOC_DB",
+       r."SOS",
+       r."SECOND_ORDER_WINS",
+       CASE WHEN sl."FINAL" = 1 THEN TRUE ELSE FALSE END,
+       r."REQ_AT"
+  FROM ratings r
+  LEFT JOIN by_name n
+    ON n."SCHOOL" = r."TEAM"
+  LEFT JOIN slice_finality sl
+    ON sl."SLICE_KEY" = r."REQ_SLICE"
+COMMENT IS 'One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins). CFBD''s national-averages row is not a team and is left out. TEAM_ID comes from the exact name match with TEAM.SCHOOL; a name without a match is kept with TEAM_ID NULL (MODEL_CHECKS: SP_TEAM_UNMATCHED). The overall, offense, defense and special-teams ratings are DECIMAL(6,2). A season''s SP+ includes that season''s games and historic seasons may use a later methodology: as a prior for season S use S - 1 (TEAM_SEASON.SP_PRIOR_RATING). The current season''s rows are overwritten by each refresh, so the as-of views show them only from their FETCHED_AT.';

@@ -27,8 +27,8 @@ Worktree: ../exasol-cfb-demo-p3 (branch add-cfb-analytical-model, branched from 
 - [x] 3.5 `170_ranking.sql` (reads `SEASON_WEEK`)
 
 ## Group E
-- [ ] 3.6 `160_rating_sp.sql` (reads `TEAM`)
-- [ ] 3.7 Performance smoke on the scaled league (needs 1.6, 3.1, 3.3, 3.4 and a "local free" window)
+- [x] 3.6 `160_rating_sp.sql` (reads `TEAM`)
+- [x] 3.7 Performance smoke on the scaled league (needs 1.6, 3.1, 3.3, 3.4 and a "local free" window)
 
 ## Group F
 - [ ] 3.8 `210_team_season.sql` : [expert]

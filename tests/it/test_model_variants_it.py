@@ -17,7 +17,12 @@ import pytest
 
 from tests.it.harness import Harness
 from tests.synthetic import league_teams as lt
-from tests.synthetic.league import FETCHED_LATER, FETCHED_LATER_RANKINGS, with_duplicate_rows
+from tests.synthetic.league import (
+    FETCHED_LATER,
+    FETCHED_LATER_RANKINGS,
+    with_duplicate_rows,
+    with_nonfinal_prior,
+)
 
 PLAN_VARIANT = "model"
 pytestmark = pytest.mark.it
@@ -157,3 +162,50 @@ def test_duplicate_ranking_appears_once(harness: Harness) -> None:
         "(WEEK = 9 AND POLL = 'AP Top 25')"
     )
     assert others == expected
+
+
+def test_duplicate_rating_appears_once(harness: Harness) -> None:
+    """Scenario ratings-rankings: A rating or a ranking stored twice appears once (the
+    `RATING_SP` part: Ashford's 2026 SP+ is in the season slice and in a later team slice)."""
+    harness.seed_league(with_duplicate_rows)
+    ashford = lt.team("Ashford").id
+    assert harness.query(
+        f"SELECT COUNT(*) FROM {harness.core}.RATINGS_SP WHERE YEAR_ = 2026 AND TEAM = 'Ashford'"
+    ) == [(2,)]
+    rows = harness.query_dicts(
+        f"SELECT * FROM {harness.model}.RATING_SP WHERE SEASON = 2026 AND SCHOOL = 'Ashford'"
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["TEAM_ID"] == ashford and row["IS_TEAM_MATCHED"] is True
+    assert Decimal(str(row["SP_RATING"])) == Decimal("24.00")
+    assert moment(row["FETCHED_AT"]) == FETCHED_LATER
+    assert row["IS_FINAL"] is False
+    for season in (2013, 2014, 2023, 2024, 2025, 2026):
+        stored = harness.query(
+            f"SELECT COUNT(DISTINCT TEAM) FROM {harness.core}.RATINGS_SP "
+            f"WHERE YEAR_ = {season} AND TEAM <> 'nationalAverages'"
+        )
+        assert (
+            harness.query(f"SELECT COUNT(*) FROM {harness.model}.RATING_SP WHERE SEASON = {season}")
+            == stored
+        ), season
+
+
+def test_nonfinal_previous_season_slice_is_not_final(harness: Harness) -> None:
+    """Scenario ratings-rankings: A prior that is not final is used and reported (the
+    `RATING_SP` part: the 2025 rows say so; the other seasons keep their own flag)."""
+    harness.seed_league(with_nonfinal_prior)
+    flags = harness.query(
+        f"SELECT SEASON, MIN(CASE WHEN IS_FINAL THEN 1 ELSE 0 END), "
+        f"MAX(CASE WHEN IS_FINAL THEN 1 ELSE 0 END) FROM {harness.model}.RATING_SP "
+        "GROUP BY SEASON ORDER BY SEASON"
+    )
+    assert {row[0]: (row[1], row[2]) for row in flags} == {
+        2013: (1, 1),
+        2014: (1, 1),
+        2023: (1, 1),
+        2024: (1, 1),
+        2025: (0, 0),
+        2026: (0, 0),
+    }

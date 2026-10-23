@@ -1,8 +1,16 @@
--- Weeks of a season (model/seasons-eras). The weeks of GAME and of the stored calendar are combined
--- with UNION ALL and grouped by (season, season type, week), so a season filter reaches both branches
--- (probe 1.1g); a FULL OUTER JOIN on COALESCE keys would hide it. Calendar weeks are deduplicated by
--- (season, season type, week), newest fetch first. IS_DONE needs at least one game for its "all games
--- completed" half, so an empty future calendar week never counts as done.
+-- Weeks of a season (model/seasons-eras). The weeks of the games and of the stored calendar are
+-- combined with UNION ALL and grouped by (season, season type, week), so a season filter reaches
+-- both branches (probe 1.1g); a FULL OUTER JOIN on COALESCE keys would hide it. Calendar weeks are
+-- deduplicated by (season, season type, week), newest fetch first. IS_DONE needs at least one game
+-- for its "all games completed" half, so an empty future calendar week never counts as done.
+-- Two restructurings from the performance smoke (task 3.7):
+-- - The season-wide GAMES_FETCHED_AT is a window over the grouped weeks in its own step, not inside
+--   the GROUP BY step: a window over a GROUP BY result stops the season filter from reaching GAMES.
+-- - The games come from CFB_CORE.GAMES with the same deduplication as GAME (newest fetch first), not
+--   from GAME. Exasol evaluates a view that appears twice in one query once, without either
+--   filter, and the as-of views join SEASON_WEEK to GAME: through GAME, a one-point query scanned
+--   all 250,000 games, and the weeks needed none of GAME's venue, line, round and championship
+--   columns. IS_COMPLETED, START_AT and FETCHED_AT are GAME's definitions of the same columns.
 CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.SEASON_WEEK (
   SEASON               COMMENT IS 'Season',
   SEASON_TYPE          COMMENT IS 'regular or postseason; the only season types with weeks',
@@ -25,6 +33,18 @@ WITH calendar AS (
            PARTITION BY c."SEASON", c."SEASON_TYPE", c."WEEK"
            ORDER BY c."REQ_AT" DESC, c."REQ_SLICE" DESC, c."ROW_NO" DESC) = 1
 ),
+game_rows AS (
+  SELECT d."SEASON", d."SEASON_TYPE", d."WEEK", d."IS_COMPLETED", d."START_AT", d."FETCHED_AT"
+    FROM (SELECT x."SEASON", x."SEASON_TYPE", x."WEEK",
+                 COALESCE(x."COMPLETED", FALSE) AS "IS_COMPLETED",
+                 x."START_DATE" AS "START_AT",
+                 x."REQ_AT" AS "FETCHED_AT"
+            FROM {CORE_SCHEMA}."GAMES" x
+         QUALIFY ROW_NUMBER() OVER (
+                   PARTITION BY x."SEASON", x."ID"
+                   ORDER BY x."REQ_AT" DESC, x."REQ_SLICE" DESC, x."ROW_NO" DESC) = 1) d
+   WHERE d."SEASON_TYPE" IN ('regular', 'postseason') AND d."WEEK" IS NOT NULL
+),
 facts AS (
   SELECT g."SEASON", g."SEASON_TYPE", g."WEEK",
          1 AS "IS_GAME",
@@ -35,8 +55,7 @@ facts AS (
          CAST(NULL AS TIMESTAMP) AS "CALENDAR_END",
          CAST(NULL AS TIMESTAMP) AS "CALENDAR_FIRST_GAME",
          0 AS "IS_CALENDAR"
-    FROM {MODEL_SCHEMA}."GAME" g
-   WHERE g."WEEK_SEQ" IS NOT NULL
+    FROM game_rows g
   UNION ALL
   SELECT k."SEASON", k."SEASON_TYPE", k."WEEK",
          0, 0,
@@ -58,12 +77,13 @@ weeks AS (
          MAX(f."CALENDAR_START") AS "CALENDAR_START",
          MAX(f."CALENDAR_END") AS "CALENDAR_END",
          MAX(f."CALENDAR_FIRST_GAME") AS "CALENDAR_FIRST_GAME",
-         MAX(MAX(f."FETCHED_AT")) OVER (PARTITION BY f."SEASON") AS "GAMES_FETCHED_AT"
+         MAX(f."FETCHED_AT") AS "WEEK_FETCHED_AT"
     FROM facts f
    GROUP BY f."SEASON", f."SEASON_TYPE", f."WEEK"
 ),
 dated AS (
   SELECT w.*,
+         MAX(w."WEEK_FETCHED_AT") OVER (PARTITION BY w."SEASON") AS "GAMES_FETCHED_AT",
          CASE WHEN w."HAS_CALENDAR" = 1 THEN w."CALENDAR_START" ELSE w."FIRST_KICKOFF_AT" END
            AS "WEEK_START",
          CASE WHEN w."HAS_CALENDAR" = 1 THEN w."CALENDAR_END" ELSE w."LAST_KICKOFF_AT" END

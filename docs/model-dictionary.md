@@ -23,6 +23,7 @@ Every table and view comment starts with its grain, "One row per ...". `Reads` l
 | `VENUE` | view | `130_venue.sql` | One row per venue, as CFBD stored it in CFB_CORE.VENUES (newest fetch wins) |
 | `TEAM` | view | `140_team.sql` | One row per team: every team of the stored team list (CFB_CORE.TEAMS, newest fetch wins) plus every team that appears only in stored games, such as historic programs (IS_IN_TEAM_LIST FALSE, named by its most recent game) |
 | `CONFERENCE` | view | `150_conference.sql` | One row per conference of CFB_CORE.CONFERENCES (newest fetch wins): its CFBD name, short name, abbreviation and classification |
+| `RATING_SP` | view | `160_rating_sp.sql` | One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins) |
 | `RANKING` | view | `170_ranking.sql` | One row per poll, season, season type, week and ranked team of CFB_CORE.RANKINGS_POLLS_RANKS (stored from 2014; the newest fetch wins, ties within a fetch by the poll's position in the response) |
 | `TEAM_GAME` | view | `200_team_game.sql` | One row per game and named participating team, from that team's side: the game's keys and week, the team and its opponent with conference and classification, the site (HOME, AWAY or NEUTRAL), the result (W, L or T), points for and against and the margin, the game's conference, championship and postseason flags, pregame Elo of both teams, and the pregame spread and win probability from the team's side as fixed-scale DECIMAL |
 
@@ -239,7 +240,7 @@ Reads: `CFB_CORE.GAMES`, `CFB_CORE.METRICS_WP_PREGAME`, `CFB_CORE.VENUES`, `CFB_
 
 One row per season, season type and week that has games or a stored calendar week (regular and postseason only). WEEK_SEQ orders the regular season before the postseason and matches the (season, week, season type) arguments of REFRESH_WEEK. Dates come from the stored calendar when it has the week, else from the kickoffs. IS_DONE says whether the week is over, which decides the current as-of point.
 
-Reads: `CFB_CORE.CALENDAR`, `CFB_MODEL.GAME`
+Reads: `CFB_CORE.CALENDAR`, `CFB_CORE.GAMES`
 
 | Column | Comment |
 |---|---|
@@ -348,6 +349,50 @@ Reads: `CFB_CORE.CONFERENCES`
 | `ABBREVIATION` | Abbreviation as CFBD reports it |
 | `CLASSIFICATION` | Classification of the conference as CFBD reports it (fbs, fcs, ii or iii); as of the last load of the conference list |
 | `FETCHED_AT` | When the conference row shown was fetched (REQ_AT, UTC) |
+
+## RATING_SP
+
+*View, `sql/model/160_rating_sp.sql`.*
+
+One row per season and team name of CFB_CORE.RATINGS_SP (stored from 2013; the newest fetch wins). CFBD's national-averages row is not a team and is left out. TEAM_ID comes from the exact name match with TEAM.SCHOOL; a name without a match is kept with TEAM_ID NULL (MODEL_CHECKS: SP_TEAM_UNMATCHED). The overall, offense, defense and special-teams ratings are DECIMAL(6,2). A season's SP+ includes that season's games and historic seasons may use a later methodology: as a prior for season S use S - 1 (TEAM_SEASON.SP_PRIOR_RATING). The current season's rows are overwritten by each refresh, so the as-of views show them only from their FETCHED_AT.
+
+Reads: `CFB_CORE.RATINGS_SP`, `CFB_MODEL.TEAM`, `CFB_META.LOAD_SLICES`
+
+| Column | Comment |
+|---|---|
+| `SEASON` | Season the rating belongs to (CFBD year). It includes that season's games, so as a prior for season S use the rating of season S - 1 (TEAM_SEASON.SP_PRIOR_RATING does). CFBD may compute historic seasons with a later methodology than the current one |
+| `SCHOOL` | Team name exactly as CFBD reports it with the rating; CFBD gives no team id. Matched to TEAM.SCHOOL |
+| `TEAM_ID` | CFBD team id of the team whose TEAM.SCHOOL equals SCHOOL; NULL when no team has that name (IS_TEAM_MATCHED FALSE) |
+| `IS_TEAM_MATCHED` | TRUE when SCHOOL equals the name of a team in TEAM; FALSE keeps the row but without a team id (MODEL_CHECKS: SP_TEAM_UNMATCHED). CFBD's national-averages row is not kept at all |
+| `CONFERENCE` | Conference as the SP+ row reports it (CFBD name) |
+| `SP_RATING` | Overall SP+ rating in points above or below an average team, cast to DECIMAL(6,2) (the cast rounds) |
+| `SP_RANKING` | Overall SP+ rank (1 = best) as CFBD reports it |
+| `OFFENSE_RATING` | Offense SP+ rating, DECIMAL(6,2) |
+| `OFFENSE_RANKING` | Offense SP+ rank as CFBD reports it |
+| `DEFENSE_RATING` | Defense SP+ rating, DECIMAL(6,2); CFBD reports a better defense as a lower value |
+| `DEFENSE_RANKING` | Defense SP+ rank as CFBD reports it |
+| `SPECIAL_TEAMS_RATING` | Special-teams SP+ rating, DECIMAL(6,2) |
+| `OFFENSE_SUCCESS` | Offense success rate as CFBD reports it |
+| `OFFENSE_EXPLOSIVENESS` | Offense explosiveness as CFBD reports it |
+| `OFFENSE_RUSHING` | Offense rushing component as CFBD reports it |
+| `OFFENSE_PASSING` | Offense passing component as CFBD reports it |
+| `OFFENSE_STANDARD_DOWNS` | Offense standard-downs component as CFBD reports it |
+| `OFFENSE_PASSING_DOWNS` | Offense passing-downs component as CFBD reports it |
+| `OFFENSE_PACE` | Offense pace as CFBD reports it |
+| `OFFENSE_RUN_RATE` | Offense run rate as CFBD reports it |
+| `DEFENSE_SUCCESS` | Defense success rate as CFBD reports it |
+| `DEFENSE_EXPLOSIVENESS` | Defense explosiveness as CFBD reports it |
+| `DEFENSE_RUSHING` | Defense rushing component as CFBD reports it |
+| `DEFENSE_PASSING` | Defense passing component as CFBD reports it |
+| `DEFENSE_STANDARD_DOWNS` | Defense standard-downs component as CFBD reports it |
+| `DEFENSE_PASSING_DOWNS` | Defense passing-downs component as CFBD reports it |
+| `DEFENSE_HAVOC_TOTAL` | Defense havoc rate, total, as CFBD reports it |
+| `DEFENSE_HAVOC_FRONT_SEVEN` | Defense havoc rate of the front seven as CFBD reports it |
+| `DEFENSE_HAVOC_DB` | Defense havoc rate of the defensive backs as CFBD reports it |
+| `STRENGTH_OF_SCHEDULE` | Strength of schedule as CFBD reports it (CFBD field sos) |
+| `SECOND_ORDER_WINS` | Second-order wins as CFBD reports them |
+| `IS_FINAL` | TRUE when the slice the row came from is registered as final in the load log (CFB_META.LOAD_SLICES.IS_FINAL: a season is final once it was loaded after 15 February of the following year); FALSE for a current season, for a slice that is not final, and for a slice outside the load plan, such as a promoted team slice |
+| `FETCHED_AT` | When the row shown was fetched from CFBD (REQ_AT, UTC); the as-of views compare it with the cutoff |
 
 ## RANKING
 

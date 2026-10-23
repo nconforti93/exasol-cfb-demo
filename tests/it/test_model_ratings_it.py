@@ -1,16 +1,20 @@
-"""Integration tests of model/ratings-rankings: `RANKING` (the SP+ parts come with `RATING_SP`).
+"""Integration tests of model/ratings-rankings: `RATING_SP` and `RANKING`.
 
 Read-only module over the synthetic league (marker `model_readonly`). A test that stores another
 fetch of a row removes it again before it ends (`tests/it/mirror_edit.py`). The expectations are
 the league's own poll bodies and the spec's rules restated in Python (`expected_visible_at`,
 `expected_final`), never the SQL under test. The as-of parts (`RANKING_AS_OF`, the fetch-time
-horizon) belong to `330_ranking_as_of.sql`, `FINAL_CFP_RANK` to `210_team_season.sql`.
+horizon) belong to `330_ranking_as_of.sql`, `FINAL_CFP_RANK`, the SP+ prior and the SP+ checks
+(`SP_TEAM_UNMATCHED`, `DUPLICATE_SOURCE_ROW`, `SP_PRIOR_NOT_FINAL`) to `210_team_season.sql` and
+`500_model_checks.sql`. The stored-twice scenario for SP+ and the not-final prior slice are in
+`tests/it/test_model_variants_it.py`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -23,11 +27,16 @@ from tests.synthetic.league import (
     COMMITTEE,
     CURRENT_SEASON,
     FETCHED_2026_RANKINGS,
+    LAST_FINAL_SEASON,
     LEAD_WEEKS,
     MYSTERY,
     RANKING_SEASONS,
+    SP_NATIONAL_AVERAGES,
+    SP_SEASONS,
+    SP_UNMATCHED,
     League,
     fetched_at,
+    is_final,
     season_key,
 )
 
@@ -340,3 +349,257 @@ def test_rows_of_one_fetch_with_the_same_key_take_the_later_poll_position(
         )
     rows = poll_week(harness, 2025, COMMITTEE, "regular", 14)
     assert [row["POINTS"] for row in rows] == [1500 - 50 * row["POLL_RANK"] for row in rows]
+
+
+# --- SP+ ratings (RATING_SP) ---------------------------------------------------------------------
+
+SP_MARKER = "marker-sp-it"
+SP_LATER_FETCH = "2030-01-01 00:00:00"
+SP_DECIMAL_COLUMNS = ("SP_RATING", "OFFENSE_RATING", "DEFENSE_RATING", "SPECIAL_TEAMS_RATING")
+SP_PARTS = {
+    "OFFENSE_SUCCESS": ("offense", "success"),
+    "OFFENSE_EXPLOSIVENESS": ("offense", "explosiveness"),
+    "OFFENSE_RUSHING": ("offense", "rushing"),
+    "OFFENSE_PASSING": ("offense", "passing"),
+    "OFFENSE_STANDARD_DOWNS": ("offense", "standardDowns"),
+    "OFFENSE_PASSING_DOWNS": ("offense", "passingDowns"),
+    "OFFENSE_PACE": ("offense", "pace"),
+    "OFFENSE_RUN_RATE": ("offense", "runRate"),
+    "DEFENSE_SUCCESS": ("defense", "success"),
+    "DEFENSE_EXPLOSIVENESS": ("defense", "explosiveness"),
+    "DEFENSE_RUSHING": ("defense", "rushing"),
+    "DEFENSE_PASSING": ("defense", "passing"),
+    "DEFENSE_STANDARD_DOWNS": ("defense", "standardDowns"),
+    "DEFENSE_PASSING_DOWNS": ("defense", "passingDowns"),
+    "DEFENSE_HAVOC_TOTAL": ("defense", "havoc", "total"),
+    "DEFENSE_HAVOC_FRONT_SEVEN": ("defense", "havoc", "frontSeven"),
+    "DEFENSE_HAVOC_DB": ("defense", "havoc", "db"),
+}
+SpKey = tuple[int, str]
+
+
+def decimal(value: Any) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
+
+
+def two_places(value: float | None) -> Decimal | None:
+    return None if value is None else Decimal(str(value)).quantize(Decimal("0.01"))
+
+
+def stored_ratings(league: League) -> dict[SpKey, dict[str, Any]]:
+    """Every SP+ row of the league's bodies except the national-averages row, by season and name."""
+    result: dict[SpKey, dict[str, Any]] = {}
+    for season in SP_SEASONS:
+        slice_ = league.get("RATINGS_SP", season_key("RATINGS_SP", season))
+        for body in slice_.body:
+            if body["team"] == SP_NATIONAL_AVERAGES:
+                continue
+            assert (season, body["team"]) not in result
+            result[(season, body["team"])] = {**body, "fetched_at": slice_.fetched_at}
+    return result
+
+
+def rating_rows(harness: Harness, where: str = "1 = 1") -> list[dict[str, Any]]:
+    return harness.query_dicts(
+        f"SELECT * FROM {harness.model}.RATING_SP WHERE {where} ORDER BY SEASON, SCHOOL"
+    )
+
+
+def rating_row(harness: Harness, season: int, school: str) -> dict[str, Any]:
+    rows = harness.query_dicts(
+        f"SELECT * FROM {harness.model}.RATING_SP WHERE SEASON = {season} AND SCHOOL = {{name}}",
+        {"name": school},
+    )
+    assert len(rows) == 1, (season, school)
+    return rows[0]
+
+
+def test_every_stored_rating_is_one_row_with_its_values(harness: Harness, league: League) -> None:
+    expected = stored_ratings(league)
+    rows = rating_rows(harness)
+    assert len(rows) == len(expected)
+    seen: set[SpKey] = set()
+    for row in rows:
+        key = (row["SEASON"], row["SCHOOL"])
+        assert key not in seen
+        seen.add(key)
+        body = expected[key]
+        assert row["CONFERENCE"] == body["conference"], key
+        assert decimal(row["SP_RATING"]) == two_places(body["rating"]), key
+        assert row["SP_RANKING"] == body["ranking"], key
+        assert decimal(row["OFFENSE_RATING"]) == two_places(body["offense"]["rating"]), key
+        assert row["OFFENSE_RANKING"] == body["offense"]["ranking"], key
+        assert decimal(row["DEFENSE_RATING"]) == two_places(body["defense"]["rating"]), key
+        assert row["DEFENSE_RANKING"] == body["defense"]["ranking"], key
+        assert decimal(row["SPECIAL_TEAMS_RATING"]) == two_places(body["specialTeams"]["rating"])
+        assert row["STRENGTH_OF_SCHEDULE"] == pytest.approx(body["sos"]), key
+        assert row["SECOND_ORDER_WINS"] == pytest.approx(body["secondOrderWins"]), key
+        assert moment(row["FETCHED_AT"]) == body["fetched_at"], key
+        for column, path in SP_PARTS.items():
+            value: Any = body
+            for step in path:
+                value = value[step]
+            assert row[column] == pytest.approx(value), (key, column)
+    assert seen == set(expected)
+
+
+def test_ratings_are_fixed_scale_decimals(harness: Harness, league: League) -> None:
+    """Scenario as-of: Engine inputs are fixed-scale decimals (the `RATING_SP` columns)."""
+    types = dict(
+        harness.query(
+            "SELECT COLUMN_NAME, COLUMN_TYPE FROM EXA_ALL_COLUMNS "
+            f"WHERE COLUMN_SCHEMA = '{harness.model}' AND COLUMN_TABLE = 'RATING_SP'"
+        )
+    )
+    assert {types[column] for column in SP_DECIMAL_COLUMNS} == {"DECIMAL(6,2)"}
+    assert types["SEASON"] == "DECIMAL(4,0)"
+    assert all(types[column] == "DOUBLE" for column in SP_PARTS)
+
+
+def test_sp_team_matching(harness: Harness, league: League) -> None:
+    """Scenario ratings-rankings: SP+ ratings attach to teams by name (the `RATING_SP` part)."""
+    ashford = rating_row(harness, 2024, "Ashford")
+    assert ashford["TEAM_ID"] == ASHFORD
+    assert ashford["IS_TEAM_MATCHED"] is True
+    assert decimal(ashford["SP_RATING"]) == Decimal("25.10")
+    unmatched = rating_row(harness, 2024, SP_UNMATCHED)
+    assert unmatched["TEAM_ID"] is None
+    assert unmatched["IS_TEAM_MATCHED"] is False
+    assert harness.query(
+        f"SELECT COUNT(*) FROM {harness.model}.RATING_SP WHERE SCHOOL = '{SP_NATIONAL_AVERAGES}'"
+    ) == [(0,)]
+    stored = harness.query(
+        f"SELECT COUNT(*) FROM {harness.core}.RATINGS_SP "
+        f"WHERE YEAR_ = 2024 AND TEAM = '{SP_NATIONAL_AVERAGES}'"
+    )
+    assert stored == [(1,)]
+
+
+def test_only_the_unmatched_name_has_no_team(harness: Harness, league: League) -> None:
+    for row in rating_rows(harness):
+        if (row["SEASON"], row["SCHOOL"]) == (2024, SP_UNMATCHED):
+            continue
+        assert row["IS_TEAM_MATCHED"] is True, (row["SEASON"], row["SCHOOL"])
+        assert row["TEAM_ID"] == lt.team(row["SCHOOL"]).id, (row["SEASON"], row["SCHOOL"])
+    assert harness.query(
+        f"SELECT COUNT(*) FROM {harness.model}.RATING_SP WHERE NOT IS_TEAM_MATCHED"
+    ) == [(1,)]
+    assert harness.query(
+        f"SELECT COUNT(*) FROM {harness.model}.RATING_SP "
+        "WHERE (TEAM_ID IS NULL) <> (NOT IS_TEAM_MATCHED)"
+    ) == [(0,)]
+
+
+def test_current_sp_not_final(harness: Harness, league: League) -> None:
+    """Scenario ratings-rankings: The current season's SP+ is marked as not final."""
+    current = rating_rows(harness, f"SEASON = {CURRENT_SEASON}")
+    assert current and {row["IS_FINAL"] for row in current} == {False}
+    assert {moment(row["FETCHED_AT"]) for row in current} == {datetime(2026, 10, 25, 12, 0)}
+    previous = rating_rows(harness, f"SEASON = {LAST_FINAL_SEASON}")
+    assert previous and {row["IS_FINAL"] for row in previous} == {True}
+
+
+def test_finality_follows_the_slice_of_every_row(harness: Harness, league: League) -> None:
+    for row in rating_rows(harness):
+        assert row["IS_FINAL"] is is_final(row["SEASON"]), (row["SEASON"], row["SCHOOL"])
+        assert moment(row["FETCHED_AT"]) == fetched_at(row["SEASON"])
+
+
+@pytest.fixture
+def sp_stored_twice(harness: Harness, league: League) -> Iterator[None]:
+    yield
+    mirror_edit.remove_copies(harness, "RATINGS_SP", SP_MARKER)
+
+
+def test_the_newest_fetch_of_a_rating_wins(
+    harness: Harness, league: League, sp_stored_twice: None
+) -> None:
+    """Scenario ratings-rankings: A rating or a ranking stored twice appears once (the
+    `RATING_SP` part, as a later copy of Ashford's stored 2024 row)."""
+    stored = mirror_edit.store_changed_copy(
+        harness,
+        "RATINGS_SP",
+        "YEAR_ = 2024 AND TEAM = 'Ashford'",
+        marker=SP_MARKER,
+        fetched_at=SP_LATER_FETCH,
+        row_offset=1000,
+        changes={"RATING": "24.0", "RANKING": "7"},
+    )
+    assert stored == 1
+    row = rating_row(harness, 2024, "Ashford")
+    assert decimal(row["SP_RATING"]) == Decimal("24.00") and row["SP_RANKING"] == 7
+    assert moment(row["FETCHED_AT"]) == datetime(2030, 1, 1)
+    assert row["IS_FINAL"] is False
+    assert len(rating_rows(harness, "SEASON = 2024")) == len(
+        [key for key in stored_ratings(league) if key[0] == 2024]
+    )
+
+
+def test_an_older_rating_fetch_never_replaces_a_newer_one(
+    harness: Harness, league: League, sp_stored_twice: None
+) -> None:
+    mirror_edit.store_changed_copy(
+        harness,
+        "RATINGS_SP",
+        "YEAR_ = 2024 AND TEAM = 'Ashford'",
+        marker=SP_MARKER,
+        fetched_at="2000-01-01 00:00:00",
+        row_offset=1000,
+        changes={"RATING": "0.0"},
+    )
+    row = rating_row(harness, 2024, "Ashford")
+    assert decimal(row["SP_RATING"]) == Decimal("25.10")
+    assert row["IS_FINAL"] is True
+
+
+def test_ties_of_fetch_time_take_the_later_slice_key_then_the_later_row(
+    harness: Harness, league: League, sp_stored_twice: None
+) -> None:
+    where = "YEAR_ = 2024 AND TEAM = 'Ashford'"
+    slice_key, fetch = harness.query(
+        f"SELECT DISTINCT REQ_SLICE, REQ_AT FROM {harness.core}.RATINGS_SP WHERE {where}"
+    )[0]
+    mirror_edit.store_changed_copy(
+        harness,
+        "RATINGS_SP",
+        where,
+        marker=SP_MARKER,
+        fetched_at=str(fetch),
+        row_offset=1000,
+        changes={"RATING": "11.0"},
+    )
+    assert decimal(rating_row(harness, 2024, "Ashford")["SP_RATING"]) == Decimal("11.00")
+    mirror_edit.remove_copies(harness, "RATINGS_SP", SP_MARKER)
+    mirror_edit.store_changed_copy(
+        harness,
+        "RATINGS_SP",
+        where,
+        marker=slice_key,
+        fetched_at=str(fetch),
+        row_offset=1000,
+        changes={"RATING": "12.0"},
+    )
+    try:
+        assert decimal(rating_row(harness, 2024, "Ashford")["SP_RATING"]) == Decimal("12.00")
+    finally:
+        harness.owner.execute(
+            f"DELETE FROM {harness.core}.RATINGS_SP WHERE {where} AND ROW_NO >= 1000"
+        )
+    assert decimal(rating_row(harness, 2024, "Ashford")["SP_RATING"]) == Decimal("25.10")
+
+
+def test_a_team_name_matches_only_exactly(
+    harness: Harness, league: League, sp_stored_twice: None
+) -> None:
+    mirror_edit.store_changed_copy(
+        harness,
+        "RATINGS_SP",
+        "YEAR_ = 2024 AND TEAM = 'Ashford'",
+        marker=SP_MARKER,
+        fetched_at=SP_LATER_FETCH,
+        row_offset=1000,
+        changes={"TEAM": "'ashford'"},
+    )
+    lower = rating_row(harness, 2024, "ashford")
+    assert (lower["TEAM_ID"], lower["IS_TEAM_MATCHED"]) == (None, False)
+    assert rating_row(harness, 2024, "Ashford")["TEAM_ID"] == ASHFORD

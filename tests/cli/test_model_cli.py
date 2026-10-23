@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from loader.runlock import RunLockError
-from model import dictionary
+from model import dictionary, perf
 from model.deploy import ModelOptions, prepare
 from scripts import model as cli
 from tests.unit.test_model_deploy import LockedConnection, _Rows
@@ -61,7 +61,11 @@ def calls() -> Calls:
 
 
 def run(
-    calls: Calls, *argv: str, options: ModelOptions = VALID, docs_path: Path | None = None
+    calls: Calls,
+    *argv: str,
+    options: ModelOptions = VALID,
+    docs_path: Path | None = None,
+    seeder: cli.Seeder | None = None,
 ) -> int:
     def resolve(name: str | None = None, *, dsn: str | None = None) -> target.Target:
         calls.targets.append(name)
@@ -75,6 +79,8 @@ def run(
         return connection
 
     extra: dict[str, Any] = {} if docs_path is None else {"docs_path": docs_path}
+    if seeder is not None:
+        extra["seeder"] = seeder
     return cli.main(list(argv), connector=connector, resolve=resolve, options=options, **extra)
 
 
@@ -327,12 +333,85 @@ def test_docs_lint_errors_stop_the_generation(
     assert "nothing was sent" in capsys.readouterr().err
 
 
-def test_perf_is_not_available_before_the_performance_smoke(
+def perf_run(calls: Calls, *argv: str) -> tuple[int, list[tuple[Any, Namespace]]]:
+    calls.connection_factory = lambda: deploy_connection("PERF_")
+    seeded: list[tuple[Any, Namespace]] = []
+
+    def seeder(connection: Any, namespace: Namespace, log: Any) -> None:
+        seeded.append((connection, namespace))
+        log("scaled league seeded")
+
+    return run(calls, "perf", *argv, seeder=seeder), seeded
+
+
+def slow_probe(monkeypatch: pytest.MonkeyPatch, median: float) -> None:
+    def fake_run_probes(connection: Any, to_run: Any, **_: Any) -> list[perf.Timing]:
+        return [perf.Timing(probe, median, median, 3) for probe in to_run]
+
+    monkeypatch.setattr(perf, "run_probes", fake_run_probes)
+
+
+def test_perf_seeds_deploys_and_times_in_the_perf_namespace(
     calls: Calls, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert run(calls, "perf", "--prefix", "PERF_") == cli.EXIT_ERROR
-    assert "task 3.7" in capsys.readouterr().err
+    code, seeded = perf_run(calls, "--warmups", "1", "--runs", "2")
+    out = capsys.readouterr().out
+    assert code == cli.EXIT_OK
+    assert [namespace.prefix for _, namespace in seeded] == ["PERF_"]
+    connection = calls.connections[0]
+    assert seeded[0][0] is connection and connection.closed
+    assert "scaled league seeded" in out and "schema PERF_CFB_MODEL: ready" in out
+    assert "GAME grouped by season" in out and "as-of prototype, one point" in out
+    assert f"{len(perf.probes(Namespace('PERF_')))} probes: " in out
+    selects = [s for s in connection.statements if s.startswith('SELECT "SEASON"')]
+    assert selects and not any(s.startswith("DROP SCHEMA") for s in connection.statements)
+    assert connection.statements.count("ALTER SESSION SET QUERY_CACHE = 'OFF'") == 1
+
+
+def test_perf_refuses_any_namespace_but_perf(
+    calls: Calls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, seeded = perf_run(calls, "--prefix", "TEST_")
+    assert code == cli.EXIT_ERROR and seeded == []
+    assert "only in the PERF_ namespace" in capsys.readouterr().err
     assert calls.connections == []
+    code, _ = perf_run(Calls(), "--prefix", "")
+    assert code == cli.EXIT_ERROR
+
+
+def test_perf_drop_removes_the_six_schemas_after_the_run(calls: Calls) -> None:
+    code, _ = perf_run(calls, "--warmups", "0", "--runs", "1", "--drop")
+    assert code == cli.EXIT_OK
+    drops = [s for s in calls.connections[0].statements if s.startswith("DROP SCHEMA")]
+    assert sorted(drops) == sorted(
+        f"DROP SCHEMA IF EXISTS PERF_CFB_{name} CASCADE"
+        for name in ("INFRA", "META", "CORE", "STAGE", "RESTORE", "MODEL")
+    )
+
+
+def test_perf_exits_1_naming_the_probes_over_target_and_still_drops(
+    calls: Calls, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    slow_probe(monkeypatch, 9.0)
+    code, _ = perf_run(calls, "--drop")
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_REFUSED
+    assert "probe(s) over target: GAME grouped by season" in captured.err
+    assert "OVER 2X" in captured.out
+    assert any(s.startswith("DROP SCHEMA") for s in calls.connections[0].statements)
+
+
+def test_perf_drops_the_namespace_when_a_probe_fails(
+    calls: Calls, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(connection: Any, to_run: Any, **_: Any) -> list[perf.Timing]:
+        raise FakeQueryError("object GAME not found")
+
+    monkeypatch.setattr(perf, "run_probes", broken)
+    code, _ = perf_run(calls, "--drop")
+    assert code == cli.EXIT_ERROR
+    assert "object GAME not found" in capsys.readouterr().err
+    assert any(s.startswith("DROP SCHEMA") for s in calls.connections[0].statements)
 
 
 # --- the module and the Makefile ------------------------------------------------------------
