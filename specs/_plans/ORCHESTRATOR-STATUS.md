@@ -1,5 +1,7 @@
 # Orchestrator status (autonomous run, started 2026-10-22)
 
+> **Superseded as the live status by `HANDOVER.md` (2026-10-23).** Kept as history.
+
 Mandate: finish the mission end to end through the speq loop (plan → review → implement → verify → record).
 
 Limits:
@@ -8,6 +10,25 @@ Limits:
 - Commit locally only, never push.
 - Make decisions myself and log them.
 - Check Exasol syntax and reserved words with the `exasol:*` skills.
+
+## PROCESS CHANGE (owner, 2026-10-23): lighter process
+
+Nico: "Let's do a lighter process moving forward, this is a demo, not a full-blown product offering. We also don't need a crazy amount of tests really. Ideally I could test the web app today."
+- From now on, run thin end-to-end slices first, then harden. Each remaining phase gets one plan or revision pass at most, with no separate plan review. Code review only for risky code (spend, locks, SQL guard). No coverage audits.
+- Tests: a few per feature that cover the demo path. Don't chase scenario-by-scenario coverage.
+- Today's priority: a clickable web app. Step 1 is `make app-preview` on fixture data (running now). Step 2 is a real-data path: merge Phase 2 → live backfill on AWS → Phase 3 views → a minimal Phase 4 engine → only the Phase 5 views the pages need → Phase 6 routes.
+
+## STOP POINT (usage limit, 2026-10-23)
+
+- **Phase 3 (p3):** group E is committed (f21b00c). 6817 unit/CLI tests pass and lint is clean. Task 3.8 TEAM_SEASON is `[~]` and an expert agent was working on it when the session stopped. Its output is uncommitted and may be incomplete.
+- **Phase 2 (p2):** DONE. Verification and live group J are done (a93501a). AWS stores 155k rows over 9 tables (GAMES 1869–2026, SP+/WP/polls 2013/14–2026), with week 7 of 2026 refreshed. **The Oct 31 restore gate PASSED** (snapshot `~/.cfb-demo/snapshots/aws-demo-2026-10-23` restored onto local in about 20 s; local now holds the same data). Ledger: plan 221/300; October /info 240 of 3000 used, ledger 242/400. Recording is running, then fast-forward main.
+- **Phase 6 UI revision (owner, 2026-10-23):** a US map home with team logos and a conference filter, then a team page, then league tabs (predictions, matchups, stats). The planner is revising the Phase 6 plan. Logos are cached locally and never committed. The fixture preview `make app-preview` is committed (64f983a); the owner found it not useful without real data.
+- **Phase 7 (p7):** groups A and B are done (2.1 committed 89f21ae; spec text aligned with [28]; FU-2 coverage list). **Group C onward is blocked** until Phases 5 and 6 merge to main (plan sequencing; gate 3.0 checks P7-a..e in Phase 6).
+- **Resume:**
+  1. Run `git status` and `git diff --stat` in p2, p3 and p7.
+  2. Re-run `make test` and `make lint` under the IT lock.
+  3. Commit each task if it's green. Otherwise start a fresh agent pointed at the files already on disk.
+  4. Then go on with Phase 3 groups G–K, Phase 2 V.1–V.3 and live group J (by Oct 31), and Phase 7 group C.
 
 ## RESUME AFTER RESTART (planned machine restart ~14:33 CEST, 2026-10-22)
 
