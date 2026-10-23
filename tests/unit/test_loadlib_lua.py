@@ -17,13 +17,12 @@ import re
 from pathlib import Path
 from typing import Any
 
+import lupa.lua54 as LUA
 import pytest
 
 from loader import bundle
 from vs.cfbd_vs import properties
 from vs.host.namespace import Namespace
-
-LUA = pytest.importorskip("lupa.lua54")
 
 LIBRARY = (Path(bundle.LUA_DIR) / bundle.LIBRARY_FILE).read_text(encoding="utf-8")
 TEST = Namespace("TEST_")
@@ -334,6 +333,41 @@ def test_release_ends_only_a_running_row(lib: LoadLib) -> None:
     assert "upper-case word" in lib.error_of("release_lock(4, 'done', 'x')")
 
 
+def test_release_ends_only_a_row_of_the_calling_session(lib: LoadLib) -> None:
+    """Review m6: another session's RUN_LOCK release must not end a running BACKFILL."""
+    lib.run("release_lock(4, 'DONE', 'ok')")
+    release = lib.statements()[0]
+    assert release.startswith('UPDATE "TEST_CFB_META"."LOAD_RUN" SET "RUN_STATUS" = :status')
+    assert 'AND "SESSION_ID" = CURRENT_SESSION' in release
+
+
+def test_end_job_writes_the_totals_and_releases_the_lock(lib: LoadLib) -> None:
+    lib.run("JOB = {run_id = 7, kind = 'BACKFILL', slices = 2, rows = 10, calls = 3}")
+    lib.run("end_job(JOB, 'DONE', 'nothing left')")
+    assert verbs(lib.statements()) == ["UPDATE LOAD_RUN", "UPDATE LOAD_RUN", "COMMIT"]
+    assert (lib.bound(1, "status"), lib.bound(1, "run")) == ("DONE", 7)
+
+
+def test_end_job_raises_when_the_run_lost_its_lock(lib: LoadLib) -> None:
+    """Review m5: a row another session abandoned means the work may have overlapped."""
+    lib.respond('SET "RUN_STATUS" = :status', "{rows_affected = 0}")
+    lib.run("JOB = {run_id = 7, kind = 'BACKFILL', slices = 2, rows = 10, calls = 3}")
+    message = lib.error_of("end_job(JOB, 'DONE', 'nothing left')")
+    assert message.startswith("BACKFILL run 7 lost the run lock")
+    assert "TEST_CFB_META.LOAD_RUN" in message and "overlapped" in message
+
+
+def test_the_host_lock_takes_host_kinds_only(lib: LoadLib) -> None:
+    lib.respond('SELECT MAX("RUN_ID")', "{{RUN_ID = 5}}")
+    assert lib.run("return acquire_host_lock('RESTORE', 'week7')") == 5
+    message = lib.error_of("acquire_host_lock('BACKFILL', 'x')")
+    assert "run lock: BACKFILL is not a host kind; RUN_LOCK takes DEPLOY, RESTORE, SNAPSHOT" in (
+        message
+    )
+    assert "unknown run kind PROMOTE" in lib.error_of("acquire_host_lock('PROMOTE', 'x')")
+    assert len(lib.statements()) == 5
+
+
 # Quota and measured spend ------------------------------------------------------------------------
 
 
@@ -477,9 +511,12 @@ def test_the_batch_query_is_fixed_filter_slicing_filter_and_fetched_rows_only(
     assert "not an UPPER_CASE identifier: games" in lib.error_of("batch_query(B)")
 
 
-def manifest(keys: list[str]) -> str:
+def manifest(keys: list[str], mode: str = "live", extra: str = "") -> str:
     listed = ",".join(f'"{key}"' for key in keys)
-    text = f'/*CFBD {{"planned_requests":{len(keys)},"slice_keys":[{listed}]}}*/ SELECT 1'
+    text = (
+        f'/*CFBD {{{extra}"fetch_mode":"{mode}","planned_requests":{len(keys)},'
+        f'"slice_keys":[{listed}]}}*/ SELECT 1'
+    )
     return "{{PUSHDOWN_SQL = " + lua_text(text) + "}}"
 
 
@@ -508,10 +545,39 @@ def test_the_explain_check_names_both_key_lists_and_the_remedy(lib: LoadLib) -> 
     assert "plans 2 request(s)" in lib.error_of(f"explain_check({batch_lua(['a'])})")
 
 
+def test_a_key_outside_the_slice_key_list_does_not_satisfy_the_check(lib: LoadLib) -> None:
+    """Review H: only the manifest's `slice_keys` array counts, not any text of the manifest."""
+    lib.respond("EXPLAIN VIRTUAL", manifest(["b"], extra='"note":"a",'))
+    message = lib.error_of(f"explain_check({batch_lua(['a'])})")
+    assert 'plans 1 request(s): ["b"]' in message
+
+
+def test_a_batch_refuses_a_fetch_mode_changed_during_the_run(lib: LoadLib) -> None:
+    """Review n2: a replay run must not fetch live because FETCH_MODE was flipped meanwhile."""
+    keys = ["/g?year=2018"]
+    load_batch_responses(lib, keys, mode="live")
+    lib.run("JOB = {run_id = 7, tag = 'BACKFILL#7', fetch_source = 'REPLAY'}")
+    message = lib.error_of(f"load_batch(JOB, {batch_lua(keys)})")
+    assert "would fetch in live mode, but this run started in replay mode" in message
+    assert "No request was sent" in message
+    assert verbs(lib.statements()) == ["SELECT"]
+
+
+def test_the_dry_run_check_does_not_need_the_fetch_mode(lib: LoadLib) -> None:
+    lib.respond("EXPLAIN VIRTUAL", manifest(["a"], mode="replay"))
+    lib.run(f"explain_check({batch_lua(['a'])})")
+
+
 def load_batch_responses(
-    lib: LoadLib, keys: list[str], *, staged: int = 0, strays: int = 0, merged: int | None = None
+    lib: LoadLib,
+    keys: list[str],
+    *,
+    staged: int = 0,
+    strays: int = 0,
+    merged: int | None = None,
+    mode: str = "live",
 ) -> None:
-    lib.respond("EXPLAIN VIRTUAL", manifest(keys))
+    lib.respond("EXPLAIN VIRTUAL", manifest(keys, mode))
     lib.respond('"REQ_SLICE" NOT IN', f"{{{{N = {strays}}}}}")
     lib.respond('SELECT COUNT(*) AS "N" FROM "TEST_CFB_STAGE"', f"{{{{N = {staged}}}}}")
     lib.respond("MERGE INTO", f"{{rows_affected = {len(keys) if merged is None else merged}}}")
@@ -521,7 +587,7 @@ def load_batch_responses(
 
 def test_a_batch_is_one_transaction_in_the_planned_order(lib: LoadLib) -> None:
     keys = ["/g?year=2020", "/g?year=2019"]
-    load_batch_responses(lib, keys)
+    load_batch_responses(lib, keys, mode="replay")
     lib.run("JOB = {run_id = 7, tag = 'BACKFILL#7', fetch_source = 'REPLAY'}")
     loaded, slices, rows = lib.run(
         f"local ok, s = load_batch(JOB, {batch_lua(keys)}, function(stats) "

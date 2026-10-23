@@ -1,4 +1,4 @@
--- LOAD_ORPHANS: one row per orphan slice, keyed by (TABLE_NAME, SLICE_KEY) (review M6, decision [23]).
+-- LOAD_ORPHANS: one row per orphan slice, keyed by (TABLE_NAME, SLICE_KEY) (spec loader/load-plan).
 -- An orphan is a LOAD_LOG row that a loader run wrote (LOADED_BY 'BACKFILL#<run>', 'REFRESH_WEEK#<run>'
 -- or 'LOAD_PLAN_GAP') for a planned table, whose key matches no slice in LOAD_SLICES. It appears after
 -- a catalog change, a plan edit or a restore from an older catalog. Re-fetching its table would pay

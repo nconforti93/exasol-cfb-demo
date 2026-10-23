@@ -43,6 +43,15 @@ def manifest(name: str = "week7") -> Manifest:
         "a" * 64,
         {"rows": 2, "ID": [2, "3"]},
     )
+    load_log = TableSnapshot(
+        "CFB_META",
+        "LOAD_LOG",
+        1,
+        (Column("SLICE_KEY", "VARCHAR(2000) UTF8"),),
+        "CFB_META.LOAD_LOG.csv.gz",
+        "b" * 64,
+        {"rows": 1, "SLICE_KEY": [1, "16"]},
+    )
     return Manifest(
         name=name,
         created_at="2026-10-22T20:15:03Z",
@@ -50,7 +59,7 @@ def manifest(name: str = "week7") -> Manifest:
         db_version="2026.2.0",
         catalog_hash=CATALOG,
         plan_hash=None,
-        tables=(games,),
+        tables=(games, load_log),
     )
 
 
@@ -184,7 +193,7 @@ def test_a_snapshot_runs_on_the_target_and_reports_zero_calls(
     assert calls.targets == ["aws"]
     out = capsys.readouterr().out
     assert "exported CFB_CORE.GAMES: 2 rows" in out
-    assert "snapshot week8: 1 files, 2 rows" in out and "0 CFBD calls" in out
+    assert "snapshot week8: 2 files, 3 rows" in out and "0 CFBD calls" in out
     assert calls.connections[0].closed
 
 
@@ -295,7 +304,7 @@ def test_the_listing_shows_every_snapshot(
     assert run(calls, "list") == cli.EXIT_OK
     out = capsys.readouterr().out
     assert "week7" in out and "2026-10-22T20:15:03Z" in out and "aws node1" in out
-    assert "1 tables, 2 rows" in out and CATALOG[:12] in out
+    assert "2 tables, 3 rows" in out and CATALOG[:12] in out
     assert "half" in out and "incomplete" in out
     assert calls.connections == []
 

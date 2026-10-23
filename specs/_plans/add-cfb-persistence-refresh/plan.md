@@ -342,7 +342,7 @@ CFB_CORE.GAMES.parquet, ..., CFB_META.LOAD_LOG.parquet, CFB_META.FETCH_LOG.parqu
   - `TARGET` for the new make targets (`backfill`, `refresh`, `quota`, `snapshot`, `restore`, `snapshots`) and `scripts/loader_cli.py`, `scripts/snapshot.py`, through the foundation module.
 
 **Budget guards**
-1. **In the database.** `PROJECT_BUDGET` on `/info` used calls (the key's whole monthly use). For the October live group, AWS is deployed with `make deploy TARGET=aws LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"`, and 9.6 redeploys without the override.
+1. **In the database.** `PROJECT_BUDGET` on `/info` used calls (the key's whole monthly use). For the October live group, AWS is deployed with `make deploy TARGET=aws LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"`, and 9.6 redeploys without the override. *Superseded in F.1 (decision [46]): `vs/live/loader-config.yaml` makes every `make deploy TARGET=aws` write the ledger's month cap and a reserve of 50, so no override and no reset redeploy are needed.*
 2. **Ledger** (`cache/live-calls.jsonl`, shared with the foundation; caps in `vs/live/ledger.yaml`):
 
    ```yaml
@@ -710,7 +710,7 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
 9. **Live (last; ≤ 300 CFBD calls; AWS `default`; needs U1–U6)**
    - [ ] 9.0 Gates and AWS smoke (0 CFBD calls):
      - The foundation's 9.4 and P1 are done, and the "AWS free" signal is given.
-     - `make deploy TARGET=aws LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50" && make grants TARGET=aws`. U1 is verified, and `make dns-check TARGET=aws` passes.
+     - `make deploy TARGET=aws && make grants TARGET=aws` (decision [46]: `vs/live/loader-config.yaml` applies the ledger's cap for the deploy's month and a reserve of 50; check the printed `loader config for target aws` line). U1 is verified, and `make dns-check TARGET=aws` passes.
      - `make quota TARGET=aws`: tier, used calls. Assert that `BACKFILL_SPENDABLE` is at most this plan's ledger room, and that the ledger room is at least the estimate + 4.
      - **Smoke**, which 9.1 is gated on:
        1. record `SELECT PARAM_VALUE FROM EXA_METADATA WHERE PARAM_NAME = 'databaseProductVersion'`;
@@ -734,7 +734,7 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
      - `SELECT REQ_SOURCE, COUNT(*) FROM CFBD_VS.GAMES WHERE P_YEAR = 2019 GROUP BY REQ_SOURCE` on local gives one `STORED` group;
      - the restore time.
    - [ ] 9.6 Live documentation and reset:
-     - Redeploy AWS without `LOADER_CONFIG`; the plan's budget applies again.
+     - No budget reset is needed (decision [46]): the AWS budget follows the ledger's month cap at every deploy. Deploy AWS once in November to pick up its cap.
      - `docs/cfbd-api-measurements.md`, derived numbers only: calls per entry, rows per table, seconds per batch, the refresh timeline, restore time, the AWS DB version.
      - The roadmap budget table.
      - The final ledger total (≤ 300).
@@ -801,7 +801,8 @@ None. `tests/it/harness.py` `stage_slices` stays: the foundation's read-through 
 | backfill: The backfill can start at an older season | Integration | `tests/it/test_backfill_it.py` | `test_from_season` |
 | backfill: A failing slice is isolated and does not cost its batch | Integration | `tests/it/test_backfill_it.py` | `test_failing_slice_isolated` |
 | backfill: A slice that keeps failing is quarantined without blocking the queue | Integration | `tests/it/test_backfill_it.py` | `test_failing_slice_quarantined` |
-| backfill: A failure of every slice stops the run | Integration | `tests/it/test_backfill_it.py` | `test_systemic_failure_stops_run` |
+| backfill: One failed single-slice batch does not stop the run | Integration | `tests/it/test_backfill_it.py`, `tests/unit/test_backfill_lua.py` | `test_one_failed_single_slice_batch_does_not_stop_the_run`, `test_one_failed_single_slice_batch_is_recorded_and_the_run_continues` |
+| backfill: Two consecutive failed batches stop the run | Integration | `tests/it/test_backfill_it.py`, `tests/unit/test_backfill_lua.py` | `test_systemic_failure_stops_run`, `test_an_outage_stops_after_two_batches_and_their_single_slice_retries` |
 | backfill: The next run resumes after a failure | Integration | `tests/it/test_backfill_it.py` | `test_next_run_resumes_after_failure` |
 | backfill: A plan that disagrees with the virtual schema stops before any request | Integration | `tests/it/test_backfill_it.py` | `test_slice_key_drift_stops_before_request` |
 | backfill: The backfill leaves the virtual schema properties unchanged | Integration | `tests/it/test_backfill_it.py` | `test_properties_unchanged_after_runs` |
@@ -826,12 +827,15 @@ None. `tests/it/harness.py` `stage_slices` stays: the foundation's read-through 
 | run-logs: The load log matches the stored rows | Integration | `tests/it/test_run_logs_it.py` | `test_load_log_matches_stored_rows` |
 | run-logs: A failed run is recorded and registers nothing from the failed batch | Integration | `tests/it/test_run_logs_it.py` | `test_failed_run_recorded` |
 | run-logs: A second run is refused while one is running | Integration | `tests/it/test_run_logs_it.py` | `test_concurrent_run_refused` |
+| run-logs: Another session cannot end a running run | Integration | `tests/it/test_run_lock_it.py` | `test_another_session_cannot_end_a_running_run` |
+| run-logs: A deploy is refused while a run holds the lock | Integration | `tests/it/test_run_lock_it.py`, `tests/unit/test_deploy_cli.py` | `test_a_deploy_is_refused_while_a_run_holds_the_lock`, `test_a_deploy_during_a_loader_run_is_refused_and_changes_nothing` |
 | run-logs: A run whose session ended does not block the next run | Integration | `tests/it/test_run_logs_it.py` | `test_abandoned_run_does_not_block` |
 | run-logs: After a failed or interrupted run, the next run starts | Integration | `tests/it/test_run_logs_it.py` | `test_failed_or_interrupted_run_does_not_block` |
 | quota: The quota view shows the key's quota without spending a call | Integration | `tests/it/test_quota_it.py` | `test_quota_view_zero_calls` |
 | quota: The backfill allowance keeps the reserve | Integration | `tests/it/test_quota_it.py` | `test_backfill_allowance_keeps_reserve` |
 | quota: The project budget caps a larger key quota | Integration | `tests/it/test_quota_it.py` | `test_project_budget_caps_key_quota` |
 | quota: A deploy-time override caps one deployment and is undone by the next deploy | Integration | `tests/it/test_quota_it.py` | `test_deploy_override_caps_deployment` |
+| quota: A plain deploy keeps a target's budget, following the ledger's month cap | Unit (CLI, fake DB) | `tests/unit/test_deploy_cli.py` | `test_a_plain_aws_deploy_keeps_the_target_budget_of_the_month`, `test_in_november_the_aws_budget_follows_the_ledger_cap`, `test_an_explicit_loader_config_wins_and_is_printed` |
 | quota: Calls are attributed to backfill, refresh and other use | Integration | `tests/it/test_quota_it.py` | `test_calls_attributed_by_run_kind` |
 | quota: The view shows what completing each profile costs | Integration | `tests/it/test_quota_it.py` | `test_calls_to_complete_profiles` |
 | quota: A budget change in the plan takes effect after deploy | Integration | `tests/it/test_quota_it.py` | `test_budget_change_after_deploy` |
@@ -843,6 +847,7 @@ None. `tests/it/harness.py` `stage_slices` stays: the foundation's read-through 
 | snapshot-restore: A restore into a deployment with different columns is refused | Integration | `tests/it/test_snapshot_restore_it.py` | `test_restore_refuses_column_mismatch` |
 | snapshot-restore: A snapshot from another catalog needs FORCE | Integration | `tests/it/test_snapshot_restore_it.py` | `test_restore_needs_force_for_other_catalog` |
 | snapshot-restore: A failed restore changes nothing | Integration | `tests/it/test_snapshot_restore_it.py` | `test_failed_restore_changes_nothing` |
+| snapshot-restore: A snapshot without the load log is refused | Integration | `tests/it/test_snapshot_restore_it.py`, `tests/unit/test_snapshot_flow.py` | `test_restore_refuses_a_manifest_without_load_log`, `test_a_manifest_without_load_log_is_refused_before_any_change` |
 | snapshot-restore: Snapshot and restore are refused while a loader run is active | Integration | `tests/it/test_snapshot_restore_it.py` | `test_snapshot_and_restore_refused_during_run` |
 
 Supporting unit tests (pure computation, no I/O) back the integration tests. They do not replace them:

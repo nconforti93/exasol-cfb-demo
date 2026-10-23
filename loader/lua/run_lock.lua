@@ -2,9 +2,11 @@
 -- lock_text), the run lock of host processes (loader/runlock.py). Bundled like every loader script:
 -- the namespace constants, loadlib.lua, then this file.
 --
---   ('acquire', <kind>, NULL, <args>)       -> one row RUN_ID: acquire_lock(kind, args)
+--   ('acquire', <kind>, NULL, <args>)       -> one row RUN_ID: acquire_host_lock(kind, args); a
+--                                              script kind (BACKFILL, ...) raises at once
 --   ('release', <status>, <run id>, <text>) -> one row HELD: release_lock(run id, status, text),
---                                              1 when the row was still RUNNING, else 0
+--                                              1 when the row was still RUNNING in this
+--                                              session, else 0
 --
 -- The lock row belongs to the session that calls this script. A host process calls it in the
 -- session it works in, keeps that session open until it releases, and runs no other locking script
@@ -14,7 +16,7 @@
 local action = nz(lock_action)
 
 if action == "acquire" then
-  exit({{acquire_lock(nz(lock_word), nz(lock_text))}}, "RUN_ID DECIMAL(18,0)")
+  exit({{acquire_host_lock(nz(lock_word), nz(lock_text))}}, "RUN_ID DECIMAL(18,0)")
 end
 
 if action == "release" then

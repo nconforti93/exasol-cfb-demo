@@ -31,6 +31,7 @@ The load plan decides which virtual tables are persisted, in which slices, for w
   | `season_final_after` | `02-15` |
   | `refresh_profiles` | `[demo]` |
 
+- The `snapshot` section lists the snapshot scope (`loader/snapshot-restore`): `schemas` (`CFB_CORE`) and `meta_tables` (`LOAD_LOG`, `FETCH_LOG`). `LOAD_LOG` is required while `CFB_CORE` is listed; a plan without it is invalid.
 - The current season is the calendar year from its `season_rollover` day on, and the previous year before that day.
 - A slice counts as **final** when it is loaded at or after:
   - `static`: any time. `none` and `season_range` entries must be `static`.

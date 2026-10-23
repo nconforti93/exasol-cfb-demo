@@ -51,3 +51,7 @@ strict = true
 files = ["vs", "loader", "scripts", "tests"]
 mypy_path = "."
 explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["lupa", "lupa.*"]
+ignore_missing_imports = true

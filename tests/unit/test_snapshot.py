@@ -17,6 +17,7 @@ import pytest
 
 from loader import snapshot as snap
 from loader.snapshot import Column, Manifest, SnapshotError, SnapshotRefused, TableSnapshot
+from loader.transaction import run_transaction
 from vs import bundle as vs_bundle
 from vs.cfbd_vs.catalog import Catalog
 from vs.host.namespace import Namespace
@@ -311,11 +312,25 @@ def mutated(change: dict[str, Any], table: int = 0) -> str:
         (mutated({"table": "LOAD_LOG", "file": "CFB_CORE.LOAD_LOG.csv.gz"}), "twice"),
         (mutated({"table": "LOAD_RUN", "file": "CFB_META.LOAD_RUN.csv.gz"}, 1), "not a snapshot"),
         (json.dumps({**json.loads(manifest().to_json()), "catalog_hash": "short"}), "catalog"),
+        (manifest(games(), empty_teams()).to_json(), "LOAD_LOG"),
     ],
 )
 def test_an_invalid_manifest_is_rejected(text: str, message: str) -> None:
     with pytest.raises(SnapshotError, match=message):
         Manifest.from_json(text)
+
+
+def test_a_manifest_without_cfb_core_tables_needs_no_load_log() -> None:
+    meta_only = manifest(load_log())
+    assert Manifest.from_json(meta_only.to_json()) == meta_only
+
+
+def test_a_manifest_without_load_log_names_the_rule() -> None:
+    with pytest.raises(SnapshotError) as refused:
+        Manifest.from_json(manifest(games(), empty_teams()).to_json())
+    message = str(refused.value)
+    assert "LOAD_LOG" in message and "CFB_CORE" in message
+    assert "stored" in message
 
 
 # --- files ----------------------------------------------------------------------------------
@@ -402,7 +417,7 @@ class TransactionConnection:
 
 def test_the_swap_is_one_transaction() -> None:
     connection = TransactionConnection()
-    snap.run_transaction(connection, ["DELETE FROM A", "INSERT INTO A"])
+    run_transaction(connection, ["DELETE FROM A", "INSERT INTO A"])
     assert connection.log == [
         "autocommit False",
         "DELETE FROM A",
@@ -415,7 +430,7 @@ def test_the_swap_is_one_transaction() -> None:
 def test_a_failing_swap_is_rolled_back_and_never_committed() -> None:
     connection = TransactionConnection(fail_on="INSERT")
     with pytest.raises(RuntimeError, match="insert failed"):
-        snap.run_transaction(connection, ["DELETE FROM A", "INSERT INTO A", "DELETE FROM B"])
+        run_transaction(connection, ["DELETE FROM A", "INSERT INTO A", "DELETE FROM B"])
     assert connection.log == [
         "autocommit False",
         "DELETE FROM A",

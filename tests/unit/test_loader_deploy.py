@@ -38,9 +38,11 @@ class LoaderDatabase(FakeDatabase):
         season_state: tuple[Any, ...] | None = None,
         fail_on: str | None = None,
         foundation: bool = True,
+        deployed_settings: Sequence[tuple[str, str]] = (),
     ) -> None:
         super().__init__()
         self.namespace = namespace
+        self.deployed_settings = list(deployed_settings)
         self.orphans = list(orphans)
         self.season_state = season_state
         self.fail_on = fail_on
@@ -68,6 +70,8 @@ class LoaderDatabase(FakeDatabase):
         if '"SEASON_NUMBERS"' in query:
             state = self.season_state or (0, 0, None, None)
             return Result([state])
+        if '"LOADER_CONFIG"' in query:
+            return Result(self.deployed_settings)
         return super()._select(query)
 
 
@@ -119,6 +123,15 @@ def test_the_stage_schema_and_one_stage_table_per_planned_table_are_created(no_l
     assert "CREATE SCHEMA IF NOT EXISTS TEST_CFB_STAGE" in db.statements
     staged = sorted(t for (schema, t) in db.tables if schema == "TEST_CFB_STAGE")
     assert staged == PLANNED_TABLES
+
+
+def test_an_empty_plan_deploys_without_stage_tables(no_lua: Path) -> None:
+    """Review m16: a valid plan without entries crashed the deploy (IndexError)."""
+    db = LoaderDatabase(TEST)
+    report = run(db, no_lua, TEST, plan_text="version: 1\nentries: []\n")
+    assert "stage tables: none planned" in report.lines
+    assert not [s for s in db.statements if s.startswith("CREATE TABLE TEST_CFB_STAGE")]
+    assert not [s for s in db.statements if s.startswith("INSERT INTO TEST_CFB_META.LOAD_PLAN ")]
 
 
 def test_a_stage_table_has_the_mirror_columns(no_lua: Path) -> None:
@@ -268,6 +281,35 @@ def test_overrides_replace_the_yaml_settings(no_lua: Path) -> None:
     assert "('MONTHLY_CALL_BUDGET', '400')" in config
     assert "('REFRESH_RESERVE', '50')" in config
     assert "('QUARANTINE_AFTER', '2')" in config
+
+
+def test_a_deploy_that_changes_the_budget_settings_warns(no_lua: Path) -> None:
+    """Review m4: a redeploy must not lift a deployment's budget without a message."""
+    deployed = [
+        ("MONTHLY_CALL_BUDGET", "400"),
+        ("REFRESH_RESERVE", "50"),
+        ("QUARANTINE_AFTER", "2"),
+    ]
+    db = LoaderDatabase(TEST, deployed_settings=deployed)
+    report = run(db, no_lua, TEST)
+    assert report.warnings == (
+        "MONTHLY_CALL_BUDGET changes from 400 to 1000",
+        "REFRESH_RESERVE changes from 50 to 150",
+    )
+    read = next(q for q in db.queries if '"LOADER_CONFIG"' in q)
+    assert db.log.index(read.split("\n", 1)[0][:90]) < next(
+        i
+        for i, line in enumerate(db.log)
+        if line.startswith("DELETE FROM TEST_CFB_META.LOADER_CONFIG")
+    )
+
+
+def test_an_unchanged_or_first_budget_setting_does_not_warn(no_lua: Path) -> None:
+    same = [("MONTHLY_CALL_BUDGET", "400"), ("REFRESH_RESERVE", "50")]
+    db = LoaderDatabase(TEST, deployed_settings=same)
+    overrides = {"monthly_call_budget": "400", "refresh_reserve": "50"}
+    assert run(db, no_lua, TEST, config_overrides=overrides).warnings == ()
+    assert run(LoaderDatabase(TEST), no_lua, TEST).warnings == ()
 
 
 def test_the_plan_hash_names_the_plan_file_not_the_overrides(no_lua: Path) -> None:

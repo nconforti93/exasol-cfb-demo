@@ -12,13 +12,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import lupa.lua54 as LUA
 import pytest
 
 from loader import bundle
 from tests.unit.test_loadlib_lua import KILLED, STUBS, lua_text, verbs
 from vs.host.namespace import Namespace
-
-LUA = pytest.importorskip("lupa.lua54")
 
 TEST = Namespace("TEST_")
 STEP_CALL = "EXECUTE SCRIPT"

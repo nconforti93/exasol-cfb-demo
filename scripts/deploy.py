@@ -11,28 +11,52 @@ Steps and their rules are documented in `vs/host/deploy.py` (virtual schema) and
 connection. The one thing to remember: the fetch UDF is replaced only when its body changed,
 because `CREATE OR REPLACE` drops its script-bound connection grant.
 
-`--loader-config "monthly_call_budget=400,refresh_reserve=50"` (make: `LOADER_CONFIG=...`)
-overrides loader settings of `loader/load-plan.yaml` until the next deploy.
+Loader settings: `loader/load-plan.yaml`, then the target's overrides in
+`vs/live/loader-config.yaml` (`loader/target_config.py`; on `aws` the budget follows the ledger's
+month cap), then `--loader-config "k=v,..."` (make: `LOADER_CONFIG=...`), which wins per setting.
+The deploy prints where each override came from; they last until the next deploy.
+
+Run lock: once the namespace has `<infra>.RUN_LOCK` (installed by its first deploy), the deploy
+holds the `DEPLOY` run lock (`loader.runlock.run_lock`) around the virtual schema and the loader
+deploy, so it never replaces the plan, the views or the scripts under a running backfill or
+refresh. A running loader run refuses the deploy before anything changes.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 from loader import deploy as loader_deploy
+from loader import target_config
+from loader.runlock import HeldLock, RunLockError, RunLockRefused, lock_installed, run_lock
+from loader.target_config import TargetConfig, TargetConfigError
 from vs import bundle
 from vs.cfbd_vs.catalog import CatalogError
-from vs.host import deploy, target
+from vs.host import deploy, ledger, target
 from vs.host.namespace import Namespace, NamespaceError
 
 EXIT_OK = 0
 EXIT_ERROR = 2
+DEPLOY_KIND = "DEPLOY"
+DEPLOY_ARGS = "make deploy"
 
 Connector = Callable[[target.Target], Any]
 BundleWriter = Callable[[], bundle.BundleSizes]
+MonthCaps = Callable[[], Mapping[str, int]]
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def ledger_month_caps() -> Mapping[str, int]:
+    """The owner's month caps of `vs/live/ledger.yaml`."""
+    return ledger.load_config().months
 
 
 def connect_sys(deployment: target.Target) -> Any:
@@ -59,6 +83,10 @@ def main(
     *,
     connector: Connector = connect_sys,
     write_bundle: BundleWriter = bundle.write_bundle,
+    resolve: Callable[..., target.Target] | None = None,
+    clock: Callable[[], datetime] = utc_now,
+    month_caps: MonthCaps = ledger_month_caps,
+    target_settings: TargetConfig | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -70,23 +98,33 @@ def main(
             force_fetch_replace=args.force_fetch_replace,
         )
         deploy.desired_properties(namespace, options)
-        loader_options = loader_deploy.LoaderOptions(
-            config_overrides=loader_deploy.parse_overrides(args.loader_config)
+        explicit = loader_deploy.parse_overrides(args.loader_config)
+        deployment = (resolve or target.resolve)(args.target, dsn=args.dsn)
+        overrides = target_config.resolve(
+            target_settings or target_config.load(),
+            deployment.name,
+            explicit=explicit,
+            month=ledger.month_of(clock()),
+            caps=month_caps,
         )
+        for line in overrides.lines:
+            print(line)
+        loader_options = loader_deploy.LoaderOptions(config_overrides=overrides.values)
         loader_deploy.validate(namespace, loader_options)
-        deployment = target.resolve(args.target, dsn=args.dsn)
         sizes = write_bundle()
         print(
             f"bundle: adapter {sizes.adapter_chars:,} and fetch UDF {sizes.fetch_chars:,} "
             f"characters, written to {bundle.DEFAULT_OUT_DIR}"
         )
-        next_steps = _deploy(connector(deployment), namespace, options, loader_options)
+        next_steps = deploy_namespace(connector(deployment), namespace, options, loader_options)
     except (
         deploy.DeployError,
         bundle.BundleError,
         CatalogError,
         NamespaceError,
         target.TargetError,
+        TargetConfigError,
+        ledger.LedgerError,
     ) as error:
         print(f"deploy failed: {error}", file=sys.stderr)
         return EXIT_ERROR
@@ -95,18 +133,26 @@ def main(
     return EXIT_OK
 
 
-def _deploy(
+def deploy_namespace(
     connection: Any,
     namespace: Namespace,
     options: deploy.DeployOptions,
     loader_options: loader_deploy.LoaderOptions,
 ) -> tuple[str, ...]:
-    """Deploy the virtual schema, then the loader, printing each report as it completes."""
+    """Deploy the virtual schema, then the loader, under the run lock once it is installed."""
     try:
-        report = deploy.deploy(connection, namespace, options)
-        print("\n".join(report.lines))
-        print("\n".join(loader_deploy.deploy(connection, namespace, loader_options).lines))
+        with _deploy_lock(connection, namespace) as lock:
+            report = deploy.deploy(connection, namespace, options)
+            print("\n".join(report.lines))
+            loader = loader_deploy.deploy(connection, namespace, loader_options)
+            print("\n".join(loader.lines))
+            if lock is not None:
+                lock.detail = f"deployed plan {loader.plan_hash[:12]}"
         return report.next_steps
+    except RunLockRefused as error:
+        raise deploy.DeployError(f"{error}; nothing was deployed") from None
+    except RunLockError as error:
+        raise deploy.DeployError(str(error)) from None
     except deploy.DeployError:
         raise
     except Exception as error:
@@ -115,6 +161,20 @@ def _deploy(
         raise deploy.DeployError(f"Exasol rejected a statement: {first}") from None
     finally:
         connection.close()
+
+
+@contextmanager
+def _deploy_lock(connection: Any, namespace: Namespace) -> Iterator[HeldLock | None]:
+    if not lock_installed(connection, namespace):
+        print(
+            f"run lock: {namespace.infra_schema}.RUN_LOCK is not installed yet (first deploy), "
+            "so this deploy runs without the lock and installs it"
+        )
+        yield None
+        return
+    with run_lock(connection, namespace, DEPLOY_KIND, DEPLOY_ARGS) as lock:
+        print(f"run lock: {DEPLOY_KIND} run {lock.run_id}")
+        yield lock
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -146,7 +206,8 @@ def _parser() -> argparse.ArgumentParser:
         "--loader-config",
         default="",
         metavar="k=v,...",
-        help="loader settings overriding the plan file, e.g. monthly_call_budget=400",
+        help="loader settings overriding the plan file and vs/live/loader-config.yaml, "
+        "e.g. monthly_call_budget=400",
     )
     parser.add_argument(
         "--target", default=None, help="local or aws (default: $TARGET, else local)"

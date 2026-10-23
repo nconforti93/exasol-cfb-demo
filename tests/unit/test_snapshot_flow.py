@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import gzip
 import io
+import json
 import re
 import stat
 from collections.abc import Sequence
@@ -351,3 +352,53 @@ def test_scope_tables_need_a_deployment(tmp_path: Path) -> None:
     db.tables = {("TEST_CFB_CORE", "GAMES"): (GAMES, [])}
     with pytest.raises(SnapshotError, match=r"TEST_CFB_META\.LOAD_LOG does not exist"):
         take(db, tmp_path)
+
+
+def test_a_scope_without_load_log_is_refused_before_the_lock(tmp_path: Path) -> None:
+    db = FakeDatabase()
+    with pytest.raises(SnapshotError, match="LOAD_LOG"):
+        snap.take_snapshot(
+            db, TEST, tmp_path, "week7", source=SOURCE, scope=SnapshotScope(("CFB_CORE",), ())
+        )
+    assert db.statements == []
+    assert not (tmp_path / "week7").exists()
+
+
+def test_a_manifest_without_load_log_is_refused_before_any_change(tmp_path: Path) -> None:
+    """Review M2: replacing CFB_CORE without LOAD_LOG would serve deleted slices as stored."""
+    take(FakeDatabase(), tmp_path)
+    path = tmp_path / "week7" / snap.MANIFEST_FILE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["tables"] = [table for table in data["tables"] if table["schema"] == "CFB_CORE"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    db = FakeDatabase()
+    with pytest.raises(SnapshotError, match="LOAD_LOG"):
+        restore(db, tmp_path)
+    assert db.statements == []
+
+
+def test_the_restore_check_refuses_a_manifest_object_without_load_log() -> None:
+    manifest = snap.Manifest(
+        name="week7",
+        created_at="2026-10-22T20:15:03Z",
+        source=SOURCE,
+        db_version="2026.2.0",
+        catalog_hash=CATALOG,
+        plan_hash=PLAN,
+        tables=(),
+    )
+    db = FakeDatabase()
+    with pytest.raises(SnapshotRefused, match="LOAD_LOG"):
+        snap.check_restore(db, TEST, manifest, force=True)
+    assert not [s for s in db.statements if "RUN_LOCK" in s]
+
+
+def test_a_copied_snapshot_restores_under_its_directory_name_with_a_note(tmp_path: Path) -> None:
+    """Review n4: the manifest's name and the directory differ after a copy or a rename."""
+    take(FakeDatabase(), tmp_path)
+    (tmp_path / "week7").rename(tmp_path / "week7-copy")
+    db = FakeDatabase()
+    lines: list[str] = []
+    snap.restore_snapshot(db, TEST, tmp_path, "week7-copy", log=lines.append)
+    assert "the manifest names this snapshot 'week7'; restoring it as 'week7-copy'" in lines
+    assert "'acquire', 'RESTORE', NULL, 'week7-copy'" in "".join(db.statements)

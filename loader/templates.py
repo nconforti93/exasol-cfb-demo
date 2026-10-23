@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from loader.plan import (
-    NO_SLICING,
     RANGE_PARAMS,
     RANGE_SLICING,
     SEASON_PARAM,
@@ -30,6 +29,7 @@ from loader.plan import (
     PlanEntry,
     PlanError,
     PlanIssue,
+    sliced_params,
 )
 from vs.cfbd_vs import rules, sqlrender
 from vs.cfbd_vs.catalog import Catalog, Param, Table
@@ -131,7 +131,7 @@ def _template(
     where: str,
     issues: list[PlanIssue],
 ) -> str | None:
-    sentinels = {name: SENTINEL_FOR_PARAM[name][1] for name in _sliced_params(entry.slicing)}
+    sentinels = {name: SENTINEL_FOR_PARAM[name][1] for name in sliced_params(entry.slicing)}
     constraints = {name: [value] for name, value in {**fixed, **sentinels}.items()}
     evaluation = rules.apply_defaults(table, constraints)
     try:
@@ -173,15 +173,6 @@ def _check_round_trip(
     ).slice_keys[0]
     if rendered != expected:
         raise ValueError(f"template {template!r} does not reproduce the adapter key {expected!r}")
-
-
-def _sliced_params(slicing: str) -> tuple[str, ...]:
-    if slicing == SEASON_SLICING:
-        return (SEASON_PARAM,)
-    if slicing == RANGE_SLICING:
-        return RANGE_PARAMS
-    assert slicing == NO_SLICING
-    return ()
 
 
 def _fixed_filter(table: Table, fixed: Mapping[str, ParamValue]) -> str | None:

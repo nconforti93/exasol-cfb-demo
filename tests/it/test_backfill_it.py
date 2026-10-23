@@ -211,6 +211,18 @@ def test_run_counts_measured_calls(harness: Harness, mock: Mock) -> None:
     assert stored_keys(harness) == {games_key(y) for y in range(2015, 2021)}
 
 
+def test_a_retried_server_error_is_charged_every_attempt(harness: Harness, mock: Mock) -> None:
+    """Review n17: two 503s and then a 200 cost 3 calls, and FETCH_LOG keeps the 3 attempts."""
+    deploy_games(harness, 2020, 2020)
+    harness.script_info(counting=True, used=0, limit=1000)
+    mock.script(GAMES_PATH, times=2, status=503, retry_after=0)
+    rows = harness.backfill()
+    assert (total(rows)["RUN_STATUS"], total(rows)["CALLS"]) == ("DONE", 3)
+    assert harness.runs()[-1]["CALLS"] == 3
+    attempts = harness.query(f"SELECT SLICE_KEY, ATTEMPTS FROM {harness.meta}.FETCH_LOG")
+    assert attempts == [(games_key(2020), 3)]
+
+
 def test_dry_run_checks_and_fetches_nothing(harness: Harness, mock: Mock) -> None:
     """Scenario: A dry run checks the plan and fetches nothing (6 missing slices, one gap)."""
     deploy_games(harness, 2014, 2020, gaps=[2017])
@@ -281,26 +293,36 @@ def test_failing_slice_quarantined(harness: Harness, mock: Mock) -> None:
     assert total(second)["RUN_STATUS"] == "DONE"
 
 
-def test_systemic_failure_stops_run(harness: Harness, mock: Mock) -> None:
-    """Scenario: A failure of every slice stops the run."""
+def test_one_failed_single_slice_batch_does_not_stop_the_run(harness: Harness, mock: Mock) -> None:
+    """Scenario: One failed single-slice batch does not stop the run (decision [45])."""
     deploy_games(harness, 2017, 2020)
+    harness.set_property("MAX_CALLS_PER_QUERY", "1")
+    harness.script_info(counting=True, used=0, limit=1000)
+    mock.script(GAMES_PATH, query={"year": "2019"}, **SERVER_ERROR)
+    rows = harness.backfill()
+    assert stored_keys(harness) == {games_key(2020), games_key(2018), games_key(2017)}
+    [failure] = harness.failures()
+    assert (failure["SLICE_KEY"], failure["FAILURES"]) == (games_key(2019), 1)
+    assert (total(rows)["RUN_STATUS"], total(rows)["FAILED_SLICES"]) == ("DONE_WITH_FAILURES", 1)
+
+
+def test_systemic_failure_stops_run(harness: Harness, mock: Mock) -> None:
+    """Scenario: Two consecutive failed batches stop the run."""
+    deploy_games(harness, 2015, 2020)
     harness.set_property("MAX_CALLS_PER_QUERY", "2")
     harness.script_info(counting=True, used=0, limit=1000)
     mock.script(GAMES_PATH, **SERVER_ERROR)
     rows = harness.backfill()
     assert total(rows)["RUN_STATUS"] == "FAILED"
+    assert "2 consecutive batches failed" in total(rows)["DETAIL"]
     assert harness.runs()[-1]["RUN_STATUS"] == "FAILED"
-    assert "2018" not in games_requests(harness)
-    assert "2017" not in games_requests(harness)
+    assert sorted(games_requests(harness)) == sorted(["2020", "2019", "2018", "2017"] * 2)
     assert {(f["SLICE_KEY"], f["FAILURES"]) for f in harness.failures()} == {
-        (games_key(2020), 1),
-        (games_key(2019), 1),
+        (games_key(year), 1) for year in (2020, 2019, 2018, 2017)
     }
     assert [step["STEP_STATUS"] for step in batch_steps(harness, total(rows)["RUN_ID"])] == [
-        "FAILED",
-        "FAILED",
-        "FAILED",
-    ]
+        "FAILED"
+    ] * 6
 
 
 def test_next_run_resumes_after_failure(harness: Harness, mock: Mock) -> None:
@@ -356,7 +378,7 @@ def test_properties_unchanged_after_runs(harness: Harness, mock: Mock) -> None:
     mock.script(GAMES_PATH, **SERVER_ERROR)
     harness.set_now("2021-02-15")
     before = sorted(virtual_schema_property_rows(harness.sys))
-    assert total(harness.backfill())["RUN_STATUS"] == "FAILED"
+    assert total(harness.backfill())["RUN_STATUS"] == "DONE_WITH_FAILURES"
     assert sorted(virtual_schema_property_rows(harness.sys)) == before
 
 

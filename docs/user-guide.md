@@ -397,7 +397,7 @@ The loader copies slices from `CFBD_VS` into the mirrors in `CFB_CORE` and regis
 
 | Entry point | Does |
 |---|---|
-| `EXECUTE SCRIPT CFB_INFRA.BACKFILL(profile, from_season, max_calls)` | Fetches every slice of the load plan that is missing (and every slice that has become final since it was stored). Resumable, idempotent, newest first |
+| `EXECUTE SCRIPT CFB_INFRA.BACKFILL(run_profile, from_season, max_calls)` | Fetches every slice of the load plan that is missing (and every slice that has become final since it was stored). Resumable, idempotent, newest first |
 | `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(season, week, season_type)` | The weekly refresh: re-fetches the season's weekly slices that are not final yet, and returns a step timeline |
 
 `make backfill`, `make refresh` and `make quota` wrap them with a call estimate, a confirmation and the call ledger. Run the loader as `sys`, which owns the scripts: a Lua script runs with the rights of its caller, so a user needs `EXECUTE` on the script and every privilege the script uses. A role for the app is planned for the app phase.
@@ -449,15 +449,19 @@ The check lists every problem at once, each naming the entry and the rule, and t
 
 ### 9.2 Deploy and settings
 
-`make deploy` deploys the virtual schema (§1) and then the loader: the `CFB_STAGE` schema (one empty mirror per planned table, used while a batch loads), the plan tables, the six views and the scripts `BACKFILL`, `REFRESH_WEEK` and `RUN_LOCK`. It never touches the data in `LOAD_LOG`, `FETCH_LOG`, the run logs or `CFB_CORE`. It prints a warning when stored slices no longer match the plan.
+`make deploy` deploys the virtual schema (§1) and then the loader: the `CFB_STAGE` schema (one empty mirror per planned table, used while a batch loads), the plan tables, the six views and the scripts `BACKFILL`, `REFRESH_WEEK` and `RUN_LOCK`. It never touches the data in `LOAD_LOG`, `FETCH_LOG`, the run logs or `CFB_CORE`. It prints a warning when stored slices no longer match the plan. Once a namespace has `RUN_LOCK` (after its first deploy), the deploy holds the run lock as a `DEPLOY` run, so it is refused while a backfill, refresh, snapshot or restore runs, and nothing changes.
 
-`LOADER_CONFIG` overrides loader settings for one deployment, until the next `make deploy`:
+The loader settings come from three places, each winning over the one before, setting by setting:
+
+1. `loader/load-plan.yaml` (`config`), the same for every deployment;
+2. `vs/live/loader-config.yaml`, per target: a plain `make deploy TARGET=aws` applies its `aws` entry, so a redeploy never lifts the AWS budget. There, `monthly_call_budget: ledger` means the owner's cap in `vs/live/ledger.yaml` for the UTC month of the deploy (400 in October 2026, 1000 from the first deploy in November), and `refresh_reserve` is 50. A month without a cap refuses the deploy until the owner adds one, or until you pass the budget yourself;
+3. `LOADER_CONFIG`, for one deploy:
 
 ```bash
 make deploy LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"
 ```
 
-The override changes the settings but not the plan's hash. Deploy without it to return to the plan file's values.
+The deploy prints every override with its source, and warns when `MONTHLY_CALL_BUDGET` or `REFRESH_RESERVE` changes. Overrides change the settings but not the plan's hash, and they last until the next deploy: after a month change, deploy once to follow the new month's cap.
 
 ### 9.3 Backfill
 
@@ -473,7 +477,7 @@ make backfill PROFILE=demo MAX_CALLS=0 CONFIRM=yes # dry run
 |---|---|
 | `PROFILE` | `demo` (default) or `full` |
 | `FROM` | The newest season to load. Seasonless slices are always included |
-| `MAX_CALLS` | The most calls this run may spend. Without it, the ledger room caps the run. `0` is a dry run: it registers known gaps, checks every pending batch with `EXPLAIN VIRTUAL` and fetches nothing |
+| `MAX_CALLS` | The most calls this run may spend, measured (retries included). Without it, the ledger room caps the run. A run can spend up to 3 calls more: a request may take 4 attempts, so near the end the backfill fetches one slice at a time, and a last slice started with 1 to 3 calls left can be retried to its fourth attempt. `0` is a dry run: it registers known gaps, checks every pending batch with `EXPLAIN VIRTUAL` and fetches nothing |
 | `CONFIRM=yes` | Required to run in live mode. Without it the command prints the estimate and the quota and stops (exit 1) |
 | `LEDGER=off` | Turns the call ledger off (see [§9.5](#95-quota-budget-and-the-ledger)) |
 
@@ -482,7 +486,7 @@ What the wrapper does, in order, each guard stopping the command before the next
 Running the script directly, from any SQL client:
 
 ```sql
-EXECUTE SCRIPT CFB_INFRA.BACKFILL('demo', NULL, NULL);   -- profile, from_season, max_calls (NULL = no limit)
+EXECUTE SCRIPT CFB_INFRA.BACKFILL('demo', NULL, NULL);   -- run_profile, from_season, max_calls (NULL = no limit)
 ```
 
 It returns one row per table that was loaded, checked, blocked or had failures, then a total row with `TABLE_NAME = '*'`. Never run the call `WITH OUTPUT`: that returns only the script's log lines and discards the result table. All three arguments are required.
@@ -514,13 +518,15 @@ RUN_ID  TABLE_NAME                SLICES  ROWS_LOADED  CALLS  FAILED_SLICES  RUN
 How it works:
 
 - **Order:** profile (`demo` before `full`), priority, newest season first (seasonless slices first), table, entry. A slice that failed before comes last and is fetched alone.
-- **Batches:** one plan entry at a time, at most `MAX_CALLS_PER_QUERY` slices (and at most the remaining allowance), fetched by one fan-out query. The rows go through `CFB_STAGE` into `CFB_CORE` in one transaction together with the `LOAD_LOG` and `FETCH_LOG` rows. A failed batch leaves no trace and earlier batches stay committed, which is what makes a run resumable.
+- **Batches:** one plan entry at a time, at most `MAX_CALLS_PER_QUERY` slices, and in live mode at most a quarter of the remaining allowance (every request may take 4 attempts; at least one slice), fetched by one fan-out query. The rows go through `CFB_STAGE` into `CFB_CORE` in one transaction together with the `LOAD_LOG` and `FETCH_LOG` rows. A failed batch leaves no trace and earlier batches stay committed, which is what makes a run resumable.
 - **Idempotent:** a rerun fetches only missing slices and slices that have become final since. A complete profile costs 0 calls to run again.
 - **Budget:** it stops before the quota allows no more (`STOPPED_BUDGET`), at `MAX_CALLS` (`STOPPED_MAX_CALLS`), or when `QUOTA.BACKFILL_SPENDABLE` runs out. The allowance follows the key's real counter after every batch, so retries are counted too.
 - **Read-through stays on.** The loader never switches `READ_THROUGH` (it is global, and concurrent queries would re-fetch stored slices); its batch queries keep only fetched rows (`REQ_SOURCE <> 'STORED'`).
 - **Drift check:** before each batch, `EXPLAIN VIRTUAL` (0 calls) confirms that the adapter would request exactly the batch's slice keys. A mismatch stops the run before any request and names `make deploy`.
 
-Exit codes of the wrapper: 0 for `DONE`, `STOPPED_BUDGET` and `STOPPED_MAX_CALLS`; 1 when a guard refused (nothing was sent); 2 for an error (arguments, connection, database); 3 when the run itself failed (`FAILED`, `DONE_WITH_FAILURES`, a raised error).
+Exit codes of the wrapper: 0 for `DONE`, `STOPPED_BUDGET` and `STOPPED_MAX_CALLS`; 1 when a guard refused, also when the script found another run holding the run lock (nothing was sent); 2 for an error (arguments, connection, database); 3 when the run itself failed (`FAILED`, `DONE_WITH_FAILURES`, a raised error).
+
+**Ctrl-C and timeouts.** The wrapper notes the session before it starts the script. If you interrupt it, or the connection times out, it opens a new connection, kills the run's session if the script is still running (so it stops spending), reads the run's `LOAD_RUN` row and `/info`, writes the ledger entry, and only then exits. When nothing can be read, it charges the most the run could have spent: `MAX_CALLS` for a backfill, four attempts per estimated slice for a refresh.
 
 ### 9.4 The weekly refresh
 
@@ -592,7 +598,7 @@ Two guards keep live runs inside a budget:
 1. **In the database:** `PROJECT_BUDGET` against `/info`'s used calls. It holds for every SQL client, including a `BACKFILL` typed outside `make`.
 2. **The ledger** (`cache/live-calls.jsonl`, gitignored, shared with the recorder and every other plan through the main working tree). `make backfill` and `make refresh` check it before a live run and append the run to it afterwards. The caps live in `vs/live/ledger.yaml`, which the owner edits: `plans` (calls a plan may spend over all months) and `months` (calls the whole key may spend in a UTC month, across all plans). A month without an entry refuses live calls. The wrappers refuse when the plan's total plus the estimate would exceed its cap, or when `/info`'s used calls plus the estimate would exceed the month's cap. `MAX_CALLS` defaults to the ledger room and is capped at it. A ledger entry is written for every live run, with the larger of the script's measured calls and the `/info` change.
 
-`LEDGER=off` turns the ledger off for people who run their own key (nothing is read, checked or written); the in-database budget still applies. The ledger is not used for prefixed namespaces, which read the mock API. `python -m vs.host.ledger --summary` prints the totals against the caps.
+`LEDGER=off` turns the ledger off for people who run their own key (nothing is read, checked or written); the in-database budget still applies. The ledger is not used when the virtual schema reads the mock connection `CFBD_API_MOCK` (its calls cost nothing); the connection decides, not the namespace prefix. `python -m vs.host.ledger --summary` prints the totals against the caps.
 
 ### 9.6 Failures, quarantine and orphans
 
@@ -605,9 +611,9 @@ FROM "CFB_META"."LOAD_RUN" ORDER BY "RUN_ID" DESC LIMIT 10;
 SELECT * FROM "CFB_META"."LOAD_STATUS" ORDER BY "ENTRY_ID";   -- per plan entry: planned, stored, final, missing, quarantined, orphans, calls to complete, BLOCKED_BY
 ```
 
-**One run at a time.** A `RUNNING` row in `LOAD_RUN` is the run lock; a second loader run, a snapshot or a restore refuses to start while another holds it, and the refusal names the holder. A lock never blocks forever: a `RUNNING` row is treated as abandoned, and the next run proceeds, when its session is gone, when it belongs to the calling session, or (for `BACKFILL` and `REFRESH_WEEK`, which are one statement) when its session is idle, meaning the script ended without closing its row after a failure or `KILL STATEMENT`. Snapshot and restore run from host sessions that are often idle between statements, so for them only a vanished session counts.
+**One run at a time.** A `RUNNING` row in `LOAD_RUN` is the run lock; a second loader run, a snapshot, a restore or a deploy refuses to start while another holds it, and the refusal names the holder. Only the session that took the lock ends its row. A lock never blocks forever: a `RUNNING` row is treated as abandoned, and the next run proceeds, when its session is gone, when it belongs to the calling session, or (for `BACKFILL` and `REFRESH_WEEK`, which are one statement) when its session is idle, meaning the script ended without closing its row after a failure or `KILL STATEMENT`. Snapshot and restore run from host sessions that are often idle between statements, so for them only a vanished session counts.
 
-**Failing slices.** The fetch function fails a whole fan-out when one slice fails. `BACKFILL` therefore rolls back a failed multi-slice batch and fetches each slice alone: the good ones commit, and a slice that fails alone gets a row in `CFB_META.LOAD_FAILURES` (one failure per run). From then on it is fetched alone and last. After `quarantine_after` (2) failing runs it is quarantined: skipped, and shown in `LOAD_STATUS`, until you clear it. If every slice of a batch fails alone, the cause is not the slice and the run stops with `FAILED` instead of burning calls. `REFRESH_WEEK` has no fallback: a failure stops the refresh and is shown in the timeline.
+**Failing slices.** The fetch function fails a whole fan-out when one slice fails. `BACKFILL` therefore rolls back a failed multi-slice batch and fetches each slice alone: the good ones commit, and a slice that fails alone gets a row in `CFB_META.LOAD_FAILURES` (one failure per run). From then on it is fetched alone and last. After `quarantine_after` (2) failing runs it is quarantined: skipped, and shown in `LOAD_STATUS`, until you clear it. A batch fails when none of its slices could be stored, also alone. One failed batch is recorded and the run goes on, so one transient error (on `TEAMS`, say) costs only that slice. After two failed batches in a row, the cause is not the slice and the run stops with `FAILED` instead of burning calls. `REFRESH_WEEK` has no fallback: a failure stops the refresh and is shown in the timeline.
 
 ```sql
 SELECT "TABLE_NAME", "SLICE_KEY", "FAILURES", "LAST_ERROR" FROM "CFB_META"."LOAD_FAILURES";

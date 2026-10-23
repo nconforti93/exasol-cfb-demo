@@ -11,14 +11,14 @@ snapshot is never overwritten.
 
 Scope: every table of the plan's snapshot schemas (`CFB_CORE`) plus its meta tables (`LOAD_LOG`,
 `FETCH_LOG`); `loader.plan.SnapshotScope`. Never `LOAD_RUN`, `REFRESH_LOG` or `LOAD_FAILURES`:
-run history stays with each deployment (review M5). Schema names in the manifest and the file
-names are logical (without the namespace prefix), so a snapshot of one namespace restores into
-another.
+run history stays with each deployment (`loader/snapshot-restore`). Schema names in the manifest
+and the file names are logical (without the namespace prefix), so a snapshot of one namespace
+restores into another.
 
 Manifest (`manifest_version` 1): `name`, `created_at` (UTC), `source` (`target`, `host`,
 `namespace`; never a credential), `db_version`, `catalog_hash` (of the deployed adapter script),
-`plan_hash` (`LOAD_PLAN.PLAN_HASH`, the plan file's hash, decision [40]), `format` (`csv-gzip`,
-decision [31]) and per table `schema`, `table`, `rows`, `columns` (`[[name, type], ...]` in
+`plan_hash` (`LOAD_PLAN.PLAN_HASH`, the hash of the normalized plan), `format` (`csv-gzip`,
+D45) and per table `schema`, `table`, `rows`, `columns` (`[[name, type], ...]` in
 column order), `file` and `sha256` (null for an empty table) and `fingerprint`.
 
 Fingerprint: `{"rows": n, "<COLUMN>": [non-NULL count, aggregate text], ...}`, computed by the
@@ -72,8 +72,9 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
 
-from loader.plan import SNAPSHOT_META_TABLES, SnapshotScope
+from loader.plan import SNAPSHOT_META_TABLES, SnapshotScope, scope_problem
 from loader.runlock import run_lock
+from loader.transaction import run_transaction
 from vs import bundle as vs_bundle
 from vs.cfbd_vs.sqlrender import qualified_name, quote_identifier, string_literal
 from vs.host.deploy import columns_by_table
@@ -435,6 +436,10 @@ class Manifest:
             raise SnapshotError("manifest tables must be a list")
         tables = tuple(_table_from_dict(item) for item in data["tables"])
         _require_unique([table.table for table in tables], "table")
+        listed = {table.schema for table in tables if table.schema != META}
+        problem = _scope_problem(listed, tables)
+        if problem is not None:
+            raise SnapshotError(f"manifest.json: {problem}")
         return cls(
             name=str(data["name"]),
             created_at=str(data["created_at"]),
@@ -515,6 +520,10 @@ def _valid_fingerprint(raw: Any, rows: int, columns: Sequence[Column]) -> bool:
         ):
             return False
     return True
+
+
+def _scope_problem(schemas: set[str], tables: Sequence[TableSnapshot]) -> str | None:
+    return scope_problem(sorted(schemas), [table.table for table in tables if table.schema == META])
 
 
 def _require_unique(names: Sequence[str], what: str) -> None:
@@ -701,13 +710,17 @@ def take_snapshot(
     log: Log = _silent,
 ) -> Manifest:
     """Write snapshot `name` below `root` (module documentation); returns its manifest."""
+    chosen = scope or SnapshotScope()
+    problem = scope_problem(chosen.schemas, chosen.meta_tables)
+    if problem is not None:
+        raise SnapshotError(f"snapshot scope: {problem}")
     check_location(root)
     directory = root / check_name(name)
     if directory.exists() or directory.is_symlink():
         raise _exists(name, directory)
     with run_lock(connection, namespace, SNAPSHOT_KIND, name) as lock:
         log(f"run lock: SNAPSHOT run {lock.run_id}")
-        tables = scope_tables(connection, namespace, scope or SnapshotScope())
+        tables = scope_tables(connection, namespace, chosen)
         catalog_hash = deployed_catalog_hash(connection, namespace)
         plan_hash = deployed_plan_hash(connection, namespace)
         db_version = database_version(connection)
@@ -808,9 +821,15 @@ def check_restore(
 ) -> list[str]:
     """Refuse a snapshot that does not fit the deployment; returns what the checks found.
 
+    The manifest must hold `LOAD_LOG`, since the restore replaces `CFB_CORE` (`scope_problem`).
     Columns and tables must match exactly (also with `force`); a different catalog hash is
     refused unless `force`. Reads only system tables and the plan table; changes nothing.
     """
+    problem = _scope_problem(set(WHOLE_SCHEMAS), manifest.tables)
+    if problem is not None:
+        raise SnapshotRefused(
+            f"the snapshot does not fit this deployment, nothing was changed: {problem}"
+        )
     found = {
         logical: _columns(connection, namespace_schema(namespace, logical))
         for logical in sorted({table.schema for table in manifest.tables} | set(WHOLE_SCHEMAS))
@@ -875,6 +894,8 @@ def restore_snapshot(
     check_location(root)
     directory = root / check_name(name)
     manifest = read_manifest(directory)
+    if manifest.name != name:
+        log(f"the manifest names this snapshot {manifest.name!r}; restoring it as {name!r}")
     for line in check_restore(connection, namespace, manifest, force=force):
         log(line)
     verify_files(directory, manifest)
@@ -955,23 +976,6 @@ def swap_statements(namespace: Namespace, tables: Sequence[TableSnapshot]) -> li
             landing = qualified_name(namespace.restore_schema, table.table)
             statements.append(f"INSERT INTO {target} ({columns}) SELECT {columns} FROM {landing}")
     return statements
-
-
-def run_transaction(connection: Any, statements: Sequence[str]) -> None:
-    """Run `statements` in one transaction: COMMIT at the end, ROLLBACK on any failure."""
-    switch = getattr(connection, "set_autocommit", None)
-    if switch is not None:
-        switch(False)
-    try:
-        for statement in statements:
-            connection.execute(statement)
-        connection.execute("COMMIT")
-    except BaseException:
-        connection.execute("ROLLBACK")
-        raise
-    finally:
-        if switch is not None:
-            switch(True)
 
 
 def _drop_landing(connection: Connection, namespace: Namespace) -> None:

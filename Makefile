@@ -75,8 +75,11 @@ coverage:
 	$(RUN) coverage report --include="vs/gen/*"
 	$(RUN) coverage report --include="loader/*"
 
-# `LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"` overrides loader settings of
-# loader/load-plan.yaml until the next deploy. `make deploy` also deploys the loader (loader/deploy.py).
+# Loader settings: loader/load-plan.yaml, then the target's entry in vs/live/loader-config.yaml
+# (aws: the ledger's month cap and a reserve of 50, so a plain redeploy keeps the AWS budget), then
+# `LOADER_CONFIG="k=v,..."`, which wins per setting. All last until the next deploy.
+# `make deploy` also deploys the loader (loader/deploy.py), under the DEPLOY run lock once the
+# namespace has RUN_LOCK.
 # `ARGS` passes options through, e.g. make deploy ARGS="--prefix PROBE_ --no-sync-api-features".
 # `--prefix` deploys that namespace as sys (not TEST_, which the integration harness owns) and is
 # refused together with the real connection.

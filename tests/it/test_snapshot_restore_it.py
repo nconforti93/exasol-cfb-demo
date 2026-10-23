@@ -403,6 +403,30 @@ def test_failed_restore_changes_nothing(harness: Harness, snapshot_dir: Path) ->
     assert "fingerprints" in restores[0]["DETAIL"]
 
 
+def test_restore_refuses_a_manifest_without_load_log(harness: Harness, snapshot_dir: Path) -> None:
+    """Scenario: A snapshot without the load log is refused (review M2)."""
+    populate(harness)
+    snapshot(harness, snapshot_dir)
+    fetch_newer_data(harness)
+    newer = scope_state(harness)
+    directory = snapshot_dir / NAME
+
+    def drop_load_log(data: dict[str, Any]) -> None:
+        data["tables"] = [
+            t for t in data["tables"] if (t["schema"], t["table"]) != ("CFB_META", "LOAD_LOG")
+        ]
+
+    rewrite_manifest(directory, drop_load_log)
+    (directory / "CFB_META.LOAD_LOG.csv.gz").unlink()
+    with pytest.raises(SnapshotError) as refused:
+        restore(harness, snapshot_dir)
+    message = str(refused.value)
+    assert "LOAD_LOG" in message and "CFB_CORE" in message
+    assert scope_state(harness) == newer
+    assert run_rows(harness, "RESTORE") == []
+    assert not landing_exists(harness)
+
+
 def test_snapshot_and_restore_refused_during_run(
     harness: Harness, snapshot_dir: Path, mock: Mock
 ) -> None:

@@ -109,10 +109,13 @@ def backfill_in(connection: Any, harness: Harness, outcome: list[Any]) -> Callab
 
 
 def test_failed_run_recorded(harness: Harness, mock: Mock) -> None:
-    """Scenario: A failed run is recorded and registers nothing from the failed batch."""
-    deploy_games(harness, 2017, 2020)
+    """Scenario: A failed run is recorded and registers nothing from the failed batch.
+
+    Two failed batches in a row stop the run (decision [45]), so every batch after the first fails.
+    """
+    deploy_games(harness, 2015, 2020)
     harness.set_property("MAX_CALLS_PER_QUERY", "2")
-    for year in ("2018", "2017"):
+    for year in ("2018", "2017", "2016", "2015"):
         mock.script(GAMES_PATH, query={"year": year}, **SERVER_ERROR)
     rows = harness.backfill()
     run = harness.runs()[-1]
@@ -138,14 +141,51 @@ def test_concurrent_run_refused(harness: Harness, mock: Mock) -> None:
         worker.start()
         try:
             running = wait_for(lambda: running_batch(harness), "the first backfill's batch")
+            before = logged_state(harness)
             with pytest.raises(pyexasol.ExaError) as refused:
                 harness.backfill()
+            assert logged_state(harness) == before
         finally:
             worker.join(WAIT_SECONDS)
     assert f"BACKFILL refused: BACKFILL run {running['RUN_ID']} is running" in str(refused.value)
     assert not isinstance(outcome[0], BaseException), outcome[0]
     assert harness.mock_hits(GAMES_PATH) == 1
     assert statuses(harness) == {int(running["RUN_ID"]): "DONE"}
+
+
+def logged_state(harness: Harness) -> dict[str, list[str]]:
+    """The rows of every table a refused run must leave alone (review m17)."""
+    tables = (
+        f"{harness.core}.GAMES",
+        *(f"{harness.meta}.{name}" for name in ("LOAD_LOG", "FETCH_LOG", "LOAD_FAILURES")),
+        *(f"{harness.meta}.{name}" for name in ("LOAD_RUN", "REFRESH_LOG")),
+    )
+    return {
+        table: sorted(repr(row) for row in harness.query(f"SELECT * FROM {table}"))
+        for table in tables
+    }
+
+
+def test_the_key_never_reaches_the_loader_logs(harness: Harness, mock: Mock) -> None:
+    """Review m9: failing slices in key-echo mode leave no key in any store the loader writes."""
+    deploy_games(harness, 2019, 2020)
+    harness.set_property("MAX_CALLS_PER_QUERY", "1")
+    mock.set_echo_key(True)
+    mock.script(GAMES_PATH, **SERVER_ERROR)
+    rows = harness.backfill()
+    run = harness.runs()[-1]
+    assert run["RUN_STATUS"] == "FAILED"
+    stores = {
+        "result": repr(rows),
+        "LOAD_FAILURES": repr(harness.failures()),
+        "REFRESH_LOG": repr(harness.steps(run["RUN_ID"])),
+        "LOAD_RUN": repr(harness.runs()),
+    }
+    assert {name: harness.marker_key in text for name, text in stores.items()} == dict.fromkeys(
+        stores, False
+    )
+    assert all("500" in failure["LAST_ERROR"] for failure in harness.failures())
+    assert "500" in run["DETAIL"]
 
 
 def test_abandoned_run_does_not_block(harness: Harness) -> None:

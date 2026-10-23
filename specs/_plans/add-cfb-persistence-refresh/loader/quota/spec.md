@@ -21,6 +21,7 @@
 - `USED_CALLS` counts every call of the key in the current month, including other plans, other tools and the CBBD shared pool. `PROJECT_BUDGET` is therefore a cap on the key's whole monthly use, not only on the loader's.
 - The design target is the free tier: the default `monthly_call_budget` is 1000 (D13), even when the key allows more. The owner changes it in `loader/load-plan.yaml` and runs `make deploy`.
 - A deploy can override settings for one deployment: `make deploy LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"`. The next deploy without the override restores the plan's values. This is how a month with a smaller authorization is enforced in the database.
+- `make deploy` first applies the target's overrides from `vs/live/loader-config.yaml`, so a plain redeploy keeps a target's budget. On `aws`, `monthly_call_budget` follows the owner's cap of the deploy's UTC month in `vs/live/ledger.yaml`, and `refresh_reserve` is 50. A month without a cap refuses that deploy unless `LOADER_CONFIG` sets the budget. An explicit `LOADER_CONFIG` wins per setting, and the deploy prints where each override came from and warns when it changes `MONTHLY_CALL_BUDGET` or `REFRESH_RESERVE`. The values last until the next deploy, so a new month's cap applies from the first deploy in that month.
 - `make quota` prints the view.
 - The examples use live mode against the mock API, whose `/info` answers are scripted per scenario.
 
@@ -56,6 +57,14 @@
 * *WHEN* the owner runs `make deploy LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"`, queries `CFB_META.QUOTA`, then runs `make deploy` and queries it again
 * *THEN* the first query MUST show `PROJECT_BUDGET` 400, `REFRESH_SPENDABLE` 350 and `BACKFILL_SPENDABLE` 300
 * *AND* the second query MUST show `PROJECT_BUDGET` 1000 and `BACKFILL_SPENDABLE` 800
+
+### Scenario: A plain deploy keeps a target's budget, following the ledger's month cap
+
+* *GIVEN* `vs/live/loader-config.yaml` gives target `aws` `monthly_call_budget: ledger` and `refresh_reserve: 50`, and the ledger caps October at 400 and November at 1000
+* *WHEN* the owner runs `make deploy TARGET=aws` in October, again in November, and once with `LOADER_CONFIG="monthly_call_budget=1000"`
+* *THEN* the October deploy MUST write `MONTHLY_CALL_BUDGET` 400 and `REFRESH_RESERVE` 50
+* *AND* the November deploy MUST write `MONTHLY_CALL_BUDGET` 1000
+* *AND* the explicit override MUST win and be printed
 
 ### Scenario: Calls are attributed to backfill, refresh and other use
 

@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from scripts import loader_cli
+from vs.cfbd_vs import http
 from vs.host import ledger, target
 from vs.host.ledger import Ledger, LedgerConfig
 
@@ -58,6 +59,13 @@ REFRESH_COLUMNS = (
 )
 BACKFILL_SQL = 'EXECUTE SCRIPT "CFB_INFRA"."BACKFILL"(\'demo\', NULL, {limit})'
 REFRESH_SQL = 'EXECUTE SCRIPT "CFB_INFRA"."REFRESH_WEEK"(2026, 9, \'regular\')'
+SESSION = "4711"
+SESSION_SQL = "SELECT CAST(CURRENT_SESSION AS VARCHAR(20))"
+KILL_SQL = f"KILL SESSION {SESSION}"
+REFUSAL = (
+    "BACKFILL refused: REFRESH_WEEK run 3 is running (session 9, started 2026-10-22 09:00:00 UTC)."
+    ' Only one loader run at a time caught in script "CFB_INFRA"."BACKFILL" at line 380'
+)
 
 
 def quota_row(used: int = 50, limit: int = 1000, **override: Any) -> tuple[Any, ...]:
@@ -127,8 +135,11 @@ class FakeLoaderDatabase:
         queue: Sequence[tuple[str, int]] = (("GAMES", 157), ("RATINGS_SP", 14), ("TEAMS", 1)),
         candidates: Sequence[tuple[str, int]] = (("GAMES", 1), ("RATINGS_SP", 1)),
         blocked: Sequence[tuple[str, str]] = (),
-        result: tuple[Sequence[str], list[tuple[Any, ...]]] | Exception | None = None,
+        result: tuple[Sequence[str], list[tuple[Any, ...]]] | BaseException | None = None,
         run_row: tuple[Any, ...] | Exception | None = (7, 217, "DONE"),
+        connection: str = "CFBD_API",
+        session_states: Sequence[str | None] = (None,),
+        dead_after_script: bool = False,
     ) -> None:
         self.mode = mode
         self.scripts = set(scripts)
@@ -138,6 +149,9 @@ class FakeLoaderDatabase:
         self.blocked = list(blocked)
         self.result = result if result is not None else backfill_result()
         self.run_row = run_row
+        self.connection = connection
+        self.session_states = list(session_states)
+        self.dead_after_script = dead_after_script
         self.statements: list[str] = []
         self.closed = False
 
@@ -145,9 +159,22 @@ class FakeLoaderDatabase:
         self.closed = True
 
     def execute(self, query: str) -> FakeStatement:
+        if self.dead_after_script and self.scripts_run():
+            raise ConnectionError("the connection is closed")
         self.statements.append(query)
         if "EXA_ALL_VIRTUAL_SCHEMA_PROPERTIES" in query:
-            return FakeStatement(("PROPERTY_VALUE",), [(self.mode,)] if self.mode else [])
+            rows = [("CONNECTION_NAME", self.connection)]
+            if self.mode:
+                rows.append(("FETCH_MODE", self.mode))
+            return FakeStatement(("PROPERTY_NAME", "PROPERTY_VALUE"), rows)
+        if query == SESSION_SQL:
+            return FakeStatement(("SESSION_TEXT",), [(SESSION,)])
+        if '"EXA_ALL_SESSIONS"' in query:
+            states = self.session_states
+            state = states.pop(0) if len(states) > 1 else states[0]
+            return FakeStatement(("STATUS",), [(state,)] if state else [])
+        if query.startswith("KILL SESSION"):
+            return FakeStatement((), [])
         if "FROM EXA_ALL_SCRIPTS" in query:
             found = any(f"SCRIPT_NAME = '{name}'" in query for name in self.scripts)
             return FakeStatement(("N",), [(int(found),)])
@@ -165,7 +192,7 @@ class FakeLoaderDatabase:
             rows = [self.run_row] if self.run_row else []
             return FakeStatement(("RUN_ID", "CALLS", "RUN_STATUS"), rows)
         if query.startswith("EXECUTE SCRIPT"):
-            if isinstance(self.result, Exception):
+            if isinstance(self.result, BaseException):
                 raise self.result
             return FakeStatement(*self.result)
         raise AssertionError(f"unexpected statement: {query[:120]}")
@@ -184,11 +211,19 @@ class FakeLoaderDatabase:
 
 
 class Harness:
-    def __init__(self, tmp_path: Path, db: FakeLoaderDatabase, book: Ledger | None = None) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        db: FakeLoaderDatabase,
+        book: Ledger | None = None,
+        recovery: FakeLoaderDatabase | Exception | None = None,
+    ) -> None:
         self.db = db
         self.book = book or Ledger(tmp_path / "live-calls.jsonl", config=CONFIG)
         self.deployments: list[target.Target] = []
         self.requested: list[str | None] = []
+        self.recovery = db if recovery is None else recovery
+        self.pauses: list[float] = []
 
     def resolve(self, name: str | None = None, **_: Any) -> target.Target:
         self.requested.append(name)
@@ -197,7 +232,11 @@ class Harness:
 
     def connector(self, deployment: target.Target) -> FakeLoaderDatabase:
         self.deployments.append(deployment)
-        return self.db
+        if len(self.deployments) == 1:
+            return self.db
+        if isinstance(self.recovery, Exception):
+            raise self.recovery
+        return self.recovery
 
     def run(self, *argv: str) -> int:
         return loader_cli.main(
@@ -206,6 +245,7 @@ class Harness:
             resolve=self.resolve,
             book=self.book,
             clock=lambda: NOW,
+            pause=self.pauses.append,
         )
 
     def entries(self) -> list[ledger.Entry]:
@@ -464,6 +504,7 @@ def test_a_script_error_is_recorded_and_fails_the_run(
         result=RuntimeError("batch 3 failed\nsecond line"),
         quotas=[quota_row(50), quota_row(80)],
         run_row=(11, 25, "FAILED"),
+        session_states=["IDLE"],
     )
     harness = make_harness(db)
     code = harness.run("--confirm", "yes", "backfill", "--profile", "demo")
@@ -472,23 +513,120 @@ def test_a_script_error_is_recorded_and_fails_the_run(
     [entry] = harness.entries()
     assert (entry.slice_key, entry.cost, entry.error) == ("BACKFILL#11", 30, "batch 3 failed")
     run_sql = next(s for s in db.statements if '."LOAD_RUN"' in s)
-    assert "CURRENT_SESSION" in run_sql
+    assert f'"SESSION_ID" = {SESSION}' in run_sql
+    assert KILL_SQL not in db.statements
 
 
-def test_when_nothing_can_be_read_after_the_run_the_estimate_is_charged(
-    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+def test_the_session_is_identified_before_the_script_runs(
+    make_harness: Callable[..., Harness],
 ) -> None:
-    db = FakeLoaderDatabase(
-        result=RuntimeError("connection timed out"),
-        quotas=[quota_row(50), RuntimeError("closed")],
-        run_row=RuntimeError("closed"),
+    harness = make_harness()
+    harness.run("--confirm", "yes", "backfill", "--profile", "demo")
+    statements = harness.db.statements
+    assert statements.index(SESSION_SQL) < statements.index(BACKFILL_SQL.format(limit=300))
+
+
+def test_an_interrupted_run_is_recorded_from_a_new_session_and_re_raised(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review M1: a Ctrl-C during the script still writes the run to the ledger."""
+    db = FakeLoaderDatabase(result=KeyboardInterrupt(), quotas=[quota_row(50)])
+    recovery = FakeLoaderDatabase(
+        quotas=[quota_row(95)], run_row=(7, 40, "RUNNING"), session_states=["EXECUTE SQL", None]
     )
-    harness = make_harness(db)
-    code = harness.run("--confirm", "yes", "backfill", "--profile", "demo", "--max-calls", "20")
+    harness = Harness(tmp_path, db, recovery=recovery)
+    with pytest.raises(KeyboardInterrupt):
+        harness.run("--confirm", "yes", "backfill", "--profile", "demo")
+    [entry] = harness.entries()
+    assert (entry.slice_key, entry.cost) == ("BACKFILL#7", 45)
+    assert (entry.remaining_before, entry.remaining_after) == (950, 905)
+    assert entry.error == "interrupted (KeyboardInterrupt)"
+    assert db.scripts_run() == [BACKFILL_SQL.format(limit=300)]
+    kill = recovery.statements.index(KILL_SQL)
+    quota = next(i for i, s in enumerate(recovery.statements) if '."QUOTA"' in s)
+    assert kill < quota
+    run_sql = next(s for s in recovery.statements if '."LOAD_RUN"' in s)
+    assert f'"SESSION_ID" = {SESSION}' in run_sql
+    assert recovery.closed and db.closed
+    out = capsys.readouterr().out
+    assert f"session {SESSION} was still running the script: killed it" in out
+    assert "ledger: recorded 45 calls as BACKFILL#7" in out
+
+
+def test_a_timed_out_run_is_recorded_from_a_new_session(tmp_path: Path) -> None:
+    db = FakeLoaderDatabase(
+        result=TimeoutError("socket timed out"), quotas=[quota_row(50)], dead_after_script=True
+    )
+    recovery = FakeLoaderDatabase(
+        quotas=[quota_row(120)],
+        run_row=(7, 70, "RUNNING"),
+        session_states=["EXECUTE SQL", "EXECUTE SQL", "EXECUTE SQL", None],
+    )
+    harness = Harness(tmp_path, db, recovery=recovery)
+    code = harness.run("--confirm", "yes", "backfill", "--profile", "demo")
     assert code == loader_cli.EXIT_FAILED
     [entry] = harness.entries()
-    assert (entry.slice_key, entry.cost) == ("BACKFILL#0", 20)
-    assert "charged the estimate" in capsys.readouterr().out
+    assert (entry.slice_key, entry.cost, entry.error) == ("BACKFILL#7", 70, "socket timed out")
+    assert KILL_SQL in recovery.statements
+    assert harness.pauses == [loader_cli.RECOVERY_POLL_SECONDS] * 2
+
+
+def test_a_session_that_does_not_end_is_noted_and_the_run_still_recorded(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = FakeLoaderDatabase(result=KeyboardInterrupt(), quotas=[quota_row(50)])
+    recovery = FakeLoaderDatabase(
+        quotas=[quota_row(60)], run_row=(7, 10, "RUNNING"), session_states=["EXECUTE SQL"] * 999
+    )
+    harness = Harness(tmp_path, db, recovery=recovery)
+    with pytest.raises(KeyboardInterrupt):
+        harness.run("--confirm", "yes", "backfill", "--profile", "demo")
+    assert [e.cost for e in harness.entries()] == [10]
+    polls = round(loader_cli.RECOVERY_WAIT_SECONDS / loader_cli.RECOVERY_POLL_SECONDS)
+    assert len(harness.pauses) == polls
+    assert "did not end within" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("max_calls", "charged"), [((), 300), (("--max-calls", "20"), 20)])
+def test_when_nothing_can_be_read_a_backfill_is_charged_its_max_calls(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    max_calls: tuple[str, ...],
+    charged: int,
+) -> None:
+    db = FakeLoaderDatabase(result=KeyboardInterrupt(), quotas=[quota_row(50)])
+    harness = Harness(tmp_path, db, recovery=ConnectionError("the database is unreachable"))
+    with pytest.raises(KeyboardInterrupt):
+        harness.run("--confirm", "yes", "backfill", "--profile", "demo", *max_calls)
+    [entry] = harness.entries()
+    assert (entry.slice_key, entry.cost) == ("BACKFILL#0", charged)
+    out = capsys.readouterr().out
+    assert f"charged the script's cap max_calls {charged}" in out
+    assert "the database is unreachable" in out
+
+
+def test_when_nothing_can_be_read_a_refresh_is_charged_every_attempt_of_its_slices(
+    tmp_path: Path,
+) -> None:
+    db = FakeLoaderDatabase(
+        result=TimeoutError("socket timed out"), quotas=[quota_row(50)], dead_after_script=True
+    )
+    harness = Harness(tmp_path, db, recovery=ConnectionError("down"))
+    code = harness.run("--confirm", "yes", "refresh", "--season", "2026", "--week", "9")
+    assert code == loader_cli.EXIT_FAILED
+    assert [e.cost for e in harness.entries()] == [2 * http.MAX_ATTEMPTS]
+
+
+def test_a_refusal_raised_by_the_script_exits_refused_and_records_nothing(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    harness = make_harness(FakeLoaderDatabase(result=RuntimeError(REFUSAL)))
+    code = harness.run("--confirm", "yes", "backfill", "--profile", "demo")
+    assert code == loader_cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "refused: BACKFILL refused: REFRESH_WEEK run 3 is running" in err
+    assert "caught in script" not in err
+    assert harness.entries() == []
 
 
 def test_ledger_off_runs_without_a_limit_and_writes_nothing(
@@ -570,7 +708,7 @@ def test_a_virtual_schema_without_a_fetch_mode_is_live(
 def test_a_prefixed_namespace_uses_its_names_and_skips_the_ledger(
     make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    harness = make_harness()
+    harness = make_harness(FakeLoaderDatabase(connection="CFBD_API_MOCK"))
     code = harness.run("--prefix", "PROBE_", "--confirm", "yes", "backfill", "--profile", "demo")
     assert code == loader_cli.EXIT_OK
     assert harness.db.scripts_run() == [
@@ -579,7 +717,40 @@ def test_a_prefixed_namespace_uses_its_names_and_skips_the_ledger(
     assert any('"PROBE_CFB_META"."QUOTA"' in s for s in harness.db.statements)
     assert any("PROBE_CFBD_VS" in s for s in harness.db.statements)
     assert harness.entries() == []
-    assert "not used for namespace PROBE_" in capsys.readouterr().out
+    assert "ledger: not used: PROBE_CFBD_VS reads the mock connection CFBD_API_MOCK" in (
+        capsys.readouterr().out
+    )
+
+
+def test_a_prefixed_namespace_on_the_real_connection_uses_the_ledger(
+    make_harness: Callable[..., Harness],
+) -> None:
+    """Review m3: the connection the virtual schema reads decides, not the namespace name."""
+    harness = make_harness(FakeLoaderDatabase(connection="CFBD_API"))
+    code = harness.run("--prefix", "PROBE_", "--confirm", "yes", "backfill", "--profile", "demo")
+    assert code == loader_cli.EXIT_OK
+    assert harness.db.scripts_run() == [
+        'EXECUTE SCRIPT "PROBE_CFB_INFRA"."BACKFILL"(\'demo\', NULL, 300)'
+    ]
+    assert [e.slice_key for e in harness.entries()] == ["BACKFILL#7"]
+
+
+@pytest.mark.parametrize("connection", ["CFBD_API_KEY2", ""])
+def test_any_connection_but_the_mock_uses_the_ledger(
+    make_harness: Callable[..., Harness], connection: str
+) -> None:
+    harness = make_harness(FakeLoaderDatabase(connection=connection))
+    harness.run("--confirm", "yes", "backfill", "--profile", "demo")
+    assert len(harness.entries()) == 1
+
+
+def test_the_real_namespace_on_the_mock_connection_skips_the_ledger(
+    make_harness: Callable[..., Harness],
+) -> None:
+    harness = make_harness(FakeLoaderDatabase(connection="cfbd_api_mock"))
+    assert harness.run("--confirm", "yes", "backfill", "--profile", "demo") == loader_cli.EXIT_OK
+    assert harness.db.scripts_run() == [BACKFILL_SQL.format(limit="NULL")]
+    assert harness.entries() == []
 
 
 def test_refresh_prints_the_weekly_candidates_and_needs_confirmation(

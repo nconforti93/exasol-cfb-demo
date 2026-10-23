@@ -60,7 +60,8 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 - [ ] P6-c (information only) Phase 6 task 1.9 will move the guard logic from `scripts/loader_cli.py` (estimate, quota, ledger check and record) into `loader/guard.py` after this plan merges. Keep that logic cohesive so it extracts cleanly.
 
 ## Review and Verification
-- [~] R.1 Code review
+- [x] R.1 Code review
+- [x] F.1 Review fixes: M1 interrupted-run ledger entry, M2 LOAD_LOG required with CFB_CORE, minors m1-m7, m8 (decision: stop after 2 consecutive failed batches), m10-m13 [expert]
 - [ ] V.1 Checklist
 - [ ] V.2 Scenario coverage audit
 - [ ] V.3 Manual testing and verification-report.md

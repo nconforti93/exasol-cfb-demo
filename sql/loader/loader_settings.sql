@@ -1,5 +1,5 @@
 -- LOADER_SETTINGS: one row with the loader's clock and settings. The other loader views and the Lua
--- scripts read "now" from here, so it is one expression everywhere (probe 1.1l).
+-- scripts read "now" from here, so it is one expression everywhere.
 -- CLOCK_UTC: the statement's time in UTC, CONVERT_TZ of CURRENT_TIMESTAMP from the session time zone
 --   (Personal runs in CET; SYSTIMESTAMP would shift twice). Use it for run and step times.
 -- NOW_UTC: the clock of the date rules: NOW_OVERRIDE (the test clock, 'YYYY-MM-DD' or

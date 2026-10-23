@@ -9,8 +9,8 @@ Namespace constants (a deploy-time rendering, so one source serves the real and 
 namespace). Both tables are keyed by `META_SCHEMA`, `CORE_SCHEMA`, `STAGE_SCHEMA`,
 `RESTORE_SCHEMA`, `INFRA_SCHEMA` and `VS_NAME`:
 
-- `QUOTED.<KEY>` is the double-quoted identifier, for `::name` binds (text inserted verbatim,
-  used for these constants only; every value is bound as `:name`) and for string concatenation.
+- `QUOTED.<KEY>` is the double-quoted identifier, concatenated into statement text (no Lua
+  source uses `::name`; every value is bound as `:name`).
 - `PLAIN.<KEY>` is the bare name, for value binds such as `WHERE SCHEMA_NAME = :v`, and messages.
 
 Source checks (`check_source`, applied to the loadlib and entry file of every script):
@@ -46,6 +46,7 @@ from vs.bundle import (
 from vs.host.namespace import Namespace
 
 __all__ = [
+    "ALTER_REJECTED",
     "SCRIPTS",
     "SIZE_LIMIT",
     "BundleError",
@@ -65,6 +66,7 @@ LIBRARY_FILE = "loadlib.lua"
 _NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 _PLACEHOLDER = re.compile(r"\{[A-Z][A-Z0-9_]*\}")
 _ALTER_VIRTUAL_SCHEMA = re.compile(r"ALTER\s+VIRTUAL\s+SCHEMA", re.IGNORECASE)
+ALTER_REJECTED = "ALTER VIRTUAL SCHEMA is not allowed"
 _BARE_QUERY = re.compile(r"(?<![\w.:])query\s*(?:[(\"'{]|\[=*\[)")
 _LONG_BRACKET = re.compile(r"\[(=*)\[")
 
@@ -89,7 +91,7 @@ class LuaScript:
 SCRIPTS = (
     LuaScript(
         "BACKFILL",
-        ("profile", "from_season", "max_calls"),
+        ("run_profile", "from_season", "max_calls"),
         "backfill.lua",
         "loader_backfill.sql",
     ),
@@ -152,9 +154,7 @@ def check_source(name: str, text: str) -> list[str]:
     for match in _BARE_QUERY.finditer(code):
         problems.append((_line(code, match.start()), "bare query(); use pquery()"))
     for match in _ALTER_VIRTUAL_SCHEMA.finditer(without_comments):
-        problems.append(
-            (_line(without_comments, match.start()), "ALTER VIRTUAL SCHEMA is not allowed")
-        )
+        problems.append((_line(without_comments, match.start()), ALTER_REJECTED))
     for match in _PLACEHOLDER.finditer(without_comments):
         problems.append(
             (

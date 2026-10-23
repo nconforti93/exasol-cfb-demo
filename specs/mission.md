@@ -119,7 +119,7 @@ make db-check     # is the selected database reachable
 Loader targets (Phase 2); all take `TARGET=local|aws`, and the live ones print the call estimate and the quota first and need `CONFIRM=yes`:
 
 ```bash
-make deploy LOADER_CONFIG="monthly_call_budget=400,refresh_reserve=50"   # also deploys the loader; the override lasts until the next deploy
+make deploy [LOADER_CONFIG="k=v,..."]     # also deploys the loader with vs/live/loader-config.yaml's target settings; LOADER_CONFIG wins, until the next deploy
 make backfill PROFILE=demo|full [FROM=year] [MAX_CALLS=n] [CONFIRM=yes]   # CFB_INFRA.BACKFILL; MAX_CALLS=0 is a dry run
 make refresh SEASON=y WEEK=w [SEASON_TYPE=postseason] [CONFIRM=yes]        # CFB_INFRA.REFRESH_WEEK; prints the timeline
 make quota                                                                  # CFB_META.QUOTA and the ledger room, 0 calls
