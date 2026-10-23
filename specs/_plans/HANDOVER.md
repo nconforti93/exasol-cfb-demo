@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-23 by Codex after Phase 4 task 1.4 and AWS deploy
+Last updated: 2026-10-23 by Codex after the AWS 100k simulation
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Codex took over on 2026-10-23.** Phase 4 task 1.4 is committed as `3fa2fbc` after 2 focused IT tests passed (190.40 s), focused unit tests, mypy and Ruff. Local `make model` and `make sim` passed; the first 10k simulation of 2026 after week 7 is `DONE` (run 1, 14.879 s, 143 teams, 377 games, zero CFBD calls). Local Auburn what-if: P(CFP) 4.85% now, 11.37% if it beats LSU in week 8 (3,651 matching seasons, query 0.163 s). The model correction and simulation objects are deployed on AWS (DEPLOY runs 22 and 23, zero CFBD calls). Task 1.5's AWS 100k/1M runs are next. AWS quota baseline is 241 of the October project cap of 400. The p5 uncommitted task set at handover is listed below. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row from the stopped Claude session, the run lock treats it as stale.
+**Codex took over on 2026-10-23.** Phase 4 task 1.4 is committed as `3fa2fbc` after 2 focused IT tests passed (190.40 s), focused unit tests, mypy and Ruff. Local 10k simulation of 2026 after week 7 is `DONE` (run 1, 14.879 s). The model correction and simulation objects are deployed on AWS (DEPLOY runs 22 and 23, zero CFBD calls). AWS 100k run 1 is `DONE` (14.496 s in database; 143 teams, 377 games); Auburn P(CFP) is 4.94% now, 11.33% if it beats LSU in week 8 (36,453 matching seasons, 0.318 s query). Task 1.5's AWS 1M run and verification are next. AWS quota baseline is 241 of the October project cap of 400. The p5 uncommitted task set at handover is listed below. If `CFB_META.LOAD_RUN` still shows a `RUNNING` row from the stopped Claude session, the run lock treats it as stale.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -126,6 +126,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-23: **AWS 100k simulation and Auburn what-if passed.** Run 1 `DONE` in 14.496 s, engine 5.636 s, 12 instances on 3 nodes, 143 teams and 377 games; P(CFP) 4.94% now vs 11.33% if Auburn beats LSU (0.318 s query). Zero CFBD calls.
 
 - 2026-10-23: **Phase 4 task 1.4 committed** (3fa2fbc). Two focused IT tests passed; AWS model and simulation deploys passed as DEPLOY runs 22 and 23, zero CFBD calls. Task 1.5 AWS runs next.
 
