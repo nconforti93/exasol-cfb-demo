@@ -1,5 +1,14 @@
 # Review: add-cfb-analyses
 
+> **Superseded (2026-10-23).** This review covers the heavy plan (commit c1be7e1). The plan was then replanned light and demo-first: `CFB_API` became thin views over `CFB_MODEL` and Phase 4's `CFB_SIM`, and `CFB_PRED`, publications, generated what-if views and the conditional rooting guide are gone (decision-log [41]–[56], `tasks.md`). The major findings are handled as follows:
+> - **M1** (restore vs the newest published point) and **M2** (one definition of the what-if run): moot. The run a page shows and the what-if run are Phase 4's `POINT_RUN` and `CURRENT_RUN` (never after the current point), read in place ([42], [51], [52]); there is nothing to regenerate after a restore.
+> - **M3** (unescaped names in generated DDL): moot. No SQL is generated with data in it, and layout A needs no per-run DDL ([51]).
+> - **M4** (headline of predictions made in advance vs reconstructions): kept, implemented by Phase 4 (`FREEZE_KIND`, `IS_HEADLINE` only on `IN_ADVANCE`); `api/predictions` serves it and states the page label.
+> - **M5** (all-time upset rank): the 1978 window is kept for slice B; ranks use Phase 4's stored magnitude with shared ranks instead of an unrounded recomputation; Q8 is a look at the top 20 in task 2.3 ([48]).
+> - **M6** (the perf harness could spend quota): moot. There is no perf harness, timings cover `CFB_API` only, and this plan makes no CFBD call ([54]).
+> - **M7** (views for the chat outside the pages): kept and extended: six pass-through views (`TEAM_GAMES` added) plus the stats views ([45]).
+> - Minor findings: m1, m14 and m15 live on in Phase 4 and `api/upsets`; m6 kept (`CFB_API_LIVE`, [54]); m7 and m8 move to Phase 6's live verification; m2, m3, m4, m5, m9, m10, m11, m12 and m13 are moot with the heavy design. The Phase 6 items below: P6-a is met by the virtual table's own `REQ_ROWS`; P6-b is part of task 1.1.
+
 Reviewer: independent plan review, 2026-10-22. Read-only: no DB session, no CFBD calls, no file edited except this one.
 
 Files read:

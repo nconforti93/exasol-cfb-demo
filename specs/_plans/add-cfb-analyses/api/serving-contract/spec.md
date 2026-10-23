@@ -1,123 +1,68 @@
 # Feature: Serving API contract
 
-`CFB_API` is the schema the app (Phase 6) and the chat (Phase 7) read. It is a fixed set of commented views, one per question a page asks, plus a few views over the model that let the chat answer questions outside the pages. Every one of them costs zero CFBD calls. The views that do call CFBD live apart, in `CFB_API_LIVE`, which only the app may read (`api/roles`, `api/on-demand`). Each view says in its first words what one row is, so a developer or a language model can use it without reading the code. The names and columns below are the contract that the later phases build on.
+`CFB_API` is the only schema the app (Phase 6) and the chat (Phase 7) read: a fixed set of thin, commented views over the stored model (`CFB_MODEL`) and, once the engine exists, over the simulation schema (`CFB_SIM`). Every one of them costs zero CFBD calls. Each view says in its first words what one row is, so a developer or a language model can use it without reading the code. The pages that need no simulation work from the day the views are deployed; the simulation columns stay empty until the engine has run, and then fill in place, under the same names.
 
 ## Background
 
-- **Objects of `CFB_API`** (all views; grain = the start of each view comment, "One row per …"):
+- **Deploy:** `make api [TARGET=local|aws]` (code `analyses/deploy.py`, also the last step of `make deploy`) lints `sql/api/` and `sql/api_live/`, then installs `CFB_API` and `CFB_API_LIVE` through the generic SQL-object deployer (`vs/host/sqlobjects.py`) in one transaction each, under the run lock (kind `DEPLOY`). A second run changes nothing. A view file that reads `CFB_SIM` is refused with "run make sim first" while that schema does not exist.
+- **Objects of `CFB_API`** (views only; no table, function or script). The grain is the start of each view comment, "One row per …"; the columns are in the feature specs named in the last column.
 
-  | View | One row per | Reads | Serves |
+  | View | One row per | Reads | Spec |
   |---|---|---|---|
-  | `CURRENT_POINT` | the current as-of point (exactly one row) | `CFB_MODEL.CURRENT_AS_OF`, `CFB_PRED.POINT_PUBLICATION`, `CFB_PRED.WHATIF_PUBLICATION`, `WHATIF_RUN` | every page's default point |
-  | `AS_OF_POINTS` | season and as-of point | `CFB_MODEL.AS_OF_POINT`, `CURRENT_AS_OF`, `CFB_PRED` | the as-of week picker |
-  | `TEAMS` | team | `CFB_MODEL.TEAM` | team pickers and names |
-  | `PLAYOFF_ODDS` | published point and eligible team | `CFB_PRED.ODDS_MOVEMENT` | odds with arrows (`analyses/published-odds`) |
-  | `PUBLISHED_RUNS` | published point (its latest publication) | `CFB_PRED.POINT_PUBLICATION`, `CFB_SIM.SIM_RUN` | "N seasons in S seconds", machine sizing |
-  | `ROOTING_GUIDE` | done simulation run, team with a playoff season in it, and remaining game not fixed in the run | `CFB_PRED.ROOTING_GUIDE` | rooting guide without toggles (`analyses/rooting-guide`) |
-  | `FORCED_RUN_ODDS` | done forced run and eligible team | `CFB_PRED.FORCED_RUN_ODDS` | forced scenarios (`analyses/forced-resim`) |
-  | `WHATIF_RUN` * | the what-if run (one row, or none before the first publication) | `CFB_PRED.PUBLICATION`, `CFB_SIM.SIM_RUN` | what-if anchor (`analyses/what-if`) |
-  | `WHATIF_GAMES` | remaining game of the what-if run | `CFB_PRED.WHATIF_PUBLICATION`, `WHATIF_RUN`, `CFB_SIM.SIM_RUN_GAME`, `SIM_RUN_TEAM`, `LEVERAGE`, `MARGIN_WIN_PROB` | toggles |
-  | `WHATIF_OUTCOMES` * | simulated season of the what-if run | the run's outcome table in `CFB_SIM` | what-if conditions |
-  | `WHATIF_PLAYOFF` * | simulated season and playoff team of the what-if run | `CFB_SIM.SIM_TEAM` | conditional odds |
-  | `ANALYSIS_SETTINGS` | setting | `CFB_PRED.ANALYSIS_SETTINGS` | sample thresholds, the arrow threshold, the all-time window |
-  | `PREDICTIONS` | frozen game prediction | `CFB_PRED.PREDICTION_GRADED`, `CFB_MODEL.TEAM` | this week's predictions, last week's grades (`analyses/predictions`) |
-  | `SCORECARD_WEEKS` | season, week, population and freeze kind | `CFB_PRED.SCORECARD_WEEK` | "the model went 41–9" (`analyses/scorecard`) |
-  | `SCORECARD_SEASONS` | as-of point, population and freeze kind | `CFB_PRED.SCORECARD_SEASON` | season to date |
-  | `SCORECARD_CALIBRATION` | season, population, freeze kind and probability bucket | `CFB_PRED.SCORECARD_CALIBRATION` | calibration chart |
-  | `UPSETS` | completed game involving FBS with a winner and a pregame probability | `CFB_PRED.UPSET`, `CFB_MODEL.TEAM` | upsets ranked all-time (`analyses/upsets`) |
-  | `MATCHUP_SERIES` | ordered team pair that has met | `CFB_PRED.MATCHUP_SERIES` | series summary (`analyses/head-to-head`) |
-  | `MATCHUP_GAMES` | completed meeting and ordered team pair | `CFB_MODEL.TEAM_GAME`, `GAME`, `CFB_SIM.GAME_WIN_PROB` | the list of meetings |
-  | `MATCHUP_NEXT` | ordered team pair with a meeting still to play this season | `CFB_PRED.MATCHUP_NEXT` | next meeting, prediction, stakes |
-  | `REFRESH_TIMELINE` | refresh run and step | `CFB_META.LOAD_RUN`, `REFRESH_LOG` | the refresh timeline |
-  | `FETCHES` | logged request of a slice | `CFB_META.FETCH_LOG` | the SQL↔HTTP inspector |
-  | `GAMES` | stored game, every season since 1869 | `CFB_MODEL.GAME` | the chat: any game, last week's results behind a swing |
-  | `TEAM_SEASONS` | team and season with a game or a conference membership | `CFB_MODEL.TEAM_SEASON` | the chat: records, conferences, tiers and final ranks of any season |
-  | `RANKINGS` | poll, season, season type, week and ranked team | `CFB_MODEL.RANKING` | the chat: poll positions of any week |
-  | `SP_RATINGS` | season and SP+-rated team | `CFB_MODEL.RATING_SP` | the chat: CFBD's SP+ ratings and strength of schedule |
+  | `CURRENT_POINT` | the current as-of point (exactly one row) | `CFB_MODEL.CURRENT_AS_OF`; with the engine `CFB_SIM.POINT_RUN`, `CURRENT_RUN` | this spec |
+  | `AS_OF_POINTS` | season and as-of point | `CFB_MODEL.AS_OF_POINT`, `CURRENT_AS_OF`; with the engine `CFB_SIM.POINT_RUN`, `PREDICTION`, `PREDICTION_GRADED` | this spec |
+  | `TEAMS`, `GAMES`, `TEAM_GAMES`, `TEAM_SEASONS`, `RANKINGS`, `SP_RATINGS`, `TEAM_TRAVEL`, `WEEK_GAMES` | see `api/teams-and-weeks` | `CFB_MODEL` | `api/teams-and-weeks` |
+  | `ROAD_WARRIORS`, `SP_MOVERS`, `CONFERENCE_STRENGTH`, `WIN_STREAKS` | see `api/league-stats` | `CFB_MODEL`, `TEAM_TRAVEL` | `api/league-stats` |
+  | `MATCHUP_SERIES`, `MATCHUP_GAMES`, `MATCHUP_NEXT` | see `api/head-to-head` | `CFB_MODEL`; with the engine `CFB_SIM` | `api/head-to-head` |
+  | `UPSETS` | see `api/upsets` | `CFB_MODEL`; with the engine `CFB_SIM.GAME_WIN_PROB` | `api/upsets` |
+  | `REFRESH_TIMELINE` | refresh run and step | `CFB_META.LOAD_RUN`, `REFRESH_LOG` | this spec |
+  | `FETCHES` | logged request of a slice | `CFB_META.FETCH_LOG` | this spec |
+  | `ANALYSIS_SETTINGS`, `PLAYOFF_ODDS`, `PUBLISHED_RUNS`, `WHATIF_RUN`, `WHATIF_GAMES`, `WHATIF_OUTCOMES`, `WHATIF_PLAYOFF`, `WHATIF_TEAMS`, `ROOTING_GUIDE` | see `api/simulations` | `CFB_SIM` | `api/simulations` |
+  | `PREDICTIONS`, `SCORECARD_WEEKS`, `SCORECARD_SEASONS`, `SCORECARD_CALIBRATION` | see `api/predictions` | `CFB_SIM` | `api/predictions` |
 
-  \* generated for the what-if publication and by `make analyses`, with the run id as a literal (`analyses/what-if`). 23 views come from files, 3 are generated: 26 in all.
-- **Objects of `CFB_API_LIVE`** (`api/on-demand`): `GAME_PREVIEW` (one row per requested game; **one CFBD call per query**; `CFBD_VS.GAMES_PREVIEW`) and `QUOTA` (the key's quota, one row; reads CFBD's free `/info` through `CFB_META.QUOTA`). These are the only serving views that reach the network.
-- **Key columns** (the full lists are in the specs of the views' sources and in the generated `docs/api-dictionary.md`):
-  - `CURRENT_POINT`: `AS_OF_SEASON`, `AS_OF_WEEK`, `AS_OF_SEASON_TYPE`, `AS_OF_WEEK_SEQ`, `NEXT_WEEK_SEQ`, `AS_OF_LABEL`, `CUTOFF_AT`, `PUBLICATION_ID` (the latest publication at that point, NULL if none), `WHATIF_PUBLICATION_ID`, `WHATIF_RUN_ID` and `WHATIF_AS_OF_WEEK_SEQ` (from `CFB_PRED.WHATIF_PUBLICATION`; the what-if point is earlier than the current point until the point has its own publication), and `WHATIF_VIEWS_CURRENT` (the generated views name that run).
-  - `AS_OF_POINTS`: the point columns of `CURRENT_POINT` plus `IS_CURRENT`, `IS_AFTER_CURRENT`, `HAS_PUBLICATION`, `HAS_PREDICTIONS` (predictions of the point's next week exist) and `HAS_GRADES` (graded predictions of the point's week exist).
-  - `TEAMS`: `TEAM_ID`, `SCHOOL`, and the team's current conference and classification as `CFB_MODEL.TEAM` names them.
-  - `PLAYOFF_ODDS`: the point, `IS_AFTER_CURRENT`, `PUBLICATION_ID`, `RUN_ID`, `TEAM_ID`, `SCHOOL`, `CONFERENCE`, the odds and movement columns of `CFB_PRED.ODDS_MOVEMENT`.
-  - `PUBLISHED_RUNS`: the point, `PUBLICATION_ID`, `RUN_ID`, `RUN_ORIGIN`, `N_SIMS`, `SECONDS_TOTAL`, `SECONDS_ENGINE`, `SIMS_PER_SECOND`, `NODES`, `INSTANCES`, `DB_VERSION`, `ENGINE_VERSION`, `PUBLISHED_AT`.
-  - `ROOTING_GUIDE`: the columns of `CFB_PRED.ROOTING_GUIDE`, `RUN_ORIGIN` and `FIXED_RESULTS` included.
-  - `ANALYSIS_SETTINGS`: `SETTING_NAME`, `SETTING_NUMBER`, `SETTING_NOTE`.
-  - `PREDICTIONS`: the columns of `CFB_PRED.PREDICTION_GRADED` (`FREEZE_KIND` and the week played included) plus `HOME_SCHOOL`, `AWAY_SCHOOL` and `PICK_SCHOOL`.
-  - `SCORECARD_WEEKS` and `SCORECARD_SEASONS`: their sources' columns, `FREEZE_KIND` and `IS_HEADLINE` included (TRUE for the `IN_ADVANCE` row of a population when it has graded games, otherwise for its `ALL` row, `analyses/scorecard`).
-  - `UPSETS`: the columns of `CFB_PRED.UPSET` (`RANK_MAGNITUDE`, `ALL_TIME_FROM_SEASON`, `ALL_TIME_TIED` and `LINE_ERA_TIED` included) plus `WINNER_SCHOOL` and `LOSER_SCHOOL`.
-  - `MATCHUP_SERIES` and `MATCHUP_NEXT`: their sources' columns plus `SCHOOL` and `OPPONENT_SCHOOL`.
-  - `MATCHUP_GAMES`: `TEAM_ID`, `OPPONENT_TEAM_ID`, `GAME_ID`, `SEASON`, `SEASON_TYPE`, `WEEK`, `START_AT`, `SITE`, `TEAM_POINTS`, `OPPONENT_POINTS`, `GAME_RESULT`, `PROB_SOURCE`, `TEAM_PREGAME_WIN_PROB` and `UPSET_MAGNITUDE`.
-  - `REFRESH_TIMELINE`: `RUN_ID`, `RUN_KIND`, `RUN_ARGS`, `RUN_STATUS`, `STEP_NO`, `STEP_NAME`, `STEP_STATUS`, `STARTED_AT`, `ENDED_AT`, `SECONDS`, `SLICES`, `ROWS_LOADED`, `CALLS`, `DETAIL`.
-  - `FETCHES`: the columns of `CFB_META.FETCH_LOG` (`loader/run-logs`).
-  - `GAMES`, `TEAM_SEASONS`, `RANKINGS` and `SP_RATINGS`: the columns of their `CFB_MODEL` sources with the sources' column comments (`model/games`, `model/teams-conferences`, `model/ratings-rankings`). Each view comment starts with its grain, says that it shows stored history as it is now (not as of a point), and names the serving views that answer the page questions.
-- **Page contract** (Phase 6 and the chat's tools):
-  - consumers read with autocommit on, so a publication's commit never meets an open read transaction (probe 1.1(e) records what happens otherwise);
-  - pages start from `CURRENT_POINT` and may choose any point of `AS_OF_POINTS` without `IS_AFTER_CURRENT`;
-  - the scorecard headline is the `IS_HEADLINE` row. When its freeze kind is `ALL`, the page labels it "reconstructed at the as-of point (leak-free, made after kickoff)";
-  - an upset rank reads "since <`ALL_TIME_FROM_SEASON`>", a shared rank shows as "T-37", and `PROB_SOURCE` stands next to every rank;
-  - what-ifs pass `CURRENT_POINT.WHATIF_RUN_ID` to `analyses/whatif.py`. An empty result or an unknown-column error means the what-if run changed: the page reloads `WHATIF_RUN` and `WHATIF_GAMES`. While `WHATIF_VIEWS_CURRENT` is FALSE the page offers no toggles;
-  - a forced run's rooting guide is labeled with its `FIXED_RESULTS` ("with these results forced"), the toggled guide as conditional (`analyses/rooting-guide`);
-  - the live preview and the quota badge read `CFB_API_LIVE` (`api/on-demand`).
-- **No functions.** Exasol's SQL functions return one value and cannot serve rows in `FROM` (`model/as-of`), so pages filter views, and what-if conditions go through `analyses/whatif.py` (`analyses/what-if`). Neither schema has functions, scripts or tables.
-- **Calls:** every `CFB_API` view costs 0 CFBD calls and makes no network request. Of `CFB_API_LIVE`, `GAME_PREVIEW` costs one call per query and `QUOTA` reads CFBD's `/info`, which does not count against the quota but needs the network, or a recording in replay mode.
-- **Stability:** the view names, their grains and the columns named here are the contract. A later phase that changes them changes this spec. New views and new columns may be added.
-- **Dictionary:** `make api-docs` writes `docs/api-dictionary.md` (no database) from `sql/api/`, `sql/api_live/` and the templates of the generated views: per view its grain, columns and comments, in file order.
-- The examples run in the integration-test namespace, deployed with `make deploy ARGS="--prefix TEST_"` and `make grants ARGS="--prefix TEST_"`, over the sim league with 2026 week 9 as the current point, in replay mode, with `SIM_CONFIG` 2,000 seasons in batches of 500.
+  Before the engine: 20 views (every row above except the last two). With the engine: 33.
+- **Objects of `CFB_API_LIVE`:** `GAME_PREVIEW` and `QUOTA` (`api/on-demand`), the only serving views that reach the network.
+- **`CURRENT_POINT`** columns: `AS_OF_SEASON`, `AS_OF_WEEK`, `AS_OF_SEASON_TYPE`, `AS_OF_WEEK_SEQ`, `AS_OF_LABEL`, `PREVIOUS_WEEK_SEQ`, `NEXT_WEEK_SEQ`, `LAST_REGULAR_WEEK_SEQ`, `CUTOFF_AT`, `IS_SEASON_COMPLETE` (from `CURRENT_AS_OF`), and the engine columns `RUN_ID`, `PUBLICATION_ID`, `HAS_PUBLICATION`, `WHATIF_RUN_ID`, `WHATIF_PUBLICATION_ID`, `WHATIF_AS_OF_WEEK_SEQ`, `WHATIF_VIEWS_CURRENT`.
+  - Before the engine the id columns are NULL and both flags FALSE.
+  - With the engine (`api/simulations`): `RUN_ID` and its alias `PUBLICATION_ID` name the run shown at the current point (`CFB_SIM.POINT_RUN`), NULL when the point has none, and `HAS_PUBLICATION` says whether it has one. `WHATIF_RUN_ID` and its alias `WHATIF_PUBLICATION_ID` name `CFB_SIM.CURRENT_RUN` (the run of the newest point at or before the current one), with its point in `WHATIF_AS_OF_WEEK_SEQ`. `WHATIF_VIEWS_CURRENT` is TRUE whenever that run exists: no serving view is generated per run.
+- **`AS_OF_POINTS`** columns: the point columns of `CURRENT_POINT`, `IS_CURRENT`, `IS_AFTER_CURRENT` (the point is later than the current one, by season and week sequence), and the engine columns `RUN_ID`, `HAS_PUBLICATION` (a run is shown at the point), `HAS_PREDICTIONS` (frozen predictions exist for the point's next week) and `HAS_GRADES` (graded predictions exist for games played in the point's week). Before the engine `RUN_ID` is NULL and the three flags FALSE.
+- **`REFRESH_TIMELINE`** columns: `RUN_ID`, `RUN_KIND`, `RUN_ARGS`, `RUN_STATUS`, `RUN_STARTED_AT`, `RUN_ENDED_AT`, `STEP_NO`, `STEP_NAME`, `STEP_STATUS`, `STARTED_AT`, `ENDED_AT`, `SECONDS`, `SLICES`, `ROWS_LOADED`, `CALLS`, `DETAIL`; one row per `REFRESH_LOG` row of a `REFRESH_WEEK` run. **`FETCHES`**: the columns of `CFB_META.FETCH_LOG` unchanged.
+- **Layering:** a `CFB_API` view reads only `CFB_API`, `CFB_MODEL`, `CFB_SIM` and the three `CFB_META` logs above; never `CFB_CORE`, never a virtual table. The lint enforces it on the files (`sql/api/` may name `{API_SCHEMA}`, `{MODEL_SCHEMA}`, `{SIM_SCHEMA}` and `{META_SCHEMA}.REFRESH_LOG`, `LOAD_RUN`, `FETCH_LOG`), the database's dependency list on the deployed views.
+- **Point rule** (Phase 3): views that have a point (`WEEK_GAMES`, the point-grain stats views) are built on `CFB_MODEL.AS_OF_POINT` and the derived tables, never on the as-of views; consumers read `CURRENT_POINT` first and filter those views with literal `AS_OF_SEASON` and `AS_OF_WEEK_SEQ` values, never by joining `CURRENT_POINT`.
+- **Comments:** every view comment starts with "One row per", every column has a comment, DDL names are unquoted upper case and not reserved words (`vs/gen/exasol_reserved_keywords.txt`).
+- **Dictionary:** `make api-docs` writes `docs/api-dictionary.md` from `sql/api/` and `sql/api_live/` (no database): per view its grain, reads, columns and comments.
+- **Stability:** view names, grains and the columns named in the `api/` specs are the contract Phases 6 and 7 build on. New views and columns may be added; a change to a named one changes the spec.
+- The examples run in the integration-test namespace (`TEST_` prefix) over Phase 3's synthetic league, whose current point is 2026 after week 9 (next week 10, cutoff 2026-10-29 23:30 UTC), in replay mode with the mock CFBD server. Once view files read `CFB_SIM`, the harness deploys Phase 4's simulation schema (without runs) before the serving schemas.
 
 ## Scenarios
 
-### Scenario: The serving schemas hold exactly the documented views, each described by its grain
+### Scenario: One command installs the serving views, each described by its grain
 
-* *GIVEN* a deployed namespace with a publication
-* *WHEN* `EXA_ALL_OBJECTS` and `EXA_ALL_COLUMNS` are read for `CFB_API` and `CFB_API_LIVE`
-* *THEN* `CFB_API` MUST hold exactly the 26 views of the object table and `CFB_API_LIVE` exactly `GAME_PREVIEW` and `QUOTA`, and neither schema any table, function or script
-* *AND* every view comment MUST start with "One row per", and every column MUST have a comment
-* *AND* the comment of `GAME_PREVIEW` MUST say that each query makes one CFBD call
+* *GIVEN* the synthetic league stored and the model deployed
+* *WHEN* the owner deploys the serving schemas twice with the code behind `make api`
+* *THEN* `CFB_API` MUST hold exactly one view per file of `sql/api/`, each with the name its file defines, and no table, function or script
+* *AND* every view comment MUST start with "One row per" and every column MUST have a comment
+* *AND* the second deploy MUST report no dropped, replaced or changed object
 
-### Scenario: No serving view reads the raw mirrors or a broad API table
+### Scenario: No serving view reads the raw mirrors or the virtual schema
 
-* *GIVEN* a deployed namespace with a publication
-* *WHEN* the direct references of every view of `CFB_API` and `CFB_API_LIVE` are read from `EXA_ALL_DEPENDENCIES`
-* *THEN* each reference of a `CFB_API` view MUST be an object of `CFB_API`, `CFB_PRED`, `CFB_SIM` or `CFB_MODEL`, or one of the `CFB_META` objects `REFRESH_LOG`, `LOAD_RUN` and `FETCH_LOG`
-* *AND* the references of `CFB_API_LIVE` MUST be exactly the virtual table `GAMES_PREVIEW` and `CFB_META.QUOTA`
-* *AND* the views of both schemas MUST NOT reference `CFB_CORE`, and the `CFB_API` views MUST NOT reference any virtual table
+* *GIVEN* the deployed serving schemas
+* *WHEN* the direct references of every `CFB_API` view are read from `EXA_ALL_DEPENDENCIES`
+* *THEN* each reference MUST be an object of `CFB_API`, `CFB_MODEL` or `CFB_SIM`, or one of `CFB_META.REFRESH_LOG`, `LOAD_RUN` and `FETCH_LOG`
+* *AND* no reference MUST be an object of `CFB_CORE` or a virtual table
 
-### Scenario: The current point tells the pages what to show by default
+### Scenario: Before the first simulation the pages still have a current point
 
-* *GIVEN* the sim league with 2026 week 9 as the current point and a publication of a run at 2026 week 9
-* *WHEN* `CFB_API.CURRENT_POINT` is queried
-* *THEN* it MUST return one row with `AS_OF_SEASON` 2026, `AS_OF_WEEK_SEQ` 9, `NEXT_WEEK_SEQ` 10, the publication's id as `PUBLICATION_ID` and `WHATIF_PUBLICATION_ID`, and the published run as `WHATIF_RUN_ID`
-* *AND* `WHATIF_VIEWS_CURRENT` MUST be TRUE
+* *GIVEN* the deployed serving schemas and no done simulation run (no simulation schema before the engine exists, an empty one after)
+* *WHEN* `CURRENT_POINT` and the 2026 rows of `AS_OF_POINTS` are queried
+* *THEN* `CURRENT_POINT` MUST return one row with `AS_OF_SEASON` 2026, `AS_OF_WEEK_SEQ` 9, `NEXT_WEEK_SEQ` 10 and `AS_OF_LABEL` '2026, after week 9'
+* *AND* its `RUN_ID`, `PUBLICATION_ID`, `WHATIF_RUN_ID`, `WHATIF_PUBLICATION_ID` and `WHATIF_AS_OF_WEEK_SEQ` MUST be NULL and `HAS_PUBLICATION` and `WHATIF_VIEWS_CURRENT` FALSE
+* *AND* in `AS_OF_POINTS` week 9 MUST have `IS_CURRENT` TRUE, week 10 MUST have `IS_AFTER_CURRENT` TRUE, and every row MUST have `HAS_PUBLICATION`, `HAS_PREDICTIONS` and `HAS_GRADES` FALSE
 
-### Scenario: The as-of points say where each page has data
+### Scenario: The refresh timeline shows every step of a weekly refresh
 
-* *GIVEN* the predictions frozen by `REFRESH_WEEK(2026, 9, 'regular')`, a publication at 2026 week 9 and no publication at week 8
-* *WHEN* `CFB_API.AS_OF_POINTS` is queried for 2026
-* *THEN* week 9 MUST have `IS_CURRENT`, `HAS_PUBLICATION` and `HAS_PREDICTIONS` TRUE
-* *AND* week 8 MUST have `HAS_PUBLICATION` FALSE and `HAS_PREDICTIONS` TRUE (its next week was reconstructed)
-* *AND* every point with `HAS_PUBLICATION` TRUE MUST have `IS_AFTER_CURRENT` FALSE
-
-### Scenario: The refresh timeline shows every step of the weekly chain
-
-* *GIVEN* replay recordings of the sim league's 2026 weekly slices
-* *WHEN* the presenter runs `REFRESH_WEEK(2026, 9, 'regular')` and then `CFB_API.REFRESH_TIMELINE` is queried for that run
-* *THEN* it MUST list `CHECK`, the `FETCH` steps, `MODEL`, `PREDICT`, `SIMULATE` and `PUBLISH` in step order, each with its status, seconds, rows and calls
-* *AND* `CFB_API.FETCHES` MUST hold the run's fetch-log rows
-
-### Scenario: The chat can answer questions outside the pages from the model views
-
-* *GIVEN* the sim league with the history variant of `analyses/upsets`
-* *WHEN* `CFB_API.GAMES` is queried for Ashford's 1995 game, `TEAM_SEASONS` for Ashford in 2025, `RANKINGS` for the AP poll of 2026 week 9, and `SP_RATINGS` for 2025
-* *THEN* each MUST return the same rows and values as its `CFB_MODEL` source for the same filter
-* *AND* each view comment MUST start with "One row per" and say that it shows stored history as it is now
-* *AND* the mock API and the replay store MUST NOT receive any request
-
-### Scenario: The data dictionary matches the deployed schema
-
-* *GIVEN* a deployed namespace with a publication
-* *WHEN* the owner runs `make api-docs` and compares `docs/api-dictionary.md` with `EXA_ALL_COLUMNS` of `CFB_API` and `CFB_API_LIVE`
-* *THEN* every view and column of both schemas MUST appear with its comment, the generated what-if columns as their `G<game id>` pattern
-* *AND* running `make api-docs` again MUST leave the file unchanged
+* *GIVEN* replay recordings of the synthetic league's 2026 weekly slices
+* *WHEN* the harness runs `REFRESH_WEEK(2026, 9, 'regular')` and `REFRESH_TIMELINE` and `FETCHES` are queried for that run
+* *THEN* `REFRESH_TIMELINE` MUST list one row per `REFRESH_LOG` row of the run in step order, each with its status, seconds, rows and calls
+* *AND* `FETCHES` MUST hold the run's fetch-log rows (`CONTEXT` 'REFRESH_WEEK#<run id>')
+* *AND* the mock MUST NOT receive any request from the queries of the two views

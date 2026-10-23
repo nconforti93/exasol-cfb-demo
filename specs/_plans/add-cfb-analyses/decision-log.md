@@ -1,6 +1,6 @@
 # Decision Log: add-cfb-analyses
 
-Date: 2026-10-22 (planned); revised 2026-10-22 to resolve the independent review (`review.md`).
+Date: 2026-10-22 (planned); revised 2026-10-22 to resolve the independent review (`review.md`). Replanned light and demo-first on 2026-10-23: interview § "Light replan interview", decisions [41]–[56], status of [1]–[40] and of the open questions below.
 
 ## Interview
 
@@ -98,6 +98,31 @@ The owner (Nico) was away and delegated these decisions on the independent revie
 
 **Q (U3/Q13) Dropping `/teams/matchup`:** decide now?
 **A:** Keep it as an owner-review item in this log. Don't block on it. → Q13
+
+### Light replan interview (2026-10-23)
+
+The owner changed the process; the orchestrator relayed the brief and the planner logs it here, close to verbatim.
+
+**Q (process):** What changes?
+**A:** The owner: "this is a demo, not a full-blown product offering... we don't need a crazy amount of tests." Replan Phase 5 (`add-cfb-analyses`, the `CFB_API` views) as a light, demo-first plan with thin slices and few tests. Planning only: no DB use, no CFBD calls, no code.
+
+**Q (what changed since the heavy plan):** What is binding now?
+**A:**
+- **Phase 3 is recorded** (`specs/model/`, ADR-031..046). `CFB_MODEL` has 8 derived tables (`GAME`, `SEASON_WEEK`, `TEAM`, `RATING_SP`, `RANKING`, `TEAM_MEMBERSHIP`, `TEAM_SEASON`, `AS_OF_POINT`) plus views (`TEAM_GAME`, `VENUE`, `CONFERENCE`, the as-of views, `SEASON_COVERAGE`, `MODEL_CHECKS`). `TEAM` has `COLOR`, `ALTERNATE_COLOR`, `LOGO_URL`, `LOGO_DARK_URL`, `LATITUDE`, `LONGITUDE`. Rule: filter the as-of views by literal `AS_OF_SEASON` / `AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF`.
+- **Phase 4 was replanned and owns more** (its plan § Cross-plan hand-offs and Key Interfaces): predictions, publication and movement; `CFB_SIM` tables and views `SIM_RUN`, `POINT_RUN`, `CURRENT_RUN`, `ODDS_MOVEMENT`, `ROOTING_GUIDE`, `PREDICTION`/`PREDICTION_GRADED`/`PREDICTION_SCORECARD`/`PREDICTION_CALIBRATION`, `GAME_WIN_PROB`, `SIM_RUN_GAME`, `SIM_PATH` (layout A strings), `SIM_TEAM`, `LEVERAGE`, and `engine/whatif.py`. Superseded in Phase 5: `CFB_PRED.PREDICTION`, `PUBLICATION`, `PUBLISHED_ODDS`, refresh steps 200/400, `WHATIF_PUBLICATION`, the generated what-if views, and review items P5-M3 and P5-m13. Phase 5's engine-facing views become thin `CFB_API` views over Phase 4 objects: `PLAYOFF_ODDS` over `ODDS_MOVEMENT`, `PUBLISHED_RUNS`, `WHATIF_GAMES`, `WHATIF_OUTCOMES`, `WHATIF_PLAYOFF`, `ROOTING_GUIDE`, `PREDICTIONS`, the scorecard views, upsets ranked from `GAME_WIN_PROB`.
+- **Phase 6's UI was revised** (its plan § "UI revision (2026-10-23)", hand-offs P6-UI-b/c/d): a map home, a team page (`/team/:id`), league tabs This week, Odds, Predictions, Upsets, Stats. `scripts/app_fixtures.py` already has working SQL for the map, team page, this week and stats against `CFB_MODEL`; reuse it as the basis for the `CFB_API` views. Contract types: `app/frontend/src/api/types.ts`.
+- **Phase 7's chat** reads `CFB_API` through the read-only role (`CFB_MCP`; its hand-off P7-f `NOTES`, plus whatever it lists).
+- **Owner decision:** head-to-head uses stored games, not `/teams/matchup` (U3, confirmed).
+
+**Q (slices):** What goes where?
+**A:**
+- Slice A (now, no engine needed): `CFB_API` views for `TEAMS` with marks and coordinates, `GAMES`, `TEAM_SEASONS`, `RANKINGS`, `SP_RATINGS`, `TEAM_TRAVEL` (via `GREAT_CIRCLE_KM`), `CURRENT_POINT`, `AS_OF_POINTS`, `WEEK_GAMES` (this week), the stats views (road warriors, SP+ movers, conference strength, win streaks), head-to-head / series, and all-time upsets from stored results. Grants for the app role and the chat role; deploy with `make api TARGET=…` or whatever the plan has. Keep the publication columns NULL until the engine exists.
+- Slice B (after Phase 4 slice 1/2): the thin views over the Phase 4 objects listed above, matching their exact names.
+- Superseded heavy tasks marked `[-]` with a reason in a fresh `tasks.md`. Per task: files, a couple of tests, a definition of done; 4–8 tasks in total.
+- Log the decisions here; add a header to `review.md` saying it was superseded and how its major findings are handled; list what Phase 6's 9.7/9.8 routes read, view by view.
+
+**Q (rules for this pass):**
+**A:** No DB use, no CFBD calls. Run `speq plan validate add-cfb-analyses` and fix errors. The orchestrator authorizes the commit (overriding the git-discipline skill) with the message "add-cfb-analyses: light demo-first replan"; do not push.
 
 ## Design Decisions
 
@@ -500,6 +525,158 @@ The owner (Nico) was away and delegated these decisions on the independent revie
 - **Rationale:** the contract is unrecorded, so the rename is free now and avoids a misleading name for the chat.
 - **Promotes to ADR:** no
 
+### [41] A light, demo-first plan in two slices
+
+- **Decision:** Phase 5 becomes 8 tasks in two slices. Slice A serves everything that needs no simulation now (deploy, roles, the thin slice for the map and the team page, travel, this week, stats, head-to-head, upsets from stored lines, the live preview and the refresh timeline). Slice B adds the views over Phase 4's objects once Phase 4's slice 2 is merged. The heavy plan's 34 tasks are marked absorbed or superseded in `tasks.md`; its nine `analyses/*` spec deltas are removed.
+- **Alternatives:** implement the reviewed heavy plan; wait for Phase 4 and do one slice.
+- **Rationale:** the owner's light process (same as Phase 4's [44]); Phase 6's S2 slice waits only for slice A, so it should not wait for the engine.
+- **Promotes to ADR:** no
+
+### [42] `CFB_API` is a thin view layer over `CFB_MODEL` and `CFB_SIM`; there is no `CFB_PRED`
+
+- **Decision:** Phase 5 creates no schema of its own besides `CFB_API` and `CFB_API_LIVE`, no data table, no Lua script and no refresh step. Every number that needs freezing, grading or a choice of run is Phase 4's (`PREDICTION`, `POINT_RUN`, `CURRENT_RUN`, `ODDS_MOVEMENT`, `ROOTING_GUIDE`, `GAME_WIN_PROB`); `CFB_API` passes it through under the serving names. Supersedes [2], [3], [18], [19], [38].
+- **Alternatives:** keep `CFB_PRED` with publications and frozen published odds (the heavy plan).
+- **Rationale:** one definition per number. Phase 4's [51] took predictions, grades, movement and the shown run; a second schema would recompute or re-freeze them, and the pages, the chat and Phase 4's own checks could disagree.
+- **Promotes to ADR:** yes
+
+### [43] The spec domain is `api/`; the code stays in the package `analyses/`
+
+- **Decision:** all nine features are `api/*`. The `analyses/` spec domain is dropped (`CLAUDE.md` is updated in task 1.5). The Python package keeps the name `analyses/` (`deploy.py`, `live_views.py`, `docs.py`, `whatif.py`).
+- **Alternatives:** keep `analyses/*` specs for upsets and head-to-head; rename the package `api/`.
+- **Rationale:** every Phase 5 feature is now a serving contract; Phases 6 and 7 import `analyses/whatif.py`, so the package name stays.
+- **Promotes to ADR:** no
+
+### [44] Final names in slice A; the simulation columns stay NULL until slice B fills them in place
+
+- **Decision:** `CURRENT_POINT`, `AS_OF_POINTS`, `WEEK_GAMES`, `MATCHUP_NEXT`, `MATCHUP_GAMES` and `UPSETS` ship in slice A with their final names and columns. The columns that need the engine are NULL (flags FALSE); slice B edits the same files to fill them. Once a view file reads `CFB_SIM`, `make api` refuses to run before `make sim`, and the test harness deploys Phase 4's schema (without runs) first, so the slice-A tests keep holding.
+- **Alternatives:** separate "lite" views that slice B replaces with new names; wait for the engine.
+- **Rationale:** Phase 6's hand-off P6-UI-d asks exactly this; no contract change between the slices.
+- **Promotes to ADR:** no
+
+### [45] A `CFB_API` twin for every statement of Phase 6's real-data snapshot
+
+- **Decision:** the model tables are served as pass-through views with the source's columns and comments: `GAMES`, `TEAM_GAMES` (added), `TEAM_SEASONS`, `RANKINGS`, `SP_RATINGS`; `TEAMS` adds the home venue. The computed panels of `scripts/app_fixtures.py` become page views: `TEAM_TRAVEL`, `WEEK_GAMES`, `ROAD_WARRIORS`, `SP_MOVERS`, `CONFERENCE_STRENGTH`, `WIN_STREAKS`. Phase 6's 9.7 replaces each snapshot statement with a query of the same shape (plan § Cross-plan hand-offs).
+- **Alternatives:** only the four chat pass-throughs of [32], with the routes orienting `GAMES` per team themselves; no stats views (the route aggregates `TEAM_TRAVEL`).
+- **Rationale:** the snapshot SQL already works on real data; the twins make 9.7 a rename, give the chat the same answers, and keep each card's SQL short.
+- **Promotes to ADR:** no
+
+### [46] Views with a point carry it as columns, are built on `AS_OF_POINT` and the derived tables, and are filtered with literals
+
+- **Decision:** `WEEK_GAMES`, `ROAD_WARRIORS`, `CONFERENCE_STRENGTH` and `WIN_STREAKS` have one row per as-of point and subject, joined from `CFB_MODEL.AS_OF_POINT` to the derived tables and `TEAM_GAME`; a game counts at a point when it is completed and at or before the point. No serving view reads an as-of view (`GAME_AS_OF`, `RANKING_AS_OF`, `TEAM_SEASON_AS_OF`) or joins `CURRENT_AS_OF` to one. Consumers read `CURRENT_POINT` first and filter with literal `AS_OF_SEASON` and `AS_OF_WEEK_SEQ`. `SP_MOVERS` has season grain (SP+ does not change with the week, only with the fetch).
+- **Alternatives:** season grain "as stored now" for every stats view (simpler, but the as-of picker would show later games on an earlier week); views over the as-of views (Phase 3's 21 s trap).
+- **Rationale:** honest cards at any point, one point evaluated per query; the rule is the one future serving views must follow.
+- **Promotes to ADR:** yes
+
+### [47] AP ranks in serving views use the label rule from `RANKING`
+
+- **Decision:** `WEEK_GAMES` and `CONFERENCE_STRENGTH` take a team's AP rank from the latest AP poll of the season whose `VISIBLE_AT_WEEK_SEQ` is at most the point, as the snapshot SQL does. A ranking fetched early (a Tuesday committee ranking) is not shown before its label allows; the AP poll is not affected in practice.
+- **Alternatives:** `RANKING_AS_OF` (an as-of view inside a serving view, [46]).
+- **Rationale:** a derived table with a simple rule; the same numbers as Phase 6's preview.
+- **Promotes to ADR:** no
+
+### [48] Upsets: stored lines first, Phase 4's `GAME_WIN_PROB` since 1978 in slice B; ranks on the stored magnitude
+
+- **Decision:** `UPSETS` holds the underdog wins of completed FBS-involved games. Slice A uses the stored line (from 2013, `ALL_TIME_FROM_SEASON` 2013, `PROB_SOURCE` LINE). Slice B switches the source to `CFB_SIM.GAME_WIN_PROB` (LINE else ELO), the window to 1978 ([30] kept) and adds our frozen probability. Ranks are `RANK()` on `UPSET_MAGNITUDE` as Phase 4 rounds it; equal magnitudes share a rank and are flagged (`*_TIED`). `RANK_MAGNITUDE` is dropped. Revises [13] and [30].
+- **Alternatives:** wait for the engine; recompute an unrounded Elo magnitude in Phase 5 ([30] as reviewed).
+- **Rationale:** the upsets tab works today; one probability definition (Phase 4's [56]); a shared rank shown as "T-n" is honest about rounding, and the window from 1978 already removes the saturated early-Elo games.
+- **Promotes to ADR:** no
+
+### [49] Head-to-head from stored games; the next meeting from the schedule, then with our prediction and the stakes
+
+- **Decision:** `MATCHUP_SERIES` and `MATCHUP_GAMES` come from `TEAM_GAME` (U3, confirmed by the owner on 2026-10-22). `MATCHUP_NEXT` lists each pair's next not-completed game of the current season from the schedule with CFBD's line; in slice B it adds `PREDICTION_KIND` FROZEN (the frozen prediction) or CURRENT (the what-if run's probability from `SIM_RUN_GAME`, without points), and each team's playoff odds if it wins or loses from the run's `ROOTING_GUIDE`. Keeps [14], revises [15].
+- **Alternatives:** `/teams/matchup` (4.9 s, redundant); predictions from `GAME_SCORE_AS_OF` ([53]).
+- **Rationale:** zero calls and instant; only Phase 4's numbers.
+- **Promotes to ADR:** no
+
+### [50] No conditional rooting guide
+
+- **Decision:** the rooting guide is Phase 4's precomputed `ROOTING_GUIDE` (from `LEVERAGE`), for every done run, with its coming-week rank. There is no guide that follows what-if toggles; `rooting_guide_sql` is dropped, and with it Phase 6's stretch item and probe S8 (a). Supersedes [6] and [37].
+- **Alternatives:** the heavy plan's one-pass guide over the coming week with a probe and fallbacks.
+- **Rationale:** not on the demo path (Phase 7 already uses the plain guide; Phase 6 had it as a stretch), and it was the one unmet latency target (S4: 2.2 s). Recorded as a deliberate scope cut so it is not re-planned by default.
+- **Promotes to ADR:** yes
+
+### [51] What-if through a thin adapter over `engine/whatif.py`, with static views
+
+- **Decision:** `WHATIF_OUTCOMES`, `WHATIF_PLAYOFF` and `WHATIF_TEAMS` are plain projections of `SIM_PATH`, `SIM_TEAM` and `SIM_RUN_TEAM` (every done run); `WHATIF_RUN` and `WHATIF_GAMES` follow `CFB_SIM.CURRENT_RUN`. `analyses/whatif.py` maps game ids to `PATH_POS` (from `WHATIF_GAMES`), validates, and calls Phase 4's builder with the serving names. No run guard: every query filters its own `RUN_ID`, and runs are never dropped. Supersedes [4], [26], [27], [28], [36], [39]; revises [5].
+- **Alternatives:** an own builder; generated per-run views with a run guard (heavy plan, layout C).
+- **Rationale:** layout A (Phase 4's [47]) makes the views static; one builder; Phases 6 and 7 keep their import and their game-id conditions.
+- **Promotes to ADR:** no
+
+### [52] `CURRENT_POINT` keeps the publication columns as aliases of run ids
+
+- **Decision:** `PUBLICATION_ID` is an alias of `RUN_ID` (the run shown at the current point, `POINT_RUN`), `WHATIF_PUBLICATION_ID` of `WHATIF_RUN_ID` (`CURRENT_RUN`); `WHATIF_VIEWS_CURRENT` is TRUE whenever a what-if run exists. `HAS_PUBLICATION` means "a run is shown at the point".
+- **Alternatives:** drop the publication names.
+- **Rationale:** Phase 6's `CurrentPoint` and Phase 7's tools already use them; Phase 4's hand-off says `publication_id` is the run id.
+- **Promotes to ADR:** no
+
+### [53] No serving view over `GAME_SCORE_AS_OF`
+
+- **Decision:** pages show frozen predictions only (`PREDICTIONS`, `WEEK_GAMES`); before a freeze the team page's "this week" is unavailable. `MATCHUP_NEXT`'s CURRENT kind uses the run's snapshot probability instead.
+- **Alternatives:** a `CFB_API` view over `GAME_SCORE_AS_OF` that consumers filter with literals (Phase 4's hand-off row "current predictions").
+- **Rationale:** a serving view over an as-of view invites the unfiltered or joined query that evaluates every point; every point with a run has its next week frozen (step 2 of `SIMULATE`), so the gap is only the hours between a week ending and the next run.
+- **Promotes to ADR:** no
+
+### [54] `CFB_API_LIVE` stays, with `P_GAME_ID` unrenamed and no live calls in this plan; the refresh timeline views stay
+
+- **Decision:** `GAME_PREVIEW` shows the virtual table's columns under their own names, rendered from the catalog, including `REQ_ROWS` (Phase 6's P6-a is met by the virtual table itself) and `P_GAME_ID` as the filter column. `QUOTA` stays. This plan spends no CFBD call: tests use the mock and replay, and the preview's live latency and the stored-series check against its `RAW_JSON` move to Phase 6's live verification under its own cap. `REFRESH_TIMELINE` and `FETCHES` stay in `CFB_API` for beat 3. Revises [22], [33], [34]; Q4 and Q6 are avoided or moved.
+- **Alternatives:** rename to `GAME_ID` (needed a pushdown probe); spend 3 ledgered calls here.
+- **Rationale:** no pushdown question; Phase 6 calls the preview anyway; October's budget stays untouched.
+- **Promotes to ADR:** no
+
+### [55] Tests: a few integration tests per feature, with the sources as oracle
+
+- **Decision:** 26 scenarios, one integration test each, on Phase 3's synthetic league (slice A) plus Phase 4's harness and runs (slice B). Each test compares a view with its `CFB_MODEL`/`CFB_SIM` source, or with sums over another serving view; where the league lacks a fact, the test stores an extra fetch with `tests/it/mirror_edit.py`. Unit tests only for the lint, the grants, the rendered preview view, the dictionary and the adapter. Supersedes [21].
+- **Alternatives:** host oracles, a history variant of the league, a dedicated sim league (heavy plan).
+- **Rationale:** the views are thin; checking them against their sources catches the mistakes a thin view can make.
+- **Promotes to ADR:** no
+
+### [56] Slice A takes Phase 4's generalized deployer as identical text
+
+- **Decision:** task 1.1 copies Phase 4's changes to `vs/host/sqlobjects.py`, `namespace.py` and `metaddl.py` from commit 74af62c unchanged, then adds the API names (`api_schema`, `api_live_schema`, `app_role`, `mcp_role`, `{API_SCHEMA}`, `{API_LIVE_SCHEMA}`). Slice B merges Phase 4's branch.
+- **Alternatives:** generalize the deployer a second time; wait for Phase 4's merge.
+- **Rationale:** slice A must not wait for the engine; identical hunks merge cleanly, and the API lines are small, adjacent additions.
+- **Promotes to ADR:** no
+
+### Status of [1]–[40] under the light plan
+
+| Decision | Status |
+|---|---|
+| [1] domains `analyses/`, `api/` | superseded by [43] |
+| [2] explicit publication, step 400 | superseded by [42] (Phase 4's `POINT_RUN`) |
+| [3] movement from frozen published odds | superseded: Phase 4's `ODDS_MOVEMENT` over retained runs (no run is dropped) |
+| [4] generated what-if views | superseded by [51] |
+| [5] pure host library | revised by [51]: Phase 4's builder plus a thin adapter |
+| [6] split rooting guide | superseded by [50] |
+| [7] sample thresholds | kept as settings: `MIN_EFFECTIVE_SAMPLE` 1000 in `ANALYSIS_SETTINGS`, `MIN_BRANCH_SAMPLE` 100 in Phase 4's `SIM_PARAMS` |
+| [8] forced re-sims as owner actions | superseded: Phase 4 has no forced re-sims |
+| [9], [11], [12], [25] predictions, scope, scorecard, reconstruction order | moved to Phase 4 (`sim-engine/predictions`), unchanged in substance |
+| [10] predictions as deployment history | moved to Phase 4 (`CFB_SIM` data tables, outside the snapshot) |
+| [13] all-time plus line-era rank | revised by [48] |
+| [14] head-to-head from stored games | kept ([49]); U3 confirmed by the owner |
+| [15] next meeting with prediction and stakes | revised by [49], [53] |
+| [16] thin view-only `CFB_API` with an allowlist | kept ([42]) |
+| [17] roles `CFB_APP`, `CFB_MCP` | kept |
+| [18] analyses in `CFB_PRED` | superseded by [42] |
+| [19] standalone scripts lock as `SIMULATE` | superseded: no scripts |
+| [20] grain-first comments and a generated dictionary | kept |
+| [21] sim league, history variant, oracles | superseded by [55] |
+| [22] live verification with at most 6 calls | superseded by [54]: 0 calls |
+| [23] probe first | superseded: owner's rights confirmed by Phase 6's probe S9 (a); the rest is moot |
+| [24] `DECIMAL(7,6)` probabilities | Phase 4's types apply |
+| [26], [27] the what-if run defined once; empty generated views | superseded by [51], [52] (Phase 4's `CURRENT_RUN`) |
+| [28], [39] escaping rule; no `LISTAGG` | moot: nothing is generated |
+| [29] freeze kinds and the headline | Phase 4: `IS_HEADLINE` only on `IN_ADVANCE` rows; the page labels the `ALL` row |
+| [30] all-time window 1978, unrounded magnitude | 1978 kept; unrounded magnitude dropped ([48]) |
+| [31] perf harness never touches live views | moot: no perf harness; timings in 1.5 and 2.3 cover `CFB_API` only |
+| [32] pass-through views for the chat | kept and extended by [45] |
+| [33] network views in `CFB_API_LIVE` | kept ([54]) |
+| [34] preview of the latest meeting | kept as the page rule; the `RAW_JSON` check moves to Phase 6 ([54]) |
+| [35] arrow threshold 0.0070 | Phase 4's `MOVE_THRESHOLD` |
+| [36] every what-if names its run | kept trivially ([51]) |
+| [37] forced guide label | moot ([8]) |
+| [38] steps 200/400 | superseded: Phase 4's 200/300 |
+| [40] `ANALYSIS_SETTINGS` | kept, as a view over `SIM_PARAMS` and constants |
+
 ## Open Questions (assumption + verify step)
 
 | # | Assumption | Verify step | If wrong |
@@ -521,6 +698,32 @@ The owner (Nico) was away and delegated these decisions on the independent revie
 | Q15 | CFBD's game preview answers for a played game (the latest meeting), with its points and the recent meetings in `RAW_JSON` | Task 7.3: one of the 3 planned calls | The page offers the preview only for a meeting still to play, and the demo script fixes a rivalry-week pair; the optional `/teams/matchup` query then provides the stored-series check |
 | Q16 | Exasol accepts `"SIM_ID" IN (SELECT …)` as a predicate inside `SUM(CASE …)` in the select list and evaluates it once | Probe 1.1(a) (statement accepted; a semi-join in the profile) | The `LEFT JOIN` flag shape; the library's unit tests pin whichever is adopted |
 | Q17 | Phase 4 adopts hand-off P5-M3 (its per-run DDL escapes `'`, and its sim league has `Hawai'i`) before this plan's group B | Task 1.5's unit test on `sim_league()` | This plan's `with_apostrophe_school` variant supplies the school; if Phase 4's DDL does not escape, this plan's tests fail at Phase 4's `SIMULATE`, and the orchestrator routes the fix to Phase 4 |
+
+### Status under the light plan (2026-10-23)
+
+| # | Status |
+|---|---|
+| Q1, Q16 | moot: no conditional rooting guide ([50]) |
+| Q2 | confirmed by Phase 6's probe S9 (a): views read with their owner's rights |
+| Q3 | asserted by the roles test of task 1.1 after a redeploy |
+| Q4 | avoided: `P_GAME_ID` keeps its name ([54]); see N1 |
+| Q5, Q12, Q14, Q17 | moot: nothing is generated, published or dropped |
+| Q6, Q15 | moved to Phase 6's live verification ([54]) |
+| Q7 | moot: the guide is precomputed for every game |
+| Q8 | task 2.3 looks at the all-time top 20 on AWS (not dominated by one era or by ties); the window stays 1978 unless it fails, logged |
+| Q9 | confirmed by `docs/model-dictionary.md` (`TEAM_GAME.OPPONENT_ID`, `GAME_RESULT`, `POINTS_FOR`, `MARGIN`) |
+| Q10 | moot |
+| Q11 | Phase 4's types apply |
+| Q13 | confirmed by the owner (2026-10-22) |
+
+New open questions:
+
+| # | Assumption | Verify step | If wrong |
+|---|---|---|---|
+| N1 | A literal filter on `CFB_API_LIVE.GAME_PREVIEW.P_GAME_ID` reaches the adapter as the required parameter, and the deploy's compile pass (`SELECT 1 FROM view WHERE 1 = 0`) on the view makes no request | Task 1.4's integration tests: one request per query, none during the deploy | Create the live views without `FORCE` (compiled at creation, which reads only metadata) and skip their compile query; if the filter itself is not pushed, the preview moves to Phase 6's operator path, logged |
+| N2 | A literal filter on `AS_OF_SEASON` and `AS_OF_WEEK_SEQ` of a point-grain view is applied to `AS_OF_POINT` before the joins, so one point costs under 1 s on AWS | Tasks 1.2 (local) and 1.5 (AWS) time each view at one point | Rewrite the view so the point is the first join (a derived table of `AS_OF_POINT` in the `FROM` list); else Phase 6 queries `TEAM_TRAVEL` and `TEAM_GAMES` with literal filters (the snapshot SQL) and the view stays for the chat |
+| N3 | Phase 4's hand-off column names hold as built | Phase 4's task 2.3 and this plan's equality tests in 2.1 and 2.2 | The serving view keeps the name in this plan's specs through an alias, logged |
+| N4 | Phase 3's synthetic league has what the slice-A scenarios need (stored lines with underdog wins, an upcoming 2026 meeting, a team with a home and an away venue with coordinates and one without) | Tasks 1.2 and 1.3 | The test stores an extra fetch with `tests/it/mirror_edit.py` and removes it again |
 
 ## Review Findings
 
