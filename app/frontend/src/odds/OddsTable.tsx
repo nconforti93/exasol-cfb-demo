@@ -5,6 +5,7 @@ import { InlineBar } from '../charts/InlineBar.tsx'
 import { MoveBadge } from '../charts/MoveBadge.tsx'
 import { formatDeltaPoints, formatPercent, formatPercentExact } from '../format/format.ts'
 import { WarningIcon } from '../shell/icons.tsx'
+import { TeamLabel } from '../shell/TeamDirectory.tsx'
 import type { SecondaryRead } from './useSecondaryRead.ts'
 
 const EPSILON = 1e-9
@@ -120,7 +121,7 @@ export function OddsTable({ rows, threshold, focusTeam, onFocus, conditional }: 
                       title={focused ? 'Close the rooting guide' : 'Show the rooting guide'}
                       onClick={() => onFocus(focused ? null : row.team_id)}
                     >
-                      {row.school}
+                      <TeamLabel teamId={row.team_id} school={row.school} />
                     </button>
                   </th>
                   <td>{row.conference ?? '–'}</td>

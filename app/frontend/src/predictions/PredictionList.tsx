@@ -3,6 +3,7 @@ import { CheckIcon, CrossIcon, DashIcon } from '../charts/icons.tsx'
 import { formatPercent } from '../format/format.ts'
 import { formatKickoff } from '../format/utcTime.ts'
 import { InfoIcon } from '../shell/icons.tsx'
+import { TeamMarks } from '../shell/TeamDirectory.tsx'
 
 const GRADE_WORDS: Record<Grade, string> = {
   CORRECT: 'correct',
@@ -71,7 +72,9 @@ export function ThisWeekList({ rows }: { rows: PredictionRow[] }) {
           {rows.map((row) => (
             <tr key={row.game_id} data-game={row.game_id}>
               <td>{formatKickoff(row.start_at)}</td>
-              <th scope="row">{matchup(row)}</th>
+              <th scope="row">
+                <TeamMarks teamIds={[row.away_team_id, row.home_team_id]} /><span>{matchup(row)}</span>
+              </th>
               <td className="num">
                 {row.home_school} {row.pred_home_points.toFixed(1)} – {row.away_school} {row.pred_away_points.toFixed(1)}
               </td>
@@ -111,7 +114,9 @@ export function LastWeekList({ rows }: { rows: PredictionRow[] }) {
         <tbody>
           {rows.map((row) => (
             <tr key={row.game_id} data-game={row.game_id}>
-              <th scope="row">{matchup(row)}</th>
+              <th scope="row">
+                <TeamMarks teamIds={[row.away_team_id, row.home_team_id]} /><span>{matchup(row)}</span>
+              </th>
               <td className="num">{result(row)}</td>
               <td>
                 <Pick row={row} />

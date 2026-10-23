@@ -24,7 +24,7 @@ describe('App', () => {
   it('opens on the map home at the root path', async () => {
     renderApp()
     expect(screen.getByRole('heading', { level: 1, name: 'CFB playoff odds' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { level: 2, name: 'Map' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Every FBS team, at home' })).toBeInTheDocument()
     expect(window.location.pathname).toBe('/')
   })
 
@@ -57,13 +57,28 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Head-to-head' })).toBeInTheDocument()
   })
 
-  it('navigates between the pages', async () => {
+  it('navigates between the sections and the league tabs', async () => {
     renderApp()
-    for (const name of ['Predictions', 'Upsets', 'Head-to-head', 'Odds']) {
-      await userEvent.click(screen.getByRole('link', { name }))
+    await userEvent.click(screen.getByRole('link', { name: 'League' }))
+    const tabs = await screen.findByRole('navigation', { name: 'League' })
+    for (const name of ['Predictions', 'Upsets', 'Odds']) {
+      await userEvent.click(within(tabs).getByRole('link', { name }))
       expect(await screen.findByRole('heading', { level: 2, name })).toBeInTheDocument()
     }
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Odds' })).toHaveAttribute('aria-current', 'page'))
+    await waitFor(() => expect(within(tabs).getByRole('link', { name: 'Odds' })).toHaveAttribute('aria-current', 'page'))
+    expect(screen.getByRole('link', { name: 'League' })).toHaveAttribute('aria-current', 'page')
+    await userEvent.click(screen.getByRole('link', { name: 'Head-to-head' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Head-to-head' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('link', { name: 'Map' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Every FBS team, at home' })).toBeInTheDocument()
+  })
+
+  it('puts the map\'s conference in the address and takes it out again', async () => {
+    renderApp()
+    await userEvent.click(await screen.findByRole('button', { name: /^Atlantic/ }))
+    expect(window.location.search).toBe('?conf=Atlantic')
+    await userEvent.click(screen.getByRole('button', { name: /^All FBS/ }))
+    expect(window.location.search).toBe('')
   })
 
   it('shows the refresh panel in the header and, once opened, the inspector in the drawer', async () => {

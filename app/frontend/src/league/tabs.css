@@ -1,0 +1,33 @@
+.league-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.league-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.league-tabs a {
+  margin-bottom: -1px;
+  padding: var(--space-2) var(--space-1);
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+
+.league-tabs a:hover {
+  color: var(--ink-primary);
+  border-bottom-color: var(--border);
+}
+
+.league-tabs a[aria-current="page"] {
+  color: var(--ink-primary);
+  border-bottom-color: var(--accent);
+}

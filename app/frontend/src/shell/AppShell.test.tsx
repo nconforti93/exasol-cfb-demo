@@ -49,9 +49,9 @@ describe('AppShell', () => {
     expect(screen.getByRole('contentinfo')).toHaveTextContent('Data provided by CollegeFootballData.com')
   })
 
-  it('shows the footer credit on each of the four pages', async () => {
+  it('shows the footer credit on each section', async () => {
     renderShell()
-    for (const name of ['Odds', 'Predictions', 'Upsets', 'Head-to-head']) {
+    for (const name of ['League', 'Head-to-head', 'Map']) {
       await userEvent.click(screen.getByRole('link', { name }))
       expect(screen.getByRole('contentinfo')).toHaveTextContent('Data provided by CollegeFootballData.com')
       expect(screen.getByRole('contentinfo')).toHaveTextContent('not official NCAA or CFP data')
@@ -61,9 +61,9 @@ describe('AppShell', () => {
   it('moves to another page and loads it at the same point', async () => {
     renderShell()
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('odds@2026/9:ready'))
-    await userEvent.click(screen.getByRole('link', { name: 'Predictions' }))
-    expect(window.location.pathname).toBe('/league/predictions')
-    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('predictions@2026/9:ready'))
+    await userEvent.click(screen.getByRole('link', { name: 'League' }))
+    expect(window.location.pathname).toBe('/league/week')
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('week@2026/9:ready'))
   })
 
   it('opens a link at the page and point it names', async () => {

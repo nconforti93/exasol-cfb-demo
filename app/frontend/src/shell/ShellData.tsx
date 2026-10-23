@@ -17,6 +17,7 @@ import { useAppActions, useAppState } from '../state/react.tsx'
 import { effectivePoint } from '../state/store.ts'
 import { usePolling } from '../state/usePolling.ts'
 import { TimelineProvider } from '../state/timeline.tsx'
+import { TeamDirectoryProvider } from './TeamDirectory.tsx'
 
 export const QUOTA_POLL_MS = 5 * 60 * 1000
 
@@ -154,12 +155,14 @@ export function useShellData(): ShellData {
   return data
 }
 
-/** The providers of the shell's data: the outage state, the header's data and the one timeline poll. */
+/** The providers of the shell's data: the outage state, the header's data, the team list and the one timeline poll. */
 export function ShellProviders({ children }: { children: ReactNode }) {
   return (
     <OutageProvider>
       <ShellDataProvider>
-        <TimelineProvider>{children}</TimelineProvider>
+        <TeamDirectoryProvider>
+          <TimelineProvider>{children}</TimelineProvider>
+        </TeamDirectoryProvider>
       </ShellDataProvider>
     </OutageProvider>
   )

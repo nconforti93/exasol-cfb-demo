@@ -23,41 +23,41 @@ describe('Header', () => {
     renderHeader()
     expect(screen.getByRole('heading', { level: 1, name: 'CFB playoff odds' })).toBeInTheDocument()
     const nav = screen.getByRole('navigation', { name: 'Pages' })
-    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Map',
-      'This week',
-      'Odds',
-      'Predictions',
-      'Upsets',
-      'Stats',
-      'Head-to-head',
-    ])
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Map', 'League', 'Head-to-head'])
+    expect(screen.getByRole('combobox', { name: 'Find a team' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Inspector' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Switch to (dark|light) theme/ })).toBeInTheDocument()
     expect(screen.getByText('refresh slot')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Week' })).toBeEnabled())
   })
 
-  it('marks the current page and switches pages without a reload', async () => {
+  it('marks the current section, League for every league tab, and switches without a reload', async () => {
     const { store } = renderHeader()
-    expect(screen.getByRole('link', { name: 'Odds' })).toHaveAttribute('aria-current', 'page')
-    await userEvent.click(screen.getByRole('link', { name: 'Upsets' }))
-    expect(store.getState().page).toBe('upsets')
-    expect(screen.getByRole('link', { name: 'Upsets' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'Odds' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('link', { name: 'League' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Map' })).not.toHaveAttribute('aria-current')
+    await userEvent.click(screen.getByRole('link', { name: 'Head-to-head' }))
+    expect(store.getState().page).toBe('head-to-head')
+    expect(screen.getByRole('link', { name: 'Head-to-head' })).toHaveAttribute('aria-current', 'page')
+    await userEvent.click(screen.getByRole('link', { name: 'Map' }))
+    expect(store.getState().page).toBe('home')
+    await userEvent.click(screen.getByRole('link', { name: 'League' }))
+    expect(store.getState().page).toBe('week')
   })
 
-  it('links each tab to a path that keeps the chosen point', async () => {
+  it('links each section to a path that keeps the chosen point', async () => {
     renderHeader(new FakeBackend(), { chosen: { mode: 'explicit', season: 2026, week_seq: 8 } })
-    expect(screen.getByRole('link', { name: 'Predictions' })).toHaveAttribute(
-      'href',
-      '/league/predictions?season=2026&week=8',
-    )
+    expect(screen.getByRole('link', { name: 'League' })).toHaveAttribute('href', '/league/week?season=2026&week=8')
+    expect(screen.getByRole('link', { name: 'Map' })).toHaveAttribute('href', '/?season=2026&week=8')
+  })
+
+  it('keeps the pair when it goes to head-to-head', async () => {
+    renderHeader(new FakeBackend(), { pair: { team: 101, opponent: 102 } })
+    expect(screen.getByRole('link', { name: 'Head-to-head' })).toHaveAttribute('href', '/head-to-head?team=101&opponent=102')
   })
 
   it('leaves modified clicks to the browser', async () => {
     const { store } = renderHeader()
-    const link = screen.getByRole('link', { name: 'Upsets' })
+    const link = screen.getByRole('link', { name: 'Map' })
     link.addEventListener('click', (event) => event.preventDefault())
     fireEvent.click(link, { ctrlKey: true })
     expect(store.getState().page).toBe('odds')

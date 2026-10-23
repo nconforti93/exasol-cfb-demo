@@ -10,6 +10,7 @@ export interface AppLinkProps {
   className?: string
   title?: string
   'aria-label'?: string
+  'aria-current'?: 'page'
 }
 
 function isPlainClick(event: MouseEvent): boolean {

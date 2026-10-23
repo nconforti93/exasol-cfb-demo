@@ -1,4 +1,5 @@
 import type { UpsetRow } from '../api/types.ts'
+import { TeamMarks } from '../shell/TeamDirectory.tsx'
 import { formatPercent, formatRank, formatProbSource } from '../format/format.ts'
 import {
   formatAllTimeRank,
@@ -64,7 +65,9 @@ export function UpsetTable({ kind, rows, caption, allTimeFrom }: UpsetTableProps
           {rows.map((row) => (
             <tr key={row.game_id}>
               <td className="num">{rankCell(kind, row)}</td>
-              <td>{formatUpsetScore(row)}</td>
+              <td>
+                <TeamMarks teamIds={[row.winner_team_id, row.loser_team_id]} /><span>{formatUpsetScore(row)}</span>
+              </td>
               {kind !== 'week' && <td className="num">{formatWhen(row)}</td>}
               <td className="num">{`${formatPercent(row.winner_pregame_win_prob)} (${formatProbSource(row.prob_source)})`}</td>
               {showSinceColumn && <td className="num">{formatAllTimeRank(row) ?? formatSeasonRank(row)}</td>}

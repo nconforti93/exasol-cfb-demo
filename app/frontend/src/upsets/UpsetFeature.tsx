@@ -1,5 +1,6 @@
 import type { UpsetRow } from '../api/types.ts'
 import { formatPercent, formatProbSource } from '../format/format.ts'
+import { TeamMarks } from '../shell/TeamDirectory.tsx'
 import {
   formatAllTimeRank,
   formatLineEraRank,
@@ -17,7 +18,9 @@ export function UpsetFeature({ row }: { row: UpsetRow }) {
   return (
     <section className="upset-feature" aria-label="Upset of the week">
       <h3>Upset of the week</h3>
-      <p className="upset-score">{formatUpsetScore(row)}</p>
+      <p className="upset-score">
+        <TeamMarks teamIds={[row.winner_team_id, row.loser_team_id]} size={48} /><span>{formatUpsetScore(row)}</span>
+      </p>
       <p className="upset-note">{`${row.winner_school} won ${formatWinnerSite(row)}.`}</p>
       <dl className="upset-facts">
         <div>

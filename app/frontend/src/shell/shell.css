@@ -22,48 +22,150 @@
 
 .shell-header {
   background: var(--surface);
-  border-bottom: 1px solid var(--grid);
-  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.shell-header-inner {
+  width: 100%;
+  max-width: var(--layout-max);
+  margin-inline: auto;
+  padding: var(--space-3) var(--page-pad);
+}
+
+@media (min-width: 1440px) {
+  .shell-header-inner {
+    padding-inline: var(--space-6);
+  }
 }
 
 .shell-header-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 1.25rem;
-  padding: 0.25rem 0;
+  gap: var(--space-2) var(--space-5);
+  padding: var(--space-1) 0;
+}
+
+.shell-primary {
+  gap: var(--space-2) var(--space-4);
+}
+
+.shell-context {
+  align-items: flex-start;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.shell-context .refresh-panel {
+  flex: 1 1 24rem;
 }
 
 .shell-title {
   margin: 0;
-  font-size: 1.25rem;
+  font: var(--text-title);
+  letter-spacing: -0.01em;
+}
+
+.shell-brand {
+  color: var(--ink-primary);
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .shell-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
-  flex: 1 1 auto;
+  gap: var(--space-1);
 }
 
 .shell-tabs a {
-  padding: 0.3rem 0.8rem;
-  border-radius: 6px;
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-control);
+  font-weight: 600;
   color: var(--ink-secondary);
   text-decoration: none;
-  border: 1px solid transparent;
 }
 
 .shell-tabs a:hover {
   color: var(--ink-primary);
-  border-color: var(--border);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 
 .shell-tabs a[aria-current="page"] {
   color: var(--ink-primary);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.team-search {
+  position: relative;
+  flex: 1 1 10rem;
+  min-width: 8rem;
+  max-width: 24rem;
+  margin-left: auto;
+}
+
+.team-search-input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink-primary);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-3);
+}
+
+.team-search-input::placeholder {
+  color: var(--ink-muted);
+}
+
+.team-search-input:disabled {
+  cursor: not-allowed;
+}
+
+.team-search-list {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-raised);
+}
+
+.team-search-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.team-search-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-raised));
+}
+
+.team-search-school {
+  flex: 1 1 auto;
   font-weight: 600;
-  border-color: var(--border);
-  border-bottom: 3px solid var(--accent);
+}
+
+.team-search-conference {
+  font: var(--text-small);
+  color: var(--ink-secondary);
+}
+
+.team-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .shell-controls,
@@ -76,7 +178,7 @@
 }
 
 .shell-badges {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   justify-content: flex-end;
 }
 
@@ -86,8 +188,8 @@
   color: var(--ink-primary);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-3);
 }
 
 .shell-button {
@@ -152,7 +254,7 @@
 }
 
 .shell-notices {
-  padding: 0 1rem;
+  padding-inline: max(var(--page-pad), calc((100% - var(--layout-max)) / 2 + var(--page-pad)));
 }
 
 .banner {
@@ -238,12 +340,33 @@
 }
 
 .shell-footer {
-  border-top: 1px solid var(--grid);
-  padding: 0.5rem 1rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-3) max(var(--page-pad), calc((100% - var(--layout-max)) / 2 + var(--page-pad))) var(--space-4);
   color: var(--ink-secondary);
   font-size: 0.9rem;
 }
 
 .shell-footer p {
   margin: 0.15rem 0;
+}
+
+.team-marks {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--space-2);
+  vertical-align: middle;
+}
+
+.team-marks .team-mark + .team-mark {
+  margin-left: calc(var(--space-1) * -1);
+}
+
+@media (min-width: 1440px) {
+  .shell-notices {
+    padding-inline: max(var(--space-6), calc((100% - var(--layout-max)) / 2 + var(--space-6)));
+  }
+
+  .shell-footer {
+    padding-inline: max(var(--space-6), calc((100% - var(--layout-max)) / 2 + var(--space-6)));
+  }
 }
