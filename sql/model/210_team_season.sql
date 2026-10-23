@@ -1,3 +1,6 @@
+-- Materialized (decision [40]): a table with the columns the view had, filled by the INSERT below. Every
+-- `make model` recreates it, and CFB_INFRA.REFRESH_MODEL rebuilds it (TRUNCATE + the INSERT, file order)
+-- after every load: refresh step 100, and the post-hook of `make backfill` / `make restore`.
 -- Team-seasons (model/teams-conferences): one row per team id and season with a stored game or a
 -- conference membership.
 -- Memberships come from TEAM_MEMBERSHIP (the games-free rules: each slice speaks only for the seasons
@@ -13,40 +16,42 @@
 -- named CONFERENCE_TIER row, else the era's default row for a conference whose team-seasons with a
 -- classification are mostly fbs that season. SP+ comes from RATING_SP (season and SEASON - 1, by team id;
 -- unmatched names have no team id and never join), final ranks from RANKING's final polls.
-CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.TEAM_SEASON (
-  TEAM_ID                       COMMENT IS 'CFBD team id (TEAM.TEAM_ID); with SEASON it identifies the row',
-  SEASON                        COMMENT IS 'Season',
-  SCHOOL                        COMMENT IS 'CFBD school name: the name in the stored team list (TEAM.SCHOOL), else the name on the team''s latest stored game of the season, else the name of its membership',
-  CONFERENCE_NAME               COMMENT IS 'Conference in the season (CFBD name): the membership''s conference, else the one recorded on most of the team''s games with FIXED participants that season; NULL when neither exists (CONFERENCE_SOURCE NONE)',
-  CONFERENCE_DIVISION           COMMENT IS 'Division within the conference in the season, from the membership; NULL without a membership or when the conference had no divisions',
-  CONFERENCE_SOURCE             COMMENT IS 'Where the conference comes from: AFFILIATION (a stored membership whose slice speaks for the season), GAMES (no membership: the conference on most games with FIXED participants; championship and postseason games do not count) or NONE',
-  HAS_MEMBERSHIP_CONFLICT       COMMENT IS 'TRUE when the newest membership fetch holds spells of different conferences for the season; the spell with the later start year won (MODEL_CHECKS: MEMBERSHIP_CONFLICT)',
-  CONFERENCE_TIER               COMMENT IS 'Tier of the conference in the season from CONFERENCE_TIER: AQ or NON_AQ (1998-2013), P5 or G5 (2014-2023), P4 or G6 (2024 on), INDEPENDENT for FBS Independents (engine input conf_tier). A conference without a named row takes the era''s default tier when most of its team-seasons with a classification are fbs that season. NULL before 1998, for lower-division conferences and without a conference',
-  IS_POWER_CONFERENCE           COMMENT IS 'TRUE for the tiers AQ, P5 and P4; FALSE for every other tier and without a tier',
-  CLASSIFICATION                COMMENT IS 'CFBD classification code in the season: fbs, fcs, ii or iii, from the first rule that applies (CLASSIFICATION_SOURCE); NULL when none applies',
-  CLASSIFICATION_SOURCE         COMMENT IS 'TRANSITION (a CLASSIFICATION_TRANSITION row for SCHOOL and the season), GAMES (the code on most of the team''s games with FIXED participants; a tie goes to the latest such game), AFFILIATION (the membership''s code) or NONE',
-  CLASSIFICATION_LABEL          COMMENT IS 'Name of the classification at the time, from CLASSIFICATION_LABEL for the season''s division era, for example Division I-A in 1985 or Major college in 1950; NULL without a classification',
-  IS_CLASSIFICATION_RETROACTIVE COMMENT IS 'TRUE when the classification code did not exist in the season (fbs and fcs before 1978, ii and iii before 1973); NULL without a classification',
-  GAMES                         COMMENT IS 'Stored games of the team in the season, of any status, postseason included; 0 for a season known only from a membership',
-  FIXED_GAMES                   COMMENT IS 'Of GAMES, those with FIXED participants (GAME.PARTICIPANTS_RULE), the games from which CONFERENCE_SOURCE GAMES and CLASSIFICATION_SOURCE GAMES come',
-  WINS                          COMMENT IS 'Completed games won, postseason and every opponent included (engine input wins); 0 without completed games',
-  LOSSES                        COMMENT IS 'Completed games lost, postseason and every opponent included (engine input losses); 0 without completed games',
-  TIES                          COMMENT IS 'Completed games tied (possible at the FBS level before 1996); 0 without completed games',
-  CONF_WINS                     COMMENT IS 'Completed conference games won (IS_CONFERENCE_GAME), without conference championship games (engine input conf_wins)',
-  CONF_LOSSES                   COMMENT IS 'Completed conference games lost, without conference championship games (engine input conf_losses)',
-  CONF_TIES                     COMMENT IS 'Completed conference games tied, without conference championship games',
-  POINTS_FOR                    COMMENT IS 'Points scored in completed games; 0 without completed games',
-  POINTS_AGAINST                COMMENT IS 'Points allowed in completed games; 0 without completed games',
-  CONF_POINT_DIFF               COMMENT IS 'Points for minus points against in the completed conference games that CONF_WINS, CONF_LOSSES and CONF_TIES count, so without championship games (engine input conf_pd); 0 without them',
-  FIRST_PREGAME_ELO             COMMENT IS 'CFBD pregame Elo of the team''s first game of the season that has one (by kickoff); NULL without Elo (CFBD has Elo from 1890)',
-  LAST_POSTGAME_ELO             COMMENT IS 'CFBD postgame Elo of the team''s last completed game of the season that has one (by kickoff), postseason included',
-  SP_RATING                     COMMENT IS 'SP+ rating of the season as last fetched (RATING_SP.SP_RATING), DECIMAL(6,2). It includes the season''s own games, so it is not a prior; NULL without a matched SP+ row',
-  SP_PRIOR_RATING               COMMENT IS 'SP+ rating of the previous season as last fetched, final or not (RATING_SP of SEASON - 1), DECIMAL(6,2): the prior of the score model; NULL without one',
-  HAS_SP_PRIOR                  COMMENT IS 'TRUE when the team has a matched SP+ row for the previous season',
-  SP_PRIOR_IS_FINAL             COMMENT IS 'RATING_SP.IS_FINAL of the prior''s row: FALSE when the previous season''s slice is not final yet (MODEL_CHECKS: SP_PRIOR_NOT_FINAL); NULL without a prior',
-  FINAL_AP_RANK                 COMMENT IS 'Rank in the season''s final AP poll (RANKING, IS_FINAL_POLL, the latest one); NULL when unranked or while the season runs',
-  FINAL_CFP_RANK                COMMENT IS 'Rank in the committee''s final ranking of the season (RANKING, IS_FINAL_POLL); NULL when unranked and for a season whose regular-season weeks are not all done'
-) AS
+CREATE OR REPLACE TABLE {MODEL_SCHEMA}.TEAM_SEASON (
+  TEAM_ID                       DECIMAL(18,0)      COMMENT IS 'CFBD team id (TEAM.TEAM_ID); with SEASON it identifies the row',
+  SEASON                        DECIMAL(4,0)       COMMENT IS 'Season',
+  SCHOOL                        VARCHAR(2000) UTF8 COMMENT IS 'CFBD school name: the name in the stored team list (TEAM.SCHOOL), else the name on the team''s latest stored game of the season, else the name of its membership',
+  CONFERENCE_NAME               VARCHAR(2000) UTF8 COMMENT IS 'Conference in the season (CFBD name): the membership''s conference, else the one recorded on most of the team''s games with FIXED participants that season; NULL when neither exists (CONFERENCE_SOURCE NONE)',
+  CONFERENCE_DIVISION           VARCHAR(2000) UTF8 COMMENT IS 'Division within the conference in the season, from the membership; NULL without a membership or when the conference had no divisions',
+  CONFERENCE_SOURCE             VARCHAR(11) ASCII  COMMENT IS 'Where the conference comes from: AFFILIATION (a stored membership whose slice speaks for the season), GAMES (no membership: the conference on most games with FIXED participants; championship and postseason games do not count) or NONE',
+  HAS_MEMBERSHIP_CONFLICT       BOOLEAN            COMMENT IS 'TRUE when the newest membership fetch holds spells of different conferences for the season; the spell with the later start year won (MODEL_CHECKS: MEMBERSHIP_CONFLICT)',
+  CONFERENCE_TIER               VARCHAR(16) UTF8   COMMENT IS 'Tier of the conference in the season from CONFERENCE_TIER: AQ or NON_AQ (1998-2013), P5 or G5 (2014-2023), P4 or G6 (2024 on), INDEPENDENT for FBS Independents (engine input conf_tier). A conference without a named row takes the era''s default tier when most of its team-seasons with a classification are fbs that season. NULL before 1998, for lower-division conferences and without a conference',
+  IS_POWER_CONFERENCE           BOOLEAN            COMMENT IS 'TRUE for the tiers AQ, P5 and P4; FALSE for every other tier and without a tier',
+  CLASSIFICATION                VARCHAR(2000) UTF8 COMMENT IS 'CFBD classification code in the season: fbs, fcs, ii or iii, from the first rule that applies (CLASSIFICATION_SOURCE); NULL when none applies',
+  CLASSIFICATION_SOURCE         VARCHAR(11) ASCII  COMMENT IS 'TRANSITION (a CLASSIFICATION_TRANSITION row for SCHOOL and the season), GAMES (the code on most of the team''s games with FIXED participants; a tie goes to the latest such game), AFFILIATION (the membership''s code) or NONE',
+  CLASSIFICATION_LABEL          VARCHAR(40) UTF8   COMMENT IS 'Name of the classification at the time, from CLASSIFICATION_LABEL for the season''s division era, for example Division I-A in 1985 or Major college in 1950; NULL without a classification',
+  IS_CLASSIFICATION_RETROACTIVE BOOLEAN            COMMENT IS 'TRUE when the classification code did not exist in the season (fbs and fcs before 1978, ii and iii before 1973); NULL without a classification',
+  GAMES                         DECIMAL(4,0)       COMMENT IS 'Stored games of the team in the season, of any status, postseason included; 0 for a season known only from a membership',
+  FIXED_GAMES                   DECIMAL(4,0)       COMMENT IS 'Of GAMES, those with FIXED participants (GAME.PARTICIPANTS_RULE), the games from which CONFERENCE_SOURCE GAMES and CLASSIFICATION_SOURCE GAMES come',
+  WINS                          DECIMAL(4,0)       COMMENT IS 'Completed games won, postseason and every opponent included (engine input wins); 0 without completed games',
+  LOSSES                        DECIMAL(4,0)       COMMENT IS 'Completed games lost, postseason and every opponent included (engine input losses); 0 without completed games',
+  TIES                          DECIMAL(4,0)       COMMENT IS 'Completed games tied (possible at the FBS level before 1996); 0 without completed games',
+  CONF_WINS                     DECIMAL(4,0)       COMMENT IS 'Completed conference games won (IS_CONFERENCE_GAME), without conference championship games (engine input conf_wins)',
+  CONF_LOSSES                   DECIMAL(4,0)       COMMENT IS 'Completed conference games lost, without conference championship games (engine input conf_losses)',
+  CONF_TIES                     DECIMAL(4,0)       COMMENT IS 'Completed conference games tied, without conference championship games',
+  POINTS_FOR                    DECIMAL(9,0)       COMMENT IS 'Points scored in completed games; 0 without completed games',
+  POINTS_AGAINST                DECIMAL(9,0)       COMMENT IS 'Points allowed in completed games; 0 without completed games',
+  CONF_POINT_DIFF               DECIMAL(9,0)       COMMENT IS 'Points for minus points against in the completed conference games that CONF_WINS, CONF_LOSSES and CONF_TIES count, so without championship games (engine input conf_pd); 0 without them',
+  FIRST_PREGAME_ELO             DECIMAL(9,0)       COMMENT IS 'CFBD pregame Elo of the team''s first game of the season that has one (by kickoff); NULL without Elo (CFBD has Elo from 1890)',
+  LAST_POSTGAME_ELO             DECIMAL(9,0)       COMMENT IS 'CFBD postgame Elo of the team''s last completed game of the season that has one (by kickoff), postseason included',
+  SP_RATING                     DECIMAL(6,2)       COMMENT IS 'SP+ rating of the season as last fetched (RATING_SP.SP_RATING), DECIMAL(6,2). It includes the season''s own games, so it is not a prior; NULL without a matched SP+ row',
+  SP_PRIOR_RATING               DECIMAL(6,2)       COMMENT IS 'SP+ rating of the previous season as last fetched, final or not (RATING_SP of SEASON - 1), DECIMAL(6,2): the prior of the score model; NULL without one',
+  HAS_SP_PRIOR                  BOOLEAN            COMMENT IS 'TRUE when the team has a matched SP+ row for the previous season',
+  SP_PRIOR_IS_FINAL             BOOLEAN            COMMENT IS 'RATING_SP.IS_FINAL of the prior''s row: FALSE when the previous season''s slice is not final yet (MODEL_CHECKS: SP_PRIOR_NOT_FINAL); NULL without a prior',
+  FINAL_AP_RANK                 DECIMAL(4,0)       COMMENT IS 'Rank in the season''s final AP poll (RANKING, IS_FINAL_POLL, the latest one); NULL when unranked or while the season runs',
+  FINAL_CFP_RANK                DECIMAL(4,0)       COMMENT IS 'Rank in the committee''s final ranking of the season (RANKING, IS_FINAL_POLL); NULL when unranked and for a season whose regular-season weeks are not all done'
+) COMMENT IS 'One row per team and season in which the team has a stored game or a conference membership. Membership spells speak only for the seasons their slice requested, the newest fetch wins, and same-fetch spells of different conferences are flagged. Without a membership the conference comes from the team''s games with FIXED participants. Classification: CLASSIFICATION_TRANSITION, then those games, then the membership, with the division name of the time; the power tier of the era from CONFERENCE_TIER. Season records (all completed games) and conference records without championship games, points and CONF_POINT_DIFF, first pregame and last postgame Elo, SP+ of the season and the prior (SEASON - 1) as fixed-scale DECIMAL, and the final AP and committee ranks. Every column is the whole stored season; for the state as of a week use TEAM_SEASON_AS_OF. A conference season is a GROUP BY over this table. Materialized: rebuilt by CFB_INFRA.REFRESH_MODEL after every load, so it is current as of the last load or refresh.';
+
+INSERT INTO {MODEL_SCHEMA}.TEAM_SEASON
 WITH votes AS (
   SELECT g."TEAM_ID", g."SEASON", g."GAME_ID", g."START_AT", g."TEAM_NAME", g."TEAM_CONFERENCE",
          g."TEAM_CLASSIFICATION", g."HAS_RESULT", g."GAME_RESULT", g."POINTS_FOR",
@@ -269,5 +274,4 @@ SELECT s."TEAM_ID",
    AND pr."SEASON" = s."SEASON" - 1
   LEFT JOIN final_ranks fr
     ON fr."TEAM_ID" = s."TEAM_ID"
-   AND fr."SEASON" = s."SEASON"
-COMMENT IS 'One row per team and season in which the team has a stored game or a conference membership. Membership spells speak only for the seasons their slice requested, the newest fetch wins, and same-fetch spells of different conferences are flagged. Without a membership the conference comes from the team''s games with FIXED participants. Classification: CLASSIFICATION_TRANSITION, then those games, then the membership, with the division name of the time; the power tier of the era from CONFERENCE_TIER. Season records (all completed games) and conference records without championship games, points and CONF_POINT_DIFF, first pregame and last postgame Elo, SP+ of the season and the prior (SEASON - 1) as fixed-scale DECIMAL, and the final AP and committee ranks. Every column is the whole stored season; for the state as of a week use TEAM_SEASON_AS_OF. A conference season is a GROUP BY over this view.';
+   AND fr."SEASON" = s."SEASON";

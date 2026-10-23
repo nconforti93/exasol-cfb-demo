@@ -283,6 +283,7 @@ def test_the_idle_rule_applies_to_script_kinds_only(lib: LoadLib) -> None:
     assert idle is not None
     assert sorted(re.findall(r"'([A-Z_]+)'", idle.group(1))) == [
         "BACKFILL",
+        "MODEL",
         "REFRESH_WEEK",
         "SIMULATE",
     ]

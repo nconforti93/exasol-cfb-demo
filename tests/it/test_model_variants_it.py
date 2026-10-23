@@ -99,6 +99,7 @@ def test_duplicate_calendar_week_appears_once(harness: Harness) -> None:
         f"ADD_DAYS(REQ_AT, 1) FROM {harness.core}.CALENDAR "
         "WHERE SEASON = 2024 AND SEASON_TYPE = 'regular' AND WEEK = 14"
     )
+    harness.rebuild_model()
     stored = harness.query(
         f"SELECT START_DATE, END_DATE, FIRST_GAME_START FROM {harness.core}.CALENDAR "
         "WHERE SEASON = 2024 AND SEASON_TYPE = 'regular' AND WEEK = 14 ORDER BY REQ_AT DESC"
@@ -131,6 +132,7 @@ def northam_transition(harness: Harness) -> Iterator[None]:
         yield
     finally:
         harness.query(f"DELETE FROM {table} WHERE TEAM_NAME = 'Northam'")
+        harness.rebuild_model()
 
 
 def test_classification_from_transition_seed(harness: Harness, northam_transition: None) -> None:

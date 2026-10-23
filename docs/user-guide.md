@@ -667,3 +667,44 @@ make restore NAME=sunday-week9 CONFIRM=yes [FORCE=yes] [TARGET=local]
 `TARGET=aws` runs every loader command against the AWS `default` deployment, with the node's TLS certificate pinned: the sys password is read from the deployment's secrets at run time and is never sent to a non-loopback host unverified (`vs/host/target.py`). On AWS, only deploy and run: never stop, start or resize the deployment.
 
 People who run their own key and do not want the repository's ledger use `LEDGER=off`. They should still set `monthly_call_budget` to what their key allows: in the plan file, or with `make deploy LOADER_CONFIG="monthly_call_budget=<n>"`.
+
+## 10. The analytical model
+
+`CFB_MODEL` is what analyses, the engine and the app read; they never touch `CFB_CORE` or `CFBD_VS`. It reads only stored data, so building and querying it costs **zero CFBD calls**. `docs/model-dictionary.md` (generated, `make model-docs`) lists every object and column with its grain; every object also carries that comment in the database.
+
+```bash
+make model [TARGET=aws]                          # lint, then deploy the model in one transaction (also part of make deploy)
+make model-refresh [SEASON=2026 WEEK=7]          # rebuild the derived tables; with a season and week, also log that point's checks
+make model-check SEASON=2026 WEEK=7              # print the checks of one point, change nothing
+make model-docs                                  # regenerate docs/model-dictionary.md from sql/model/
+```
+
+### What is in it
+
+- **Reference tables** (seeds in `sql/model/01x`): eras, division labels, conference tiers, conference championship seasons, polls, the dataset catalog and classification transitions. Curated knowledge CFBD does not provide.
+- **Derived tables** (`GAME`, `SEASON_WEEK`, `TEAM`, `RATING_SP`, `RANKING`, `TEAM_MEMBERSHIP`, `TEAM_SEASON`, `AS_OF_POINT`): the dimensions and facts that pages and the as-of views read most. They are tables filled by one `INSERT ... SELECT`, because the same queries as views took 1 to 6 s on AWS, mostly compile time (decision [40]).
+- **Views** for everything else: `TEAM_GAME`, `SEASON`, `VENUE`, `CONFERENCE`, `CONFERENCE_CHAMPIONSHIP_GAME`, `SEASON_COVERAGE` (trust level per season and dataset, and which datasets are on demand), `MODEL_CHECKS`, and the four as-of views below.
+- **Venues** carry `GEO_POINT` as `GEOMETRY(4326)` (Exasol has no `GEOGRAPHY`); `GREAT_CIRCLE_KM(lat1, lon1, lat2, lon2)` gives kilometres. Engine-facing real values (spreads, win probabilities, SP+ ratings) are fixed-scale `DECIMAL`.
+
+### When the derived tables rebuild
+
+They are **current as of the last rebuild**. Rebuilds happen in `make model` and `make deploy`; as step 100 `MODEL` of every `REFRESH_WEEK` (it rebuilds, then logs the checks to `CFB_META.MODEL_CHECK_LOG`, and an ERROR check stops the chain); after `make backfill` and `make restore` (a post-hook, a failure is a printed warning); and by hand with `make model-refresh`. Not covered: `EXECUTE SCRIPT CFB_INFRA.BACKFILL(...)` run directly and manual edits of `CFB_CORE`; run `make model-refresh` after them. A target gets step 100 with its next `make deploy`.
+
+### As-of points
+
+`GAME_AS_OF`, `RANKING_AS_OF`, `TEAM_SEASON_AS_OF` and `CURRENT_AS_OF` answer "what was known at season S, week W". The point is `(AS_OF_SEASON, AS_OF_WEEK_SEQ)`, where `WEEK_SEQ` is 0 for the preseason, n for regular week n and 100 + n for postseason week n, the same week `REFRESH_WEEK` receives. One horizon everywhere: everything known after that week's games and before the next week's first kickoff (`CUTOFF_AT`).
+
+- Results, Elo and polls are visible once they happen; values CFBD overwrites during a season (current SP+, pregame lines, the current polls) are visible from their fetch time. There is no per-week snapshot history, so a replay of an earlier week of the current season shows them as NULL.
+- Games whose teams depend on results (conference championships, bowls, CFP rounds) are not rows until their teams are known (`GAME.PARTICIPANTS_RULE`).
+- **Filter by a literal point.** Write `WHERE AS_OF_SEASON = 2024 AND AS_OF_WEEK_SEQ = 9`, or read `CURRENT_AS_OF` first and pass its values. A join to `CURRENT_AS_OF` is not pushed into the views and evaluates every point of every season (21 s instead of under 1 s).
+
+```sql
+SELECT * FROM CFB_MODEL.CURRENT_AS_OF;
+SELECT SCHOOL, WINS, LOSSES, CONF_WINS, ELO_AS_OF, AP_RANK
+  FROM CFB_MODEL.TEAM_SEASON_AS_OF
+ WHERE AS_OF_SEASON = 2024 AND AS_OF_WEEK_SEQ = 9 AND CLASSIFICATION = 'fbs'
+ ORDER BY AP_RANK NULLS LAST LIMIT 10;
+```
+
+- **Known late visibility:** CFBD labels the committee's selection ranking of 2024 (released 8 December, after the title games of week 15) as regular week 16, and the label rule makes it visible from point 16, one week after the selection; at point 15 `RANKING_AS_OF` still shows the week-15 ranking (the 2025 ranking behaves the same, and so does every committee ranking of a past season: its label lead is 0). A ranking fetched before the cutoff is visible at once, so the live demo is not affected. Phase 4 is not affected because it reads final rankings as labels only.
+- Real data shows CFBD labels the 2025 lower-division playoff as postseason weeks 13 and 14, so `WEEK_SEQ` is not chronological there; the `WEEK_ORDER_MISMATCH` warning lists it. See `docs/model-verification.md` for the checks and warnings seen on the stored data.

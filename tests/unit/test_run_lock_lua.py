@@ -105,7 +105,7 @@ def test_release_without_a_detail_writes_null() -> None:
     assert str(detail) == "null"
 
 
-@pytest.mark.parametrize("kind", ["BACKFILL", "REFRESH_WEEK", "SIMULATE"])
+@pytest.mark.parametrize("kind", ["BACKFILL", "REFRESH_WEEK", "SIMULATE", "MODEL"])
 def test_acquire_refuses_a_script_kind_and_sends_nothing(kind: str) -> None:
     """Review m6: a host session is idle between statements, so the idle rule frees it at once."""
     script = RunLockScript()

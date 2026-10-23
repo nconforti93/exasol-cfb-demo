@@ -1,3 +1,6 @@
+-- Materialized (decision [40]): a table with the columns the view had, filled by the INSERT below. Every
+-- `make model` recreates it, and CFB_INFRA.REFRESH_MODEL rebuilds it (TRUNCATE + the INSERT, file order)
+-- after every load: refresh step 100, and the post-hook of `make backfill` / `make restore`.
 -- The game fact (model/games): one row per CFBD game id of CFB_CORE.GAMES, newest fetch first
 -- (REQ_AT, then the later slice key, then the later row). The pregame line of METRICS_WP_PREGAME is
 -- deduplicated the same way and joined by game id; venues by venue id. Both partitions start with
@@ -5,66 +8,68 @@
 -- Engine-facing real values are cast once to fixed-scale DECIMAL; the cast rounds (probe 1.1i).
 -- CFP_ROUND_SEQ ranks the season's CFP rounds by their first kickoff. Placeholders (no teams) are
 -- FIXED whatever their kind (decision [30]).
-CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.GAME (
-  GAME_ID               COMMENT IS 'CFBD game id; unique in this view (a game stored more than once appears once, from its newest fetch)',
-  SEASON                COMMENT IS 'Season of the game',
-  SEASON_TYPE           COMMENT IS 'CFBD season type: regular or postseason; any other type has no week (WEEK_SEQ NULL), which MODEL_CHECKS reports',
-  WEEK                  COMMENT IS 'Week as CFBD labels it within the season type',
-  WEEK_SEQ              COMMENT IS 'Week sequence (SEASON_WEEK.WEEK_SEQ): regular week n = n, postseason week n = 100 + n; NULL for other season types',
-  START_AT              COMMENT IS 'Kickoff in UTC as stored; historic games often carry a date with a nominal time',
-  IS_START_TIME_TBD     COMMENT IS 'TRUE when CFBD says the kickoff time is not yet set (start time TBD)',
-  FETCHED_AT            COMMENT IS 'When the game row shown was fetched from CFBD (REQ_AT, UTC)',
-  HOME_TEAM_ID          COMMENT IS 'CFBD team id of the home (first-listed) team; NULL while CFBD lists the game without teams',
-  HOME_TEAM             COMMENT IS 'CFBD school name of the home team',
-  HOME_CONFERENCE       COMMENT IS 'Conference recorded on the game for the home team (CFBD name); NULL for independents of early eras and placeholders',
-  HOME_CLASSIFICATION   COMMENT IS 'Classification of the home team: fbs, fcs, ii or iii. The CLASSIFICATION_TRANSITION row of the team and season if there is one, else the code CFBD records on the game',
-  AWAY_TEAM_ID          COMMENT IS 'CFBD team id of the away team; NULL while CFBD lists the game without teams',
-  AWAY_TEAM             COMMENT IS 'CFBD school name of the away team',
-  AWAY_CONFERENCE       COMMENT IS 'Conference recorded on the game for the away team (CFBD name)',
-  AWAY_CLASSIFICATION   COMMENT IS 'Classification of the away team: fbs, fcs, ii or iii, as for HOME_CLASSIFICATION',
-  HAS_TEAMS             COMMENT IS 'TRUE when both team ids are set; FALSE for a placeholder that CFBD lists before naming its teams (no TEAM_GAME rows, PARTICIPANTS_RULE FIXED)',
-  VENUE_ID              COMMENT IS 'CFBD venue id (VENUE.VENUE_ID)',
-  VENUE_NAME            COMMENT IS 'Venue name as recorded on the game',
-  IS_NEUTRAL_SITE       COMMENT IS 'CFBD neutralSite: TRUE when neither team plays at home (engine input neutral)',
-  IS_CONFERENCE_GAME    COMMENT IS 'CFBD conferenceGame: TRUE when the game counts as a conference game (engine input conf_game). Non-counting games between members, such as Army-Navy in 2024, are FALSE',
-  IS_COMPLETED          COMMENT IS 'TRUE once CFBD reports the game as completed',
-  HOME_POINTS           COMMENT IS 'Points of the home team; NULL unless the game is completed',
-  AWAY_POINTS           COMMENT IS 'Points of the away team; NULL unless the game is completed',
-  MARGIN                COMMENT IS 'Home minus away points; NULL without a result',
-  TOTAL_POINTS          COMMENT IS 'Home plus away points; NULL without a result',
-  WINNER_TEAM_ID        COMMENT IS 'Team id of the winner; NULL without a result or after a tie',
-  LOSER_TEAM_ID         COMMENT IS 'Team id of the loser; NULL without a result or after a tie',
-  IS_TIE                COMMENT IS 'TRUE when a completed game ended with equal points (possible at the FBS level before 1996), FALSE for any other result, NULL without a result',
-  HAS_RESULT            COMMENT IS 'Coverage flag: TRUE when the game is completed with both scores',
-  HOME_PREGAME_ELO      COMMENT IS 'CFBD pregame Elo of the home team (integer). CFBD fits its Elo model on all seasons, so historic values may embed later methodology; that is not a fact leak',
-  AWAY_PREGAME_ELO      COMMENT IS 'CFBD pregame Elo of the away team (integer)',
-  HOME_POSTGAME_ELO     COMMENT IS 'CFBD postgame Elo of the home team (integer); set for completed games',
-  AWAY_POSTGAME_ELO     COMMENT IS 'CFBD postgame Elo of the away team (integer); set for completed games',
-  HAS_ELO               COMMENT IS 'Coverage flag: TRUE when both pregame Elo values are stored (CFBD has Elo from 1890)',
-  HOME_POSTGAME_WIN_PROB COMMENT IS 'CFBD postgame win probability of the home team, DOUBLE as CFBD reports it (fitted on all seasons, like Elo); not an engine input',
-  AWAY_POSTGAME_WIN_PROB COMMENT IS 'CFBD postgame win probability of the away team, DOUBLE as CFBD reports it',
-  ATTENDANCE            COMMENT IS 'Attendance as CFBD reports it',
-  EXCITEMENT_INDEX      COMMENT IS 'CFBD excitement index, DOUBLE as CFBD reports it',
-  PREGAME_SPREAD        COMMENT IS 'Pregame spread from METRICS_WP_PREGAME, from the home team''s side as CFBD reports it (negative when the home team is favored), DECIMAL(6,2); the cast rounds, and an exact binary tie may land one last place off. Historic spreads are closing lines, known only on game day. NULL without a line',
-  HOME_PREGAME_WIN_PROB COMMENT IS 'Pregame win probability of the home team from METRICS_WP_PREGAME, DECIMAL(5,4) (0 to 1); the cast rounds, and an exact binary tie may land one last place off. NULL without a line',
-  PREGAME_WP_FETCHED_AT COMMENT IS 'When the pregame line shown was fetched (REQ_AT, UTC); the as-of views compare it with the cutoff',
-  HAS_PREGAME_WP        COMMENT IS 'Coverage flag: TRUE when a pregame line is stored for the game (CFBD has them from 2013 and omits games without a spread)',
-  POSTSEASON_KIND       COMMENT IS 'NULL outside the postseason; else CFP (College Football Playoff: CFBD playoff competition cfp), BOWL (any other postseason game with an FBS team) or NON_FBS (postseason game without an FBS team: lower-division playoffs and bowls)',
-  CFP_ROUND             COMMENT IS 'CFP games only: CFBD playoff round code, for example firstRound, quarterfinal, semifinal or championship',
-  CFP_ROUND_NAME        COMMENT IS 'CFP games only: CFBD name of the round, for example Quarterfinal',
-  CFP_ROUND_SEQ         COMMENT IS 'CFP games only: 1 for the season''s first CFP round, 2 for the next and so on, ordered by each round''s first kickoff',
-  CFP_HOME_SEED         COMMENT IS 'CFP games only: playoff seed of the home team',
-  CFP_AWAY_SEED         COMMENT IS 'CFP games only: playoff seed of the away team',
-  BOWL_NAME             COMMENT IS 'Bowl of a CFP or BOWL game: the playoff bowl name of a CFP game (NULL for a campus game), the CFBD notes of a BOWL game; NULL otherwise',
-  IS_CONF_CHAMPIONSHIP  COMMENT IS 'TRUE for a conference championship game detected by CONFERENCE_CHAMPIONSHIP_GAME (CFBD does not mark them)',
-  PARTICIPANTS_RULE     COMMENT IS 'When the teams of the game were known (model/as-of hides the game until then): CONF_CHAMPIONSHIP (detected championship games; from the point before their week), SELECTION (BOWL games and the first CFP round; from the last regular week), PREVIOUS_ROUND (later CFP rounds and NON_FBS games; from their own week) or FIXED (every other game, placeholders included; always)',
-  NOTES                 COMMENT IS 'CFBD notes of the game as stored, for example a bowl name or a championship title; free text',
-  HAS_LINE_SCORES       COMMENT IS 'Coverage flag: TRUE when both teams have points per period stored',
-  HAS_VENUE_LOCATION    COMMENT IS 'Coverage flag: TRUE when the game''s venue has both coordinates in CFB_CORE.VENUES',
-  INVOLVES_FBS          COMMENT IS 'Coverage flag: TRUE when at least one team is classified fbs (HOME_CLASSIFICATION, AWAY_CLASSIFICATION)',
-  IS_FBS_GAME           COMMENT IS 'Coverage flag: TRUE when both teams are classified fbs',
-  PLAYS_ACCESS          COMMENT IS 'Plays are never stored: ON_DEMAND in seasons in which CFBD has plays (DATASET PLAYS, from 2001; fetch them for one game through CFBD_VS.PLAYS) or NOT_AVAILABLE before'
-) AS
+CREATE OR REPLACE TABLE {MODEL_SCHEMA}.GAME (
+  GAME_ID                DECIMAL(18,0)      COMMENT IS 'CFBD game id; unique in this table (a game stored more than once appears once, from its newest fetch)',
+  SEASON                 DECIMAL(18,0)      COMMENT IS 'Season of the game',
+  SEASON_TYPE            VARCHAR(2000) UTF8 COMMENT IS 'CFBD season type: regular or postseason; any other type has no week (WEEK_SEQ NULL), which MODEL_CHECKS reports',
+  WEEK                   DECIMAL(18,0)      COMMENT IS 'Week as CFBD labels it within the season type',
+  WEEK_SEQ               DECIMAL(3,0)       COMMENT IS 'Week sequence (SEASON_WEEK.WEEK_SEQ): regular week n = n, postseason week n = 100 + n; NULL for other season types',
+  START_AT               TIMESTAMP(3)       COMMENT IS 'Kickoff in UTC as stored; historic games often carry a date with a nominal time',
+  IS_START_TIME_TBD      BOOLEAN            COMMENT IS 'TRUE when CFBD says the kickoff time is not yet set (start time TBD)',
+  FETCHED_AT             TIMESTAMP(3)       COMMENT IS 'When the game row shown was fetched from CFBD (REQ_AT, UTC)',
+  HOME_TEAM_ID           DECIMAL(18,0)      COMMENT IS 'CFBD team id of the home (first-listed) team; NULL while CFBD lists the game without teams',
+  HOME_TEAM              VARCHAR(2000) UTF8 COMMENT IS 'CFBD school name of the home team',
+  HOME_CONFERENCE        VARCHAR(2000) UTF8 COMMENT IS 'Conference recorded on the game for the home team (CFBD name); NULL for independents of early eras and placeholders',
+  HOME_CLASSIFICATION    VARCHAR(2000) UTF8 COMMENT IS 'Classification of the home team: fbs, fcs, ii or iii. The CLASSIFICATION_TRANSITION row of the team and season if there is one, else the code CFBD records on the game',
+  AWAY_TEAM_ID           DECIMAL(18,0)      COMMENT IS 'CFBD team id of the away team; NULL while CFBD lists the game without teams',
+  AWAY_TEAM              VARCHAR(2000) UTF8 COMMENT IS 'CFBD school name of the away team',
+  AWAY_CONFERENCE        VARCHAR(2000) UTF8 COMMENT IS 'Conference recorded on the game for the away team (CFBD name)',
+  AWAY_CLASSIFICATION    VARCHAR(2000) UTF8 COMMENT IS 'Classification of the away team: fbs, fcs, ii or iii, as for HOME_CLASSIFICATION',
+  HAS_TEAMS              BOOLEAN            COMMENT IS 'TRUE when both team ids are set; FALSE for a placeholder that CFBD lists before naming its teams (no TEAM_GAME rows, PARTICIPANTS_RULE FIXED)',
+  VENUE_ID               DECIMAL(18,0)      COMMENT IS 'CFBD venue id (VENUE.VENUE_ID)',
+  VENUE_NAME             VARCHAR(2000) UTF8 COMMENT IS 'Venue name as recorded on the game',
+  IS_NEUTRAL_SITE        BOOLEAN            COMMENT IS 'CFBD neutralSite: TRUE when neither team plays at home (engine input neutral)',
+  IS_CONFERENCE_GAME     BOOLEAN            COMMENT IS 'CFBD conferenceGame: TRUE when the game counts as a conference game (engine input conf_game). Non-counting games between members, such as Army-Navy in 2024, are FALSE',
+  IS_COMPLETED           BOOLEAN            COMMENT IS 'TRUE once CFBD reports the game as completed',
+  HOME_POINTS            DECIMAL(18,0)      COMMENT IS 'Points of the home team; NULL unless the game is completed',
+  AWAY_POINTS            DECIMAL(18,0)      COMMENT IS 'Points of the away team; NULL unless the game is completed',
+  MARGIN                 DECIMAL(9,0)       COMMENT IS 'Home minus away points; NULL without a result',
+  TOTAL_POINTS           DECIMAL(9,0)       COMMENT IS 'Home plus away points; NULL without a result',
+  WINNER_TEAM_ID         DECIMAL(18,0)      COMMENT IS 'Team id of the winner; NULL without a result or after a tie',
+  LOSER_TEAM_ID          DECIMAL(18,0)      COMMENT IS 'Team id of the loser; NULL without a result or after a tie',
+  IS_TIE                 BOOLEAN            COMMENT IS 'TRUE when a completed game ended with equal points (possible at the FBS level before 1996), FALSE for any other result, NULL without a result',
+  HAS_RESULT             BOOLEAN            COMMENT IS 'Coverage flag: TRUE when the game is completed with both scores',
+  HOME_PREGAME_ELO       DECIMAL(18,0)      COMMENT IS 'CFBD pregame Elo of the home team (integer). CFBD fits its Elo model on all seasons, so historic values may embed later methodology; that is not a fact leak',
+  AWAY_PREGAME_ELO       DECIMAL(18,0)      COMMENT IS 'CFBD pregame Elo of the away team (integer)',
+  HOME_POSTGAME_ELO      DECIMAL(18,0)      COMMENT IS 'CFBD postgame Elo of the home team (integer); set for completed games',
+  AWAY_POSTGAME_ELO      DECIMAL(18,0)      COMMENT IS 'CFBD postgame Elo of the away team (integer); set for completed games',
+  HAS_ELO                BOOLEAN            COMMENT IS 'Coverage flag: TRUE when both pregame Elo values are stored (CFBD has Elo from 1890)',
+  HOME_POSTGAME_WIN_PROB DOUBLE             COMMENT IS 'CFBD postgame win probability of the home team, DOUBLE as CFBD reports it (fitted on all seasons, like Elo); not an engine input',
+  AWAY_POSTGAME_WIN_PROB DOUBLE             COMMENT IS 'CFBD postgame win probability of the away team, DOUBLE as CFBD reports it',
+  ATTENDANCE             DECIMAL(18,0)      COMMENT IS 'Attendance as CFBD reports it',
+  EXCITEMENT_INDEX       DOUBLE             COMMENT IS 'CFBD excitement index, DOUBLE as CFBD reports it',
+  PREGAME_SPREAD         DECIMAL(6,2)       COMMENT IS 'Pregame spread from METRICS_WP_PREGAME, from the home team''s side as CFBD reports it (negative when the home team is favored), DECIMAL(6,2); the cast rounds, and an exact binary tie may land one last place off. Historic spreads are closing lines, known only on game day. NULL without a line',
+  HOME_PREGAME_WIN_PROB  DECIMAL(5,4)       COMMENT IS 'Pregame win probability of the home team from METRICS_WP_PREGAME, DECIMAL(5,4) (0 to 1); the cast rounds, and an exact binary tie may land one last place off. NULL without a line',
+  PREGAME_WP_FETCHED_AT  TIMESTAMP(3)       COMMENT IS 'When the pregame line shown was fetched (REQ_AT, UTC); the as-of views compare it with the cutoff',
+  HAS_PREGAME_WP         BOOLEAN            COMMENT IS 'Coverage flag: TRUE when a pregame line is stored for the game (CFBD has them from 2013 and omits games without a spread)',
+  POSTSEASON_KIND        VARCHAR(7) ASCII   COMMENT IS 'NULL outside the postseason; else CFP (College Football Playoff: CFBD playoff competition cfp), BOWL (any other postseason game with an FBS team) or NON_FBS (postseason game without an FBS team: lower-division playoffs and bowls)',
+  CFP_ROUND              VARCHAR(2000) UTF8 COMMENT IS 'CFP games only: CFBD playoff round code, for example firstRound, quarterfinal, semifinal or championship',
+  CFP_ROUND_NAME         VARCHAR(2000) UTF8 COMMENT IS 'CFP games only: CFBD name of the round, for example Quarterfinal',
+  CFP_ROUND_SEQ          DECIMAL(18,0)      COMMENT IS 'CFP games only: 1 for the season''s first CFP round, 2 for the next and so on, ordered by each round''s first kickoff',
+  CFP_HOME_SEED          DECIMAL(18,0)      COMMENT IS 'CFP games only: playoff seed of the home team',
+  CFP_AWAY_SEED          DECIMAL(18,0)      COMMENT IS 'CFP games only: playoff seed of the away team',
+  BOWL_NAME              VARCHAR(2000) UTF8 COMMENT IS 'Bowl of a CFP or BOWL game: the playoff bowl name of a CFP game (NULL for a campus game), the CFBD notes of a BOWL game; NULL otherwise',
+  IS_CONF_CHAMPIONSHIP   BOOLEAN            COMMENT IS 'TRUE for a conference championship game detected by CONFERENCE_CHAMPIONSHIP_GAME (CFBD does not mark them)',
+  PARTICIPANTS_RULE      VARCHAR(17) ASCII  COMMENT IS 'When the teams of the game were known (model/as-of hides the game until then): CONF_CHAMPIONSHIP (detected championship games; from the point before their week), SELECTION (BOWL games and the first CFP round; from the last regular week), PREVIOUS_ROUND (later CFP rounds and NON_FBS games; from their own week) or FIXED (every other game, placeholders included; always)',
+  NOTES                  VARCHAR(2000) UTF8 COMMENT IS 'CFBD notes of the game as stored, for example a bowl name or a championship title; free text',
+  HAS_LINE_SCORES        BOOLEAN            COMMENT IS 'Coverage flag: TRUE when both teams have points per period stored',
+  HAS_VENUE_LOCATION     BOOLEAN            COMMENT IS 'Coverage flag: TRUE when the game''s venue has both coordinates in CFB_CORE.VENUES',
+  INVOLVES_FBS           BOOLEAN            COMMENT IS 'Coverage flag: TRUE when at least one team is classified fbs (HOME_CLASSIFICATION, AWAY_CLASSIFICATION)',
+  IS_FBS_GAME            BOOLEAN            COMMENT IS 'Coverage flag: TRUE when both teams are classified fbs',
+  PLAYS_ACCESS           VARCHAR(13) ASCII  COMMENT IS 'Plays are never stored: ON_DEMAND in seasons in which CFBD has plays (DATASET PLAYS, from 2001; fetch them for one game through CFBD_VS.PLAYS) or NOT_AVAILABLE before'
+) COMMENT IS 'One row per game of CFB_CORE.GAMES (1869 on), deduplicated by game id with the newest fetch winning: keys and week sequence, teams with the conference and classification of the game, site and conference flags, the result (completed games only), CFBD Elo, the pregame line from 2013 as fixed-scale DECIMAL, the postseason kind and CFP round, the detected conference championship flag, PARTICIPANTS_RULE (when the teams were known, which the as-of views use to hide result-dependent games) and coverage flags that say which facts the row has. CFBD fits Elo and win probabilities on all seasons, so historic values may embed later methodology. Earlier seasons are fully known; for a state as of a week use GAME_AS_OF. Materialized: rebuilt by CFB_INFRA.REFRESH_MODEL after every load, so it is current as of the last load or refresh.';
+
+INSERT INTO {MODEL_SCHEMA}.GAME
 WITH games AS (
   SELECT g.*
     FROM {CORE_SCHEMA}."GAMES" g
@@ -205,5 +210,4 @@ SELECT s."ID",
     ON cc."SEASON" = s."SEASON" AND cc."GAME_ID" = s."ID"
   CROSS JOIN (SELECT MIN(d."FIRST_SEASON") AS "FIRST_SEASON", MAX(d."LAST_SEASON") AS "LAST_SEASON"
                 FROM {MODEL_SCHEMA}."DATASET" d
-               WHERE d."DATASET_CODE" = 'PLAYS') p
-COMMENT IS 'One row per game of CFB_CORE.GAMES (1869 on), deduplicated by game id with the newest fetch winning: keys and week sequence, teams with the conference and classification of the game, site and conference flags, the result (completed games only), CFBD Elo, the pregame line from 2013 as fixed-scale DECIMAL, the postseason kind and CFP round, the detected conference championship flag, PARTICIPANTS_RULE (when the teams were known, which the as-of views use to hide result-dependent games) and coverage flags that say which facts the row has. CFBD fits Elo and win probabilities on all seasons, so historic values may embed later methodology. Earlier seasons are fully known; for a state as of a week use GAME_AS_OF.';
+               WHERE d."DATASET_CODE" = 'PLAYS') p;

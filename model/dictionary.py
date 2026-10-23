@@ -34,6 +34,11 @@ _HEADER = (
     'Every table and view comment starts with its grain, "One row per ...". '
     "`Reads` lists the objects a view or table selects from, in schemas `CFB_MODEL`, `CFB_CORE` "
     "and `CFB_META` (the loader's plan views). The model never reads the virtual schema.\n"
+    "\n"
+    "A *derived table* is a materialized view (decision [40]): the deploy fills it, and "
+    "`CFB_INFRA.REFRESH_MODEL` rebuilds it after every load (refresh step 100, and the post-hook "
+    "of `make backfill` and `make restore`), so its rows are current as of the last load. The "
+    "other tables are curated seeds.\n"
 )
 
 
@@ -69,7 +74,7 @@ def grain(comment: str | None) -> str:
 
 def _overview(items: list[SqlObject]) -> str:
     rows = [
-        f"| `{item.name}` | {_KIND_WORDS[item.kind]} | `{item.file}` | {grain(item.comment)} |"
+        f"| `{item.name}` | {_kind(item)} | `{item.file}` | {grain(item.comment)} |"
         for item in items
     ]
     return "\n".join(
@@ -81,7 +86,7 @@ def _section(item: SqlObject) -> str:
     lines = [
         f"## {item.name}",
         "",
-        f"*{_KIND_WORDS[item.kind].capitalize()}, `{SQL_DIRECTORY}/{item.file}`.*",
+        f"*{_kind(item).capitalize()}, `{SQL_DIRECTORY}/{item.file}`.*",
         "",
         (item.comment or "").strip(),
         "",
@@ -96,6 +101,12 @@ def _section(item: SqlObject) -> str:
         lines += [f"| `{column.name}` | {_cell(column.comment or '')} |" for column in item.columns]
         lines.append("")
     return "\n".join(lines)
+
+
+def _kind(item: SqlObject) -> str:
+    if item.kind == "TABLE" and item.references:
+        return "derived table"
+    return _KIND_WORDS[item.kind]
 
 
 def _signature(item: SqlObject) -> str:

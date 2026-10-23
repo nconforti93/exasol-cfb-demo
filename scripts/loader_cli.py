@@ -53,6 +53,12 @@ to `RECOVERY_WAIT_SECONDS`, so the spend is final; then the run's `LOAD_RUN` row
 id, and `/info`. When neither can be read, the worst case is charged: `max_calls` for a backfill,
 every attempt of the estimate for a refresh. A Ctrl-C is re-raised after the entry is written.
 
+After a backfill that ran (whatever its outcome), the same session runs the model's rebuild,
+`CFB_INFRA.REFRESH_MODEL(NULL, NULL, NULL, NULL)` (Phase 3 decision [40]), so the derived tables of
+`CFB_MODEL` follow the load; a missing or failed rebuild is a printed warning and does not change
+the exit code. A refresh needs no hook once its registered step 100 `MODEL` rebuilds them; until a
+`make deploy` registers that step on the target, the refresh gets the same hook.
+
 The exit code is 0 for `DONE`, `STOPPED_BUDGET` and `STOPPED_MAX_CALLS`, 3 when the run ended
 `FAILED` or `DONE_WITH_FAILURES`, a step failed or the script raised, and 1 when the script refused
 to start because another loader run holds the run lock (nothing was sent, nothing is recorded).
@@ -79,6 +85,7 @@ from typing import Any, Protocol
 
 from loader.plan import FIRST_SEASON, LAST_SEASON, PROFILES, profile_rank
 from loader.runlock import first_line
+from model import step as model_step
 from vs.cfbd_vs.http import MAX_ATTEMPTS
 from vs.cfbd_vs.sqlrender import quote_identifier, string_literal
 from vs.host import ledger, target
@@ -383,6 +390,11 @@ class _Session:
         code = EXIT_FAILED if _failed(job.kind, outcome) else EXIT_OK
         if charged is not None and session is not None:
             self._record(job, spend, charged, outcome, session)
+        # Post-hook (Phase 3 decision [40]): the model's derived tables follow the load. A refresh
+        # needs none once its registered step 100 MODEL rebuilds them (after the next deploy).
+        model_step.rebuild_after_load(
+            self._connection, self._namespace, print, unless_registered=job.kind == REFRESH_WEEK
+        )
         return code
 
     def _session_id(self) -> str:

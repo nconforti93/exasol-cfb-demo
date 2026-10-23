@@ -141,12 +141,14 @@ def add_ashford_fetch(
         f"REQ_MS, REQ_ROWS, TIMESTAMP '{LATER_FETCH}' FROM {core}.VENUES "
         "WHERE NAME = 'Ashford Field' AND CAPACITY >= 10"
     )
+    harness.rebuild_model()
 
 
 @pytest.fixture
 def extra_fetches(harness: Harness, league: League) -> Iterator[None]:
     yield
     harness.owner.execute(f"DELETE FROM {harness.core}.VENUES WHERE CAPACITY < 10")
+    harness.rebuild_model()
 
 
 def test_the_newest_fetch_of_a_venue_wins(

@@ -112,6 +112,33 @@ def with_checks(calls: Calls, points: list[tuple[int]], rows: list[tuple[Any, ..
     calls.connection_factory = lambda: CheckConnection(points, rows)
 
 
+class StepConnection(LockedConnection):
+    """The deploy fake that also answers the `REFRESH_MODEL` script (installed or not)."""
+
+    def __init__(self, *, installed: bool = True, failure: str | None = None) -> None:
+        super().__init__()
+        self.step_installed = installed
+        self.failure = failure
+
+    def execute(self, query: str) -> Any:
+        if "SCRIPT_NAME = 'REFRESH_MODEL'" in query:
+            self.statements.append(query)
+            return _Rows([(1 if self.step_installed else 0,)])
+        if query.startswith('EXECUTE SCRIPT "TEST_CFB_INFRA"."REFRESH_MODEL"'):
+            self.statements.append(query)
+            if self.failure:
+                raise FakeQueryError(self.failure)
+            return _Rows(
+                [
+                    ("TABLE", "GAME", None, "REBUILT", 120, None),
+                    ("TABLE", "TEAM_SEASON", None, "REBUILT", 30, None),
+                    ("CHECK", "GAME_WITHOUT_WEEK", "ERROR", "PASS", 0, None),
+                    ("CHECK", "WEEK_NOT_COMPLETE", "WARNING", "FAIL", 1, "game 12"),
+                ]
+            )
+        return super().execute(query)
+
+
 # --- deploy ---------------------------------------------------------------------------------
 
 
@@ -311,6 +338,51 @@ def test_check_rejects_an_unknown_season_type(calls: Calls) -> None:
         run(calls, "check", "--season", "2026", "--week", "1", "--season-type", "bowl")
 
 
+# --- refresh ----------------------------------------------------------------------------
+
+
+def test_refresh_runs_the_step_on_its_own_and_prints_tables_and_checks(
+    calls: Calls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls.connection_factory = StepConnection
+    code = run(calls, "refresh", "--prefix", "TEST_", "--season", "2026", "--week", "7")
+    out = capsys.readouterr().out
+    assert code == cli.EXIT_OK
+    [connection] = calls.connections
+    assert connection.statements[-1] == (
+        'EXECUTE SCRIPT "TEST_CFB_INFRA"."REFRESH_MODEL"(NULL, 2026, 7, \'regular\')'
+    )
+    assert connection.closed
+    assert "rebuilt 2 derived tables of TEST_CFB_MODEL: 150 rows" in out
+    assert "WEEK_NOT_COMPLETE" in out and "logged to TEST_CFB_META.MODEL_CHECK_LOG" in out
+
+
+def test_refresh_without_a_season_only_rebuilds(
+    calls: Calls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls.connection_factory = StepConnection
+    assert run(calls, "refresh", "--prefix", "TEST_") == cli.EXIT_OK
+    assert calls.connections[0].statements[-1].endswith("(NULL, NULL, NULL, NULL)")
+    assert run(calls, "refresh", "--prefix", "TEST_", "--season", "2026") == cli.EXIT_ERROR
+    assert "both --season and --week, or neither" in capsys.readouterr().err
+
+
+def test_refresh_refusals_and_a_missing_step(
+    calls: Calls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls.connection_factory = lambda: StepConnection(
+        failure="MODEL refused: BACKFILL run 7 is running (session 1, started x UTC)"
+    )
+    assert run(calls, "refresh", "--prefix", "TEST_") == cli.EXIT_REFUSED
+    calls.connection_factory = lambda: StepConnection(
+        failure="MODEL: 1 ERROR check(s) failed for season 2026, regular week 7: X (1)"
+    )
+    assert run(calls, "refresh", "--prefix", "TEST_", "--season", "2026", "--week", "7") == 1
+    calls.connection_factory = lambda: StepConnection(installed=False)
+    assert run(calls, "refresh", "--prefix", "TEST_") == cli.EXIT_ERROR
+    assert "REFRESH_MODEL is not installed: run `make model` first" in capsys.readouterr().err
+
+
 # --- docs and perf --------------------------------------------------------------------------
 
 
@@ -441,6 +513,11 @@ def test_the_module_runs_as_a_script() -> None:
             '-m scripts.model check --season "2026" --week "9" --season-type "postseason"',
         ),
         (["model-perf", "ARGS=--prefix PERF_"], "-m scripts.model perf --prefix PERF_"),
+        (
+            ["model-refresh", "SEASON=2026", "WEEK=7"],
+            '-m scripts.model refresh --season "2026" --week "7"',
+        ),
+        (["model-refresh"], "-m scripts.model refresh"),
     ],
 )
 def test_the_make_targets_call_the_script(target_line: list[str], expected: str) -> None:

@@ -3,6 +3,7 @@
 Read-only model modules (marker `model_readonly`) share one seeded league. A test that needs a row
 stored twice (a later fetch, a changed value) adds the copy with `store_changed_copy` under a
 marker slice key and removes it with `remove_copies`, so the shared league is unchanged afterwards.
+Both rebuild the model's derived tables afterwards (decision [40]), as a load would.
 """
 
 from __future__ import annotations
@@ -48,9 +49,11 @@ def store_changed_copy(
         stored = connection.execute(f"SELECT COUNT(*) FROM {scratch}").fetchone()
     finally:
         connection.execute(f"DROP TABLE IF EXISTS {scratch}")
+    harness.rebuild_model()
     return int(stored[0])
 
 
 def remove_copies(harness: Harness, table: str, marker: str) -> None:
     """Delete the copies stored under `marker`."""
     harness.owner.execute(f"DELETE FROM {harness.core}.{table} WHERE REQ_SLICE = '{marker}'")
+    harness.rebuild_model()

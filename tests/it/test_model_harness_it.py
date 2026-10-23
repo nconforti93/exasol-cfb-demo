@@ -44,6 +44,10 @@ SEEDS = {
     "DATASET": "015_dataset.sql",
     "CLASSIFICATION_TRANSITION": "016_classification_transition.sql",
 }
+DERIVED = (
+    "GAME", "SEASON_WEEK", "TEAM", "RATING_SP", "RANKING", "TEAM_MEMBERSHIP", "TEAM_SEASON",
+    "AS_OF_POINT",
+)  # fmt: skip
 
 GOOD_TABLE = """\
 CREATE OR REPLACE TABLE {MODEL_SCHEMA}.KEYED (
@@ -162,13 +166,14 @@ def real_model_afterwards(harness: Harness) -> Iterator[None]:
 def test_the_seed_tables_are_deployed_with_their_rows_and_comments(harness: Harness) -> None:
     report = harness.deploy_model()
     objects = model_objects(harness)
-    assert {name for name, kind in objects.items() if kind == "TABLE"} == set(SEEDS)
+    assert {name for name, kind in objects.items() if kind == "TABLE"} == {*SEEDS, *DERIVED}
     for table, file in SEEDS.items():
         count = harness.query(f"SELECT COUNT(*) FROM {harness.model}.{table}")[0][0]
         assert int(count) == len(seed_rows(file)), table
     assert report.objects.comments_found == report.objects.comments_expected
     assert report.objects.comment_percent == 100
-    assert "7 tables" in "\n".join(report.lines)
+    assert "15 tables" in "\n".join(report.lines)
+    assert f"derived tables filled: {', '.join(DERIVED)}" in report.lines
     assert harness.query(
         f"SELECT OBJECT_COMMENT FROM EXA_ALL_OBJECTS WHERE ROOT_NAME = '{harness.model}' "
         "AND OBJECT_NAME = 'POLL'"

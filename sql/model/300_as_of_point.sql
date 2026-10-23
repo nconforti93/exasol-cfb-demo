@@ -1,3 +1,6 @@
+-- Materialized (decision [40]): a table with the columns the view had, filled by the INSERT below. Every
+-- `make model` recreates it, and CFB_INFRA.REFRESH_MODEL rebuilds it (TRUNCATE + the INSERT, file order)
+-- after every load: refresh step 100, and the post-hook of `make backfill` / `make restore`.
 -- As-of points (model/as-of): the preseason point and every week of SEASON_WEEK, per season. SEASON_WEEK
 -- is read once and crossed with a two-row VALUES list; the second copy of each season's first week becomes
 -- the preseason point (week 0, season type regular, sequence 0). Every window partitions by the season, so
@@ -10,19 +13,21 @@
 -- week 1; decision [38]): they are done before the regular season is.
 -- IS_SEASON_COMPLETE needs every week done (IS_DONE: all games completed, or fetched a day after the
 -- week), not every game completed: real seasons keep a few cancelled games.
-CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.AS_OF_POINT (
-  AS_OF_SEASON          COMMENT IS 'Season of the point; with AS_OF_WEEK_SEQ it identifies the row',
-  AS_OF_WEEK            COMMENT IS 'Week of the point as REFRESH_WEEK(season, week, season_type) receives it: the CFBD week within AS_OF_SEASON_TYPE; 0 for the preseason point',
-  AS_OF_SEASON_TYPE     COMMENT IS 'Season type of the point as REFRESH_WEEK receives it: regular or postseason; regular for the preseason point',
-  AS_OF_WEEK_SEQ        COMMENT IS 'Week sequence of the point: 0 preseason, regular week n = n, postseason week n = 100 + n (SEASON_WEEK.WEEK_SEQ). The point is everything known after the games of that week and before CUTOFF_AT',
-  AS_OF_LABEL           COMMENT IS 'Name of the point for pages and the chat, for example 2026, after week 9; 2026, preseason; 2024, after postseason week 1',
-  PREVIOUS_WEEK_SEQ     COMMENT IS 'Week sequence of the season''s previous point (0 for the first week); NULL for the preseason point',
-  NEXT_WEEK_SEQ         COMMENT IS 'Week sequence of the season''s next week, whose games are NEXT in GAME_AS_OF; NULL at the last point',
-  LAST_REGULAR_WEEK_SEQ COMMENT IS 'Week sequence of the season''s last regular-season week. From this point on, bowls and the first CFP round are rows of GAME_AS_OF (their participants are selected)',
-  CUTOFF_AT             COMMENT IS 'Information horizon of the point in UTC: the first kickoff of the next week (SEASON_WEEK.FIRST_GAME_AT). Values that CFBD overwrites (current-season SP+, next-week lines, polls) are visible at the point only when fetched before it. NULL at the last point',
-  IS_SEASON_COMPLETE    COMMENT IS 'Point metadata: TRUE at the season''s last point when every week of the season is done (SEASON_WEEK.IS_DONE). It describes the point, not the world at the point, and changes when later games complete, so the three as-of views do not carry it',
-  IS_CURRENT            COMMENT IS 'Point metadata: TRUE for exactly one point, the default of pages and the chat (CURRENT_AS_OF): in the newest season with stored games, the latest week that is done while every earlier week of the season is done too; the preseason point before that. A week whose Thursday game is played while its Saturday games are not stays open'
-) AS
+CREATE OR REPLACE TABLE {MODEL_SCHEMA}.AS_OF_POINT (
+  AS_OF_SEASON          DECIMAL(18,0)      COMMENT IS 'Season of the point; with AS_OF_WEEK_SEQ it identifies the row',
+  AS_OF_WEEK            DECIMAL(3,0)       COMMENT IS 'Week of the point as REFRESH_WEEK(season, week, season_type) receives it: the CFBD week within AS_OF_SEASON_TYPE; 0 for the preseason point',
+  AS_OF_SEASON_TYPE     VARCHAR(2000) UTF8 COMMENT IS 'Season type of the point as REFRESH_WEEK receives it: regular or postseason; regular for the preseason point',
+  AS_OF_WEEK_SEQ        DECIMAL(3,0)       COMMENT IS 'Week sequence of the point: 0 preseason, regular week n = n, postseason week n = 100 + n (SEASON_WEEK.WEEK_SEQ). The point is everything known after the games of that week and before CUTOFF_AT',
+  AS_OF_LABEL           VARCHAR(40) UTF8   COMMENT IS 'Name of the point for pages and the chat, for example 2026, after week 9; 2026, preseason; 2024, after postseason week 1',
+  PREVIOUS_WEEK_SEQ     DECIMAL(3,0)       COMMENT IS 'Week sequence of the season''s previous point (0 for the first week); NULL for the preseason point',
+  NEXT_WEEK_SEQ         DECIMAL(3,0)       COMMENT IS 'Week sequence of the season''s next week, whose games are NEXT in GAME_AS_OF; NULL at the last point',
+  LAST_REGULAR_WEEK_SEQ DECIMAL(3,0)       COMMENT IS 'Week sequence of the season''s last regular-season week. From this point on, bowls and the first CFP round are rows of GAME_AS_OF (their participants are selected)',
+  CUTOFF_AT             TIMESTAMP(3)       COMMENT IS 'Information horizon of the point in UTC: the first kickoff of the next week (SEASON_WEEK.FIRST_GAME_AT). Values that CFBD overwrites (current-season SP+, next-week lines, polls) are visible at the point only when fetched before it. NULL at the last point',
+  IS_SEASON_COMPLETE    BOOLEAN            COMMENT IS 'Point metadata: TRUE at the season''s last point when every week of the season is done (SEASON_WEEK.IS_DONE). It describes the point, not the world at the point, and changes when later games complete, so the three as-of views do not carry it',
+  IS_CURRENT            BOOLEAN            COMMENT IS 'Point metadata: TRUE for exactly one point, the default of pages and the chat (CURRENT_AS_OF): in the newest season with stored games, the latest week that is done while every earlier week of the season is done too; the preseason point before that. A week whose Thursday game is played while its Saturday games are not stays open'
+) COMMENT IS 'One row per season and as-of point: the preseason point (sequence 0) and every week of SEASON_WEEK. A point is everything known after the games of its week and before the first kickoff of the next week (CUTOFF_AT), and it is addressed exactly like REFRESH_WEEK(season, week, season_type): AS_OF_SEASON, AS_OF_WEEK and AS_OF_SEASON_TYPE. Join or filter GAME_AS_OF, TEAM_SEASON_AS_OF and RANKING_AS_OF on AS_OF_SEASON and AS_OF_WEEK_SEQ. IS_SEASON_COMPLETE and IS_CURRENT describe the point and change as later games complete; CURRENT_AS_OF is the current point. Materialized: rebuilt by CFB_INFRA.REFRESH_MODEL after every load, so it is current as of the last load or refresh.';
+
+INSERT INTO {MODEL_SCHEMA}.AS_OF_POINT
 WITH weeks AS (
   SELECT w."SEASON", w."SEASON_TYPE", w."WEEK", w."WEEK_SEQ", w."FIRST_GAME_AT",
          CASE WHEN w."IS_DONE" THEN 1 ELSE 0 END AS "DONE",
@@ -80,5 +85,4 @@ SELECT o."SEASON",
        CASE WHEN o."WEEK_SEQ" = o."LAST_SEQ" AND o."ALL_DONE" = 1 THEN TRUE ELSE FALSE END,
        CASE WHEN o."SEASON" = n."SEASON" AND o."WEEK_SEQ" = o."REACHED_SEQ" THEN TRUE ELSE FALSE END
   FROM reached o
- CROSS JOIN newest n
-COMMENT IS 'One row per season and as-of point: the preseason point (sequence 0) and every week of SEASON_WEEK. A point is everything known after the games of its week and before the first kickoff of the next week (CUTOFF_AT), and it is addressed exactly like REFRESH_WEEK(season, week, season_type): AS_OF_SEASON, AS_OF_WEEK and AS_OF_SEASON_TYPE. Join or filter GAME_AS_OF, TEAM_SEASON_AS_OF and RANKING_AS_OF on AS_OF_SEASON and AS_OF_WEEK_SEQ. IS_SEASON_COMPLETE and IS_CURRENT describe the point and change as later games complete; CURRENT_AS_OF is the current point.';
+ CROSS JOIN newest n;

@@ -5,6 +5,8 @@ by `tests/it/test_model_deploy_it.py`.
 
 from __future__ import annotations
 
+import dataclasses
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,7 @@ import pytest
 
 from loader.runlock import HeldLock, RunLockError, RunLockRefused
 from model import deploy as model_deploy
+from model import step as model_step
 from model.deploy import ModelLintError, ModelOptions, deploy_model, prepare
 from tests.unit.test_sqlobjects_deploy import FakeConnection as DeployConnection
 from tests.unit.test_sqlobjects_deploy import FakeQueryError, expected_catalog
@@ -122,7 +125,8 @@ def test_the_objects_are_rendered_for_the_namespace() -> None:
     created = [s for s in connection.statements if s.startswith("CREATE OR REPLACE FORCE VIEW")]
     assert created[0].startswith("CREATE OR REPLACE FORCE VIEW TEST_CFB_MODEL.GAME")
     assert 'FROM TEST_CFB_CORE."GAMES"' in created[0]
-    assert not any("{" in s for s in connection.statements if s.startswith("CREATE"))
+    placeholder = re.compile(r"\{[A-Z][A-Z_]*\}")
+    assert not any(placeholder.search(s) for s in connection.statements if s.startswith("CREATE"))
 
 
 def test_a_lint_problem_stops_before_any_statement_and_lists_every_problem() -> None:
@@ -195,14 +199,17 @@ def test_a_step_script_is_installed_in_the_same_transaction() -> None:
     connection = connection_for(FIXTURES / "valid")
     script = "CREATE OR REPLACE LUA SCRIPT TEST_CFB_INFRA.REFRESH_MODEL(run_id) AS return 1"
     report = deploy_model(
-        connection, NAMESPACE, valid_options(step_script=lambda namespace: script)
+        connection, NAMESPACE, valid_options(step_script=lambda namespace, objects: script)
     )
     assert report.step_installed
     assert connection.statements.index(script) < connection.statements.index("COMMIT")
     assert "Lua script TEST_CFB_INFRA.REFRESH_MODEL: replaced" in report.lines
 
 
-def test_without_a_step_source_the_report_says_the_script_is_skipped() -> None:
+def test_without_a_step_source_the_report_says_the_script_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(model_deploy, "STEP_SOURCE", tmp_path / "refresh_model.lua")
     connection = connection_for(FIXTURES / "valid")
     report = deploy_model(connection, NAMESPACE, valid_options())
     assert not report.step_installed
@@ -210,14 +217,26 @@ def test_without_a_step_source_the_report_says_the_script_is_skipped() -> None:
     assert report.lines[-1].endswith("0 CFBD calls")
 
 
-def test_the_default_step_script_refuses_an_unbundled_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    source = tmp_path / "refresh_model.lua"
-    source.write_text("return 1\n")
-    monkeypatch.setattr(model_deploy, "STEP_SOURCE", source)
-    with pytest.raises(DeployError, match="not bundled"):
-        model_deploy.default_step_script(NAMESPACE)
+def test_the_default_step_script_bundles_the_derived_tables_of_the_namespace() -> None:
+    objects = prepare(NAMESPACE)
+    script = model_deploy.default_step_script(NAMESPACE, objects)
+    assert script is not None
+    assert script.startswith(
+        "CREATE OR REPLACE LUA SCRIPT TEST_CFB_INFRA.REFRESH_MODEL(run_id, season, week, "
+        "season_type) RETURNS TABLE AS\n"
+    )
+    assert 'MODEL_SCHEMA = "TEST_CFB_MODEL"' in script
+    for name in ("GAME", "TEAM_SEASON", "AS_OF_POINT"):
+        assert f'{{name = "{name}", insert = [' in script
+        assert f"INSERT INTO TEST_CFB_MODEL.{name}\n" in script
+    assert "CFB_MODEL.GAME\n" not in script.replace("TEST_CFB_MODEL.GAME\n", "")
+
+
+def test_a_derived_table_needs_exactly_one_insert() -> None:
+    game = next(o for o in prepare(NAMESPACE) if o.name == "GAME")
+    broken = dataclasses.replace(game, statements=game.statements[:1])
+    with pytest.raises(DeployError, match="needs exactly one INSERT, found 0"):
+        model_step.render_prelude([broken])
 
 
 def test_the_real_model_files_are_lint_clean_for_every_namespace() -> None:

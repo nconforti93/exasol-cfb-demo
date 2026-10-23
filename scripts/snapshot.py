@@ -18,7 +18,9 @@ and make zero CFBD calls: they never read the virtual schema.
   `snapshot` section). An existing name is refused before anything is written.
 - `restore` without `CONFIRM=yes` checks the snapshot against the target (columns, catalog,
   files), prints what it would replace and refuses. With `CONFIRM=yes` it replaces those tables
-  in one transaction. A snapshot of another catalog needs `FORCE=yes`.
+  in one transaction. A snapshot of another catalog needs `FORCE=yes`. Afterwards the same session
+  rebuilds the model's derived tables (`CFB_INFRA.REFRESH_MODEL(NULL, NULL, NULL, NULL)`, Phase 3
+  decision [40]); a missing or failed rebuild is a printed warning.
 - `list` (`make snapshots`) prints every snapshot with its time, source, rows and size.
 
 Exit codes: 0 ok, 1 refused (nothing was changed), 2 error.
@@ -35,6 +37,7 @@ from typing import Any
 from loader import snapshot as snap
 from loader.plan import PlanError, SnapshotScope, load_plan
 from loader.runlock import RunLockError, RunLockRefused
+from model import step as model_step
 from vs.host import target
 from vs.host.namespace import Namespace, NamespaceError
 
@@ -164,6 +167,8 @@ class _Command:
             report = snap.restore_snapshot(
                 connection, self._namespace, self._root, name, force=force, log=_print
             )
+            # Post-hook (Phase 3 decision [40]): the model's derived tables follow the restore.
+            model_step.rebuild_after_load(connection, self._namespace, _print)
         finally:
             connection.close()
         _print(f"restore {name}: done as RESTORE run {report.run_id}; 0 CFBD calls")

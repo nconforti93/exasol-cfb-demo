@@ -1,3 +1,6 @@
+-- Materialized (decision [40]): a table with the columns the view had, filled by the INSERT below. Every
+-- `make model` recreates it, and CFB_INFRA.REFRESH_MODEL rebuilds it (TRUNCATE + the INSERT, file order)
+-- after every load: refresh step 100, and the post-hook of `make backfill` / `make restore`.
 -- Poll rankings (model/ratings-rankings): one row per poll, season, season type, week and ranked team of
 -- CFB_CORE.RANKINGS_POLLS_RANKS (the rows carry their own SEASON, SEASON_TYPE, WEEK and POLL keys). The
 -- newest fetch wins per key (REQ_AT, then the later slice key); rows of one fetch with the same key, such as
@@ -9,23 +12,25 @@
 -- except a poll whose final ranking comes before the postseason (the committee), visible at the last regular
 -- week. IS_FINAL_POLL is derived (the stored rows do not carry CFBD's isFinal): postseason polls released
 -- after the postseason, and the committee's last stored ranking of a season whose regular weeks are all done.
-CREATE OR REPLACE FORCE VIEW {MODEL_SCHEMA}.RANKING (
-  SEASON               COMMENT IS 'Season of the poll',
-  SEASON_TYPE          COMMENT IS 'Season type as CFBD labels the poll: regular or postseason',
-  WEEK                 COMMENT IS 'Week as CFBD labels the poll within the season type. The label can run ahead of the games it reflects: an AP poll labeled week 10 is released after the games of week 9',
-  WEEK_SEQ             COMMENT IS 'Week sequence of the label: regular week n = n, postseason week n = 100 + n, so regular week 1 and postseason week 1 stay separate; NULL for another season type',
-  POLL_NAME            COMMENT IS 'CFBD poll name as it appears in the rankings data',
-  POLL_CODE            COMMENT IS 'Code from the POLL seed: AP, COACHES, CFP, FCS_COACHES, D2_COACHES or D3_COACHES; OTHER for a poll name that is not in the seed (MODEL_CHECKS: POLL_UNKNOWN)',
-  POLL_RANK            COMMENT IS 'Position in the poll (1 = best); tied teams share a position as CFBD reports it',
-  TEAM_ID              COMMENT IS 'CFBD team id of the ranked team (TEAM.TEAM_ID)',
-  SCHOOL               COMMENT IS 'School name as the poll reports it',
-  CONFERENCE           COMMENT IS 'Conference of the team as the poll reports it (CFBD name)',
-  FIRST_PLACE_VOTES    COMMENT IS 'First-place votes as CFBD reports them; NULL for polls without votes, such as the committee',
-  POINTS               COMMENT IS 'Poll points as CFBD reports them',
-  VISIBLE_AT_WEEK_SEQ  COMMENT IS 'Week sequence from which the ranking is known by the label rule: the label''s WEEK_SEQ minus the poll''s label lead for regular labels (0 = before the first game), the label''s own WEEK_SEQ for postseason labels, and the last regular week of the season for a poll whose final ranking comes before the postseason (the committee''s selection ranking). The as-of views also show a ranking fetched before the point''s cutoff; historic seasons use the label rule alone. NULL when WEEK_SEQ is NULL',
-  IS_FINAL_POLL        COMMENT IS 'Derived, as the stored ranks do not carry CFBD''s isFinal: TRUE for postseason-labeled polls released after the postseason, and for the committee''s last stored ranking of a season whose regular-season weeks are all done (SEASON_WEEK.IS_DONE); FALSE for a season in progress',
-  FETCHED_AT           COMMENT IS 'When the row shown was fetched from CFBD (REQ_AT, UTC); the as-of views compare it with the cutoff'
-) AS
+CREATE OR REPLACE TABLE {MODEL_SCHEMA}.RANKING (
+  SEASON              DECIMAL(18,0)      COMMENT IS 'Season of the poll',
+  SEASON_TYPE         VARCHAR(2000) UTF8 COMMENT IS 'Season type as CFBD labels the poll: regular or postseason',
+  WEEK                DECIMAL(18,0)      COMMENT IS 'Week as CFBD labels the poll within the season type. The label can run ahead of the games it reflects: an AP poll labeled week 10 is released after the games of week 9',
+  WEEK_SEQ            DECIMAL(3,0)       COMMENT IS 'Week sequence of the label: regular week n = n, postseason week n = 100 + n, so regular week 1 and postseason week 1 stay separate; NULL for another season type',
+  POLL_NAME           VARCHAR(2000) UTF8 COMMENT IS 'CFBD poll name as it appears in the rankings data',
+  POLL_CODE           VARCHAR(16) UTF8   COMMENT IS 'Code from the POLL seed: AP, COACHES, CFP, FCS_COACHES, D2_COACHES or D3_COACHES; OTHER for a poll name that is not in the seed (MODEL_CHECKS: POLL_UNKNOWN)',
+  POLL_RANK           DECIMAL(18,0)      COMMENT IS 'Position in the poll (1 = best); tied teams share a position as CFBD reports it',
+  TEAM_ID             DECIMAL(18,0)      COMMENT IS 'CFBD team id of the ranked team (TEAM.TEAM_ID)',
+  SCHOOL              VARCHAR(2000) UTF8 COMMENT IS 'School name as the poll reports it',
+  CONFERENCE          VARCHAR(2000) UTF8 COMMENT IS 'Conference of the team as the poll reports it (CFBD name)',
+  FIRST_PLACE_VOTES   DECIMAL(18,0)      COMMENT IS 'First-place votes as CFBD reports them; NULL for polls without votes, such as the committee',
+  POINTS              DECIMAL(18,0)      COMMENT IS 'Poll points as CFBD reports them',
+  VISIBLE_AT_WEEK_SEQ DECIMAL(3,0)       COMMENT IS 'Week sequence from which the ranking is known by the label rule: the label''s WEEK_SEQ minus the poll''s label lead for regular labels (0 = before the first game), the label''s own WEEK_SEQ for postseason labels, and the last regular week of the season for a poll whose final ranking comes before the postseason (the committee''s selection ranking). The as-of views also show a ranking fetched before the point''s cutoff; historic seasons use the label rule alone. NULL when WEEK_SEQ is NULL',
+  IS_FINAL_POLL       BOOLEAN            COMMENT IS 'Derived, as the stored ranks do not carry CFBD''s isFinal: TRUE for postseason-labeled polls released after the postseason, and for the committee''s last stored ranking of a season whose regular-season weeks are all done (SEASON_WEEK.IS_DONE); FALSE for a season in progress',
+  FETCHED_AT          TIMESTAMP(3)       COMMENT IS 'When the row shown was fetched from CFBD (REQ_AT, UTC); the as-of views compare it with the cutoff'
+) COMMENT IS 'One row per poll, season, season type, week and ranked team of CFB_CORE.RANKINGS_POLLS_RANKS (stored from 2014; the newest fetch wins, ties within a fetch by the poll''s position in the response). It codes the poll, places the label in the week order (regular week n = n, postseason week n = 100 + n), says from which week the ranking is known (VISIBLE_AT_WEEK_SEQ: the label runs ahead of the games, and the committee''s selection ranking is known at the last regular week) and derives IS_FINAL_POLL. For the state at a point use RANKING_AS_OF. Materialized: rebuilt by CFB_INFRA.REFRESH_MODEL after every load, so it is current as of the last load or refresh.';
+
+INSERT INTO {MODEL_SCHEMA}.RANKING
 WITH ranks AS (
   SELECT r."SEASON", r."SEASON_TYPE", r."WEEK", r."POLL", r."RANK", r."TEAM_ID", r."SCHOOL",
          r."CONFERENCE", r."FIRST_PLACE_VOTES", r."POINTS", r."REQ_AT"
@@ -81,5 +86,4 @@ SELECT l."SEASON",
        l."REQ_AT"
   FROM latest l
   LEFT JOIN seasons s
-    ON s."SEASON" = l."SEASON"
-COMMENT IS 'One row per poll, season, season type, week and ranked team of CFB_CORE.RANKINGS_POLLS_RANKS (stored from 2014; the newest fetch wins, ties within a fetch by the poll''s position in the response). It codes the poll, places the label in the week order (regular week n = n, postseason week n = 100 + n), says from which week the ranking is known (VISIBLE_AT_WEEK_SEQ: the label runs ahead of the games, and the committee''s selection ranking is known at the last regular week) and derives IS_FINAL_POLL. For the state at a point use RANKING_AS_OF.';
+    ON s."SEASON" = l."SEASON";
