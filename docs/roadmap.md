@@ -60,8 +60,8 @@ Each phase is one speq plan (`/speq:plan`), and each leaves a demoable state.
 
 | What | Calls |
 |---|---|
-| `make backfill PROFILE=demo` (= the `stored` class): `/games` 1869–2026 (with per-game Elo/WP), pregame WP + SP+ 2013–, polls 2014–, affiliations (1 range call), teams, venues, conferences, calendar | 217, once (S1: one `/games` call per season covers every division) |
-| Demo `REFRESH_WEEK`: current-season games, pregame WP, rankings, SP+ (`/games/schedule` is volatile and not stored) | 4 per week |
+| `make backfill PROFILE=demo` (= the `stored` class): `/games` 1869–2026 (with per-game Elo/WP), pregame WP + SP+ 2013–, polls 2014–, affiliations (1 range call), teams, venues, conferences, calendar | 217, once (S1: one `/games` call per season covers every division). **Measured 2026-10-23 on AWS: 217 calls, 0 retries, about 3.5 min** |
+| Demo `REFRESH_WEEK`: current-season games, pregame WP, rankings, SP+ (`/games/schedule` is volatile and not stored) | 4 per week (**measured: 4 calls, 19.8 s**) |
 | Federated on-demand queries (head-to-head, previews, plays, box scores, chat) | 1–2 per selective query and 0 once stored (read-through; `PROMOTE()` is backlog); ~100–200/month |
 | Rehearsals (restore snapshot + replay) and tests | 0 |
 | **Demo total** | **~330 in month 1, ~120/month after** |
@@ -85,7 +85,7 @@ Full details: `docs/cfbd-api-reference.md`. S1 (2026-10-22) verified the per-sea
 - **Demo beat:** "93 REST endpoints, one `CREATE VIRTUAL SCHEMA`, no mapping code. Here's the SQL, here's the HTTP."
 
 ## Phase 2: Persistence + refresh
-**Status (2026-10-23):** implemented and verified at zero CFBD calls on the mock API and replay (plan `add-cfb-persistence-refresh`, tasks 1.1 to 8.4, the code review and the verification (V.1 to V.3, `verification-report.md`) done; loader unit coverage 96 %). **Not done:** the live run on AWS (group J: zero-call smoke, `make backfill PROFILE=demo` once, 217 calls, one live refresh, 4 calls, a snapshot restored on the laptop) and the measured numbers for `docs/cfbd-api-measurements.md`.
+**Status (2026-10-23):** implemented and verified at zero CFBD calls on the mock API and replay (plan `add-cfb-persistence-refresh`, tasks 1.1 to 8.4, the code review and the verification (V.1 to V.3, `verification-report.md`) done; loader unit coverage 96 %). **Live group J done 2026-10-23 on AWS 2026.1.1:** the demo profile is stored (217 calls, 155,082 rows), one refresh of 2026 week 7 (4 calls), and the AWS snapshot restored onto the laptop's 2026.2 in 20 s with matching fingerprints (the Oct 31 restore gate passed). Ledger: 221 of this plan's 300; `/info` 240 used in October. Numbers in [`docs/cfbd-api-measurements.md`](cfbd-api-measurements.md).
 - Load plan `loader/load-plan.yaml` (history start, gaps, refresh class `static`/`weekly`, **profile `demo`/`full` + priority**, budget and reserve; D39, D40), `REFRESH_WEEK()` as a step chain (D44), load/refresh/failure/fetch logs, `CFB_META.QUOTA` (D42).
 - `BACKFILL(profile, from_season, max_calls)`: resumable and idempotent (D43). Fetches only (endpoint, season) slices missing from the load log, newest first, within a monthly call budget that keeps a reserve for refreshes; isolates and quarantines failing slices (D48).
 - `make backfill` / `refresh` / `quota` (estimate, `CONFIRM`, ledger; `TARGET=local|aws`) and `make snapshot` / `restore` / `snapshots`: gzip CSV copy of `CFB_CORE` + load log + fetch log in a private directory outside the repo and OneDrive (D45; no S3). Zero API calls on a rebuild.

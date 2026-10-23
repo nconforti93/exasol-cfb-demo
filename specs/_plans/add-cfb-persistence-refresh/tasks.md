@@ -46,13 +46,13 @@ Worktree: ../exasol-cfb-demo-p2 (branch add-cfb-persistence-refresh)
 - [x] 8.4 `CLAUDE.md` dense bullets:
 
 ## Group J (sequential, gated)
-- [ ] 9.0 Gates and AWS smoke (0 CFBD calls):
-- [ ] 9.1 Estimate (0 calls)
-- [ ] 9.2 Resumable live backfill:
-- [ ] 9.3 Idempotence
-- [ ] 9.4 Live refresh
-- [ ] 9.5 Snapshot AWS → restore local (0 calls):
-- [ ] 9.6 Live documentation and reset:
+- [x] 9.0 Gates and AWS smoke (0 CFBD calls):
+- [x] 9.1 Estimate (0 calls)
+- [x] 9.2 Resumable live backfill:
+- [x] 9.3 Idempotence
+- [x] 9.4 Live refresh
+- [x] 9.5 Snapshot AWS → restore local (0 calls):
+- [x] 9.6 Live documentation and reset:
 
 ## Cross-plan items (from Phase 4 H1, 2026-10-22)
 - [x] H1 In task 4.2, the lock in `loadlib.lua` must support run kinds `SIMULATE` (stale when the session is gone, is the caller's own session, or is idle, the same as BACKFILL and REFRESH_WEEK) and `DEPLOY` (for `make sim`, `make calibrate` and the model deploy; stale only when the session is gone or is the caller's own session). The lock functions must be callable from other bundles: the Phase 4 Lua and the Phase 3 model deploy. The host-side lock goes in task 5.2. See `specs/_plans/add-cfb-score-engine/` (main tree) for decisions [29]–[43] and task 1.10.

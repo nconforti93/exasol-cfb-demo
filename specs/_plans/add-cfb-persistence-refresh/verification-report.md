@@ -53,18 +53,18 @@ Note: with the mock's default `/info` (`resetAt` 2099) the quota attribution sho
 
 No code fix was needed. Nothing found would break the live AWS backfill.
 
-## Group J (live) must prove
+## Group J (live, run 2026-10-23 on AWS 2026.1.1)
 
 | Row | Status |
 |---|---|
-| 9.0 AWS deploy, grants, `dns-check`, `make quota TARGET=aws` (budget 400 / reserve 50 from the ledger, `BACKFILL_SPENDABLE` <= ledger room) | pending live group J |
-| 9.0 AWS smoke: DB version, probes 1.1 (a, b, c, g, h, i, j, l) and 1.2 (now the gzip CSV round trip) with `--target aws`, pinned TLS on all three nodes, dry run `BACKFILL('demo', NULL, 0)` with `/info` used calls unchanged, concurrent-lock check from two sessions | pending live group J |
-| 9.1 estimate 217 (stop if more than 10 % above) | pending live group J |
-| 9.2 resumable live backfill: `MAX_CALLS=20`, then the rest; measured calls = `/info` delta = ledger entries | pending live group J |
-| 9.3 idempotence: 0 calls, `LOAD_STATUS` complete, no orphans | pending live group J |
-| 9.4 live refresh: 4 calls, `FETCH` seconds per table (target under 30 s) | pending live group J |
-| 9.5 snapshot AWS, restore local: hashes and fingerprints match, `GAMES` 2019 reads as one `STORED` group, restore time (target under 5 minutes) | pending live group J |
-| 9.6 measurements doc, roadmap budget table, final ledger total (<= 300) | pending live group J |
+| 9.0 AWS deploy, grants, `dns-check`, `make quota TARGET=aws` (budget 400 / reserve 50 from the ledger, `BACKFILL_SPENDABLE` <= ledger room) | done: budget 400 / reserve 50 printed by the deploy, `CFBD_API` present, `dns-check` ok (system resolver); `BACKFILL_SPENDABLE` 331 > ledger room 300, so the effective cap is the CLI's ledger cap (300) |
+| 9.0 AWS smoke: DB version, probes 1.1 (a, b, c, g, h, i, j, l) and 1.2 (now the gzip CSV round trip) with `--target aws`, pinned TLS on all three nodes, dry run `BACKFILL('demo', NULL, 0)` with `/info` used calls unchanged, concurrent-lock check from two sessions | done: 2026.1.1; probes 1.1 (a, b, c, g, h, i, j, l, m) pass, item (i) is the two-session lock check; probe 1.2 round trip exact except DOUBLE (its "escalate" verdict is a comparator artifact, see the measurements doc); dry run 217 slices in 29 batches, `/info` delta 0 |
+| 9.1 estimate 217 (stop if more than 10 % above) | done: 217 (0 % over) |
+| 9.2 resumable live backfill: `MAX_CALLS=20`, then the rest; measured calls = `/info` delta = ledger entries | done: `STOPPED_MAX_CALLS` 20, then `DONE` 197; script = `/info` delta = ledger for both; no failures |
+| 9.3 idempotence: 0 calls, `LOAD_STATUS` complete, no orphans | done: 0 calls, `/info` unchanged, complete, no orphans |
+| 9.4 live refresh: 4 calls, `FETCH` seconds per table (target under 30 s) | done: week 7, 4 calls, `FETCH` 2.3-3.2 s per table |
+| 9.5 snapshot AWS, restore local: hashes and fingerprints match, `GAMES` 2019 reads as one `STORED` group, restore time (target under 5 minutes) | done: catalog, plan, checksums and fingerprints ok; `GAMES` 2019 one `STORED` group (1,623 rows); restore 19.8 s in the DB, 30.5 s wall |
+| 9.6 measurements doc, roadmap budget table, final ledger total (<= 300) | done: `docs/cfbd-api-measurements.md` section "Phase 2 live run", roadmap budget table; ledger 221 of 300 |
 
 Points to watch in group J:
 - **Month room.** 2026-10 has 400 calls, 21 used. The other plans' sub-allocations (analyses 6, app 12, hardening 70, app 60) are not spent yet. The key's `/info` is the authority. If those are spent first, the room for 217 + 4 is thin. After 2026-10-31 the November cap (1000) applies, and a redeploy on AWS is needed to pick it up.
