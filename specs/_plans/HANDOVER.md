@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex after local restart
+Last updated: 2026-10-26 by Codex after AWS reset discovery
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Resumed 2026-10-26.** Local Exasol was stopped after shutdown and was restarted with `exasol start -d local` under the shared IT lock; it is ready at 127.0.0.1:8563. The AWS deployment reports another `start` operation in progress, and its database port is unreachable; do not touch its lifecycle. Retry quota only after that operation completes. Phase 4 task 2.1 prediction work has resumed from uncommitted p4 code; focused tests and local SQL/Lua verification are next. Phase 5 task 1.1 is being reconstructed because `/tmp/p5-stage/` was wiped; p5 retains its new test and generalized deployer WIP. Week-8 AWS refresh and week-9 prediction freeze must complete before 2026-10-27 23:00 UTC. The 2026-10-23 AWS 1M result remains: Auburn P(CFP) 4.94% now, 11.20% after a win over LSU, 1.31% after a loss; quota unchanged at 241/400 then.
+**Resumed 2026-10-26.** Local Exasol was restarted under the shared IT lock. Its CFB schemas survived, and Phase 4 prediction code deployed locally (`DEPLOY` run 20); `make predict SEASON=2026 WEEK=7` froze 566 rows at zero CFBD calls. A test-clock seam fix is pending before focused IT. AWS is now reachable and `database_ready`, but the connected three-node database has **no CFB schemas and no `CFBD_API` connection**. `make quota TARGET=aws` therefore fails with missing `CFB_META.QUOTA`. Do not run refresh on it yet. The private snapshot `aws-demo-2026-10-23` exists (11 tables, 155,521 rows, 6.5 MB); the documented `make restore` path can recover stored data after the schema deploy. Nico must recreate the CFBD key connection himself through plain SQL before a live week-8 refresh. The week-9 freeze deadline is 2026-10-27 23:00 UTC. Phase 5 1.1 code is now applied in p5 but has not reached DB verification. The 2026-10-23 AWS 1M result remains: Auburn P(CFP) 4.94% now, 11.20% after a win over LSU, 1.31% after a loss; quota was 241/400 then.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -132,6 +132,10 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **AWS reset discovered.** AWS is `database_ready` but has no CFB schemas or `CFBD_API` connection. The 2026-10-23 private snapshot is intact (155,521 rows); prepare schema deploy and documented restore, then Nico must recreate the key connection before week-8 refresh. No live call or AWS lifecycle action taken.
+
+- 2026-10-26: **Phase 4 local prediction smoke.** `make sim` deployed the prediction table/views/Lua as DEPLOY run 20; `make predict` froze 566 rows, zero CFBD calls. A test-clock seam fix is pending before focused IT.
 
 - 2026-10-26: **Resumed after shutdown.** Local deployment restarted under the shared IT lock and is ready. AWS is unreachable while the launcher reports a separate `start` operation in progress; no AWS lifecycle action taken. Phase 4 2.1 focused checks and Phase 5 1.1 reconstruction resumed.
 
