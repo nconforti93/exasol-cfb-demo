@@ -65,6 +65,8 @@ Phase 6 task 2.2 backend shell (`606b295`) and task 9.7 live routes (`ee1eba3`) 
 
 Phase 4 task 3.3 is committed as `000e3c3`: the official CFP bracket and selection protocol confirm the 2026 seed's G6 **team** bid, Notre Dame top-12 guarantee and December 6 selection day. `SELECTION_AT` at 12:00 UTC is documented as a conservative model cutoff, not an official CFP deadline. `make sim TARGET=aws` deployed the updated seed as DEPLOY run 14 with zero CFBD calls; existing run tables were kept.
 
+Phase 6 read-only `/api/timeline` route is committed as `d2e632d` and awaits the Phase 5 timeline view deployment and an app restart. It reads stored `REFRESH_TIMELINE`/`FETCHES`, returns the selected or latest run, and follows the newest run for hold/stuck state. Focused fake-DB tests (106), Ruff and strict mypy passed; no DB or CFBD calls.
+
 | Phase | Plan | Where | State |
 |---|---|---|---|
 | 1 VS foundation | add-cfbd-vs-foundation | recorded | **Done.** Live on AWS |
@@ -72,7 +74,7 @@ Phase 4 task 3.3 is committed as `000e3c3`: the official CFP bracket and selecti
 | 3 Analytical model | add-cfb-analytical-model | recorded, **`main` = 2a26584** | **Done.** `CFB_MODEL` is live on AWS and local. 8 derived tables are rebuilt by refresh step 100 `CFB_INFRA.REFRESH_MODEL`, registered on both targets. Also as-of views and `MODEL_CHECKS`. ADR-031..046. Page queries run in 0.07–0.8 s on AWS. **Rule:** filter as-of views with literal `AS_OF_SEASON`/`AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF` |
 | 4 Score engine | add-cfb-score-engine | **p4** (HEAD 000e3c3) | Tasks 1.1–2.3 and 3.3 done. Week-9 predictions, odds movement and rooting guide are live on AWS. Official CFP rules checked; seed values unchanged. **Next:** 3.1 refresh steps 200/300 and deployment integration, then calibration report 3.2 and docs 3.4 |
 | 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 5834c4b) | Tasks 1.1–1.3 committed; 18 views on AWS, APP/MCP grants verified, zero CFBD calls. 1.4 timeline/quota local verification in progress; `GAME_PREVIEW` view is unsupported by measured Exasol parameter pushdown, so Phase 6 owns the direct operator path. Then 1.5 docs/dictionary; slice B after Phase 4 is merged |
-| 6 Web app | add-cfb-app | **p6** (HEAD ee1eba3) | UI revision 9.0–9.6, backend shell 2.2 and live routes 9.7 done. `http://127.0.0.1:8000/` uses AWS CFB_API with the normal privilege check and serves map/team/week/stats/search; browser SQL buttons open the stored-query inspector. The separate port 5173 preview still uses the Oct 23 snapshot. Outlook/odds/predictions/upsets/H2H remain fixture-only until Phase 4/5 slice B and task 9.8/Group C. Local app startup hits unrelated `PREPROC_RT` PUBLIC grants; AWS works. |
+| 6 Web app | add-cfb-app | **p6** (HEAD d2e632d) | UI revision 9.0–9.6, backend shell 2.2 and live routes 9.7 done. Read-only timeline route committed, pending Phase 5 view deployment and server restart. `http://127.0.0.1:8000/` uses AWS CFB_API with the normal privilege check and serves map/team/week/stats/search; browser SQL buttons open the stored-query inspector. The separate port 5173 preview still uses the Oct 23 snapshot. Outlook/odds/predictions/upsets/H2H remain fixture-only until Phase 4/5 slice B and task 9.8/Group C. Local app startup hits unrelated `PREPROC_RT` PUBLIC grants; AWS works. |
 | 7 Chat | add-cfb-chat | p7 (HEAD 89f21ae) | Groups A–B done. Group C+ is blocked until Phases 5 and 6 merge (gate 3.0). Hand-off `P7-secrets`: adopt `vs/host/appenv.py`. There is no Anthropic key, so build and test only |
 | 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed under the heavy process; do a light replan first. Due: the freeze rule and CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
 
@@ -136,6 +138,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** only a local-app privilege decision, if local serving is required: inherited `PUBLIC` SELECT and EXECUTE on unrelated `PREPROC_RT` cause the app's strict startup check to refuse `CFB_APP_WEB`. The AWS live app passes. Do not alter that schema or weaken the check without Nico's direction.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Phase 6 read-only timeline route committed** (`d2e632d`). The fixed catalog reads `CFB_API.REFRESH_TIMELINE` and `FETCHES`; response includes the latest or selected run and a follow key from `CURRENT_POINT`. Fake-DB tests (106 focused), Ruff and strict mypy passed. The running app needs restart after Phase 5 deploy; zero DB and CFBD calls in this code milestone.
 
 - 2026-10-26: **Phase 5 N1 preview-view assumption disproved.** In a local mock test, `CREATE FORCE VIEW` plus deferred compile/readback installed `GAME_PREVIEW`, but `SELECT ... WHERE P_GAME_ID = 2026016` as the app role failed with `required parameter not set: P_GAME_ID`; no mock CFBD hit. The outer view filter does not reach the virtual-table adapter. Phase 5 is removing the unsupported view and keeping `QUOTA`, `REFRESH_TIMELINE` and `FETCHES`; Phase 6's guarded operator path will query the virtual table directly. Zero CFBD calls.
 
