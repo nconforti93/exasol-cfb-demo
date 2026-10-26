@@ -215,7 +215,7 @@ def test_lint_only_sends_nothing_and_opens_no_connection(
 ) -> None:
     assert run_cli(None, options, "deploy", "--lint-only") == cli.EXIT_OK
     out = capsys.readouterr().out
-    assert out.startswith("lint ok: 25 objects, engine script ")
+    assert out.startswith("lint ok: 29 objects, engine script ")
     assert "nothing sent, 0 CFBD calls" in out
 
 
