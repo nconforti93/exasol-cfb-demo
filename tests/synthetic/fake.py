@@ -12,6 +12,10 @@ Public API, consumed by the mock server and the integration harness:
   minimal filter (explicit defaults applied), and that request as `(path, query)`.
 - `oversized_variant(table)`, `invalid_type_variant(table)`: bodies the strict flattener rejects.
 - `large_response_for(path, query)`: a body above `LARGE_BODY_BYTES` that still flattens.
+- `calendar_body(year)`: the hand-tuned `/calendar` of a season (regular weeks 1 to 15 from the
+  first Saturday of September, postseason week 1 in January of the next year).
+- `changed_games_body(year, week)`: `/games` after the upstream data changed, for refresh tests.
+- `INFO_DEFAULT`: the default `/info` fields (tier `Free`, 1000 calls, none used).
 
 Generated bodies follow the response schema: every field present, 2 elements per array, typed
 values, date-times with UTC offsets. Hand-tuned fixtures (games, rankings, games/teams, matchup,
@@ -47,6 +51,17 @@ from vs.gen.schema_walk import (
 )
 
 ELEMENTS_PER_ARRAY = 2
+REGULAR_WEEKS = 15
+SATURDAY = 5
+DAYS_PER_WEEK = 7
+INFO_DEFAULT: Mapping[str, Any] = {
+    "patronLevel": 0,
+    "tierName": "Free",
+    "monthlyLimit": 1000,
+    "remainingCalls": 1000,
+    "usedCalls": 0,
+    "resetAt": "2099-01-01T00:00:00Z",
+}
 LARGE_BODY_BYTES = 2_100_000
 PADDING_KEY = "_padding"
 
@@ -228,11 +243,15 @@ def _cached_bytes(
     template: str, path_params: tuple[tuple[str, str], ...], query: tuple[tuple[str, str], ...]
 ) -> bytes:
     request = _Request(template, dict(path_params), dict(query))
-    body = _generate(_operations()[template].response, (template,))
     fixture = _FIXTURES.get(template)
-    if fixture is not None:
-        body = _overlay(body, fixture(request), template)
-    return to_bytes(body)
+    if fixture is None:
+        return to_bytes(_generate(_operations()[template].response, (template,)))
+    return to_bytes(_fixture_body(template, fixture(request)))
+
+
+def _fixture_body(template: str, patch: Patch) -> Any:
+    body = _generate(_operations()[template].response, (template,))
+    return _overlay(body, patch, template)
 
 
 def _digest(trail: tuple[str | int, ...]) -> int:
@@ -300,8 +319,48 @@ def _int(query: Mapping[str, str], name: str, fallback: int) -> int:
 
 
 def _games(request: _Request) -> Patch:
-    year = _int(request.query, "year", 2024)
-    week = _int(request.query, "week", 1)
+    return _games_patch(_int(request.query, "year", 2024), _int(request.query, "week", 1))
+
+
+def changed_games_body(year: int = 2024, week: int = 1) -> Any:
+    """`/games` after the upstream data changed: game 401628320 now has its final score of 31 to
+    24, and a third game (401628321) is new. The same request otherwise returns `_games_patch`."""
+    return _fixture_body("/games", _games_patch(year, week, changed=True))
+
+
+def _games_patch(year: int, week: int, *, changed: bool = False) -> Patch:
+    games = _games_unchanged(year, week)
+    if not changed:
+        return games
+    games[1].update(
+        {
+            "completed": True,
+            "homePoints": 31,
+            "awayPoints": 24,
+            "homePostgameWinProbability": 0.82,
+            "awayPostgameWinProbability": 0.18,
+        }
+    )
+    games.append(
+        {
+            "id": 401628321,
+            "season": year,
+            "week": week,
+            "seasonType": "regular",
+            "startDate": f"{year}-09-14T19:00:00.000-05:00",
+            "completed": False,
+            "homeTeam": "Texas",
+            "homeClassification": "fbs",
+            "homePoints": 0,
+            "awayTeam": "Oklahoma",
+            "awayClassification": "fbs",
+            "awayPoints": 0,
+        }
+    )
+    return games
+
+
+def _games_unchanged(year: int, week: int) -> list[dict[str, Any]]:
     return [
         {
             "id": 401628319,
@@ -478,7 +537,61 @@ def _preview(request: _Request) -> Patch:
     }
 
 
+def first_saturday_of_september(year: int) -> date:
+    """The day week 1 of the regular season starts in the synthetic calendar."""
+    first = date(year, 9, 1)
+    return first + timedelta(days=(SATURDAY - first.weekday()) % DAYS_PER_WEEK)
+
+
+def calendar_body(year: int = 2024) -> Any:
+    """The hand-tuned `/calendar` of `year`: regular weeks 1 to 15 from the first Saturday of
+    September (Saturday to Friday, deterministic), and postseason week 1 in January of year + 1.
+    The calendar numbers both season types from week 1."""
+    return _fixture_body("/calendar", _calendar(year))
+
+
+def _calendar(year: int) -> Patch:
+    start = first_saturday_of_september(year)
+    weeks: list[dict[str, Any]] = []
+    for week in range(1, REGULAR_WEEKS + 1):
+        first_day = start + timedelta(days=DAYS_PER_WEEK * (week - 1))
+        last_day = first_day + timedelta(days=DAYS_PER_WEEK - 1)
+        weeks.append(
+            {
+                "season": year,
+                "week": week,
+                "seasonType": "regular",
+                "startDate": f"{first_day.isoformat()}T00:00:00.000Z",
+                "endDate": f"{last_day.isoformat()}T23:59:00.000Z",
+                "firstGameStart": f"{first_day.isoformat()}T16:00:00.000Z",
+                "lastGameStart": f"{first_day.isoformat()}T23:30:00.000Z",
+            }
+        )
+    weeks.append(
+        {
+            "season": year,
+            "week": 1,
+            "seasonType": "postseason",
+            "startDate": f"{year + 1}-01-01T00:00:00.000Z",
+            "endDate": f"{year + 1}-01-15T23:59:00.000Z",
+            "firstGameStart": f"{year + 1}-01-01T17:00:00.000Z",
+            "lastGameStart": f"{year + 1}-01-13T00:30:00.000Z",
+        }
+    )
+    return weeks
+
+
+def _calendar_request(request: _Request) -> Patch:
+    return _calendar(_int(request.query, "year", 2024))
+
+
+def _info(request: _Request) -> Patch:
+    return dict(INFO_DEFAULT)
+
+
 _FIXTURES: dict[str, Callable[[_Request], Patch]] = {
+    "/calendar": _calendar_request,
+    "/info": _info,
     "/games": _games,
     "/rankings": _rankings,
     "/games/teams": _games_teams,

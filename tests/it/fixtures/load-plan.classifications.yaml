@@ -1,0 +1,19 @@
+# Integration-test load plan variant (deployed into the TEST_ namespace by tests/it/harness.py).
+# Default settings; the tests set the date with Harness.set_now. Entry order is the ENTRY_ID.
+version: 1
+# Two GAMES entries that differ in a fixed parameter: a batch never mixes them.
+entries:
+  - table: GAMES
+    profile: demo
+    priority: 1
+    slicing: season
+    seasons: {from: 2019}
+    params: {classification: fbs}
+    refresh_class: weekly
+  - table: GAMES
+    profile: demo
+    priority: 1
+    slicing: season
+    seasons: {from: 2019}
+    params: {classification: fcs}
+    refresh_class: weekly

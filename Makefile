@@ -15,6 +15,32 @@
 #                      prints the totals, ARGS="--info" logs one free /info reading.
 #   logos              fills the private team-logo cache (~/.cfb-demo/logos) from CFB_CORE.TEAMS: an external
 #                      fetch to the logo host, 0 CFBD calls. FORCE=1 fetches existing files again, ALL=1 adds FCS.
+#   backfill           PROFILE=demo|full [FROM=year] [MAX_CALLS=n] [CONFIRM=yes]: prints the estimate and
+#                      the quota, then (live mode, CONFIRM=yes, ledger check) runs CFB_INFRA.BACKFILL.
+#   refresh            SEASON=y WEEK=w [SEASON_TYPE=postseason] [CONFIRM=yes]: the same for REFRESH_WEEK.
+#   quota              prints CFB_META.QUOTA (reads /info, 0 calls) and the ledger room.
+#                      All three are scripts/loader_cli.py. LEDGER=off turns the ledger off;
+#                      MAX_CALLS defaults to the ledger room. MAX_CALLS=0 is a dry run.
+#   snapshot           NAME=n: copies CFB_CORE, CFB_META.LOAD_LOG and FETCH_LOG of the target to the
+#                      private ~/.cfb-demo/snapshots/<NAME>/ (CFB_SNAPSHOT_DIR overrides; never inside
+#                      the repo or a OneDrive folder; an existing NAME is refused). 0 CFBD calls.
+#   restore            NAME=n [CONFIRM=yes] [FORCE=yes]: without CONFIRM it checks the snapshot against
+#                      the target and stops; with it, replaces those tables in one transaction (also
+#                      the rehearsal reset). FORCE=yes accepts a snapshot of another catalog. 0 CFBD calls.
+#   snapshots          lists the snapshots. All three are scripts/snapshot.py; snapshot and restore
+#                      take the loader's run lock.
+#   model              lints sql/model/, then installs CFB_MODEL in one transaction under the loader's
+#                      run lock (kind DEPLOY; refused while a loader run, snapshot or restore holds it).
+#                      ARGS="--prefix TEST_" deploys another namespace. `make deploy` runs it last.
+#   model-check        SEASON=y WEEK=w [SEASON_TYPE=postseason]: prints MODEL_CHECKS for that point
+#                      (exit 1 when an ERROR check failed). No log, 0 calls.
+#   model-refresh      [SEASON=y WEEK=w [SEASON_TYPE=postseason]]: runs CFB_INFRA.REFRESH_MODEL on its
+#                      own (run lock kind MODEL): rebuilds the derived tables of CFB_MODEL, then logs
+#                      the checks of that point (without SEASON: rebuild only). REFRESH_WEEK runs it as
+#                      step 100; backfill and restore rebuild after their run. 0 calls.
+#   model-docs         regenerates docs/model-dictionary.md from sql/model/ (no database).
+#   model-perf         times the model on the scaled league (ARGS="--prefix PERF_"); task 3.7.
+#                      All five are scripts/model.py.
 
 TARGET ?= local
 export TARGET
@@ -25,8 +51,9 @@ PY   := $(RUN) python
 
 PATTERNS ?=
 CONFIRM  ?=
-ARGS     ?=
 FORCE    ?=
+NAME     ?=
+ARGS     ?=
 ALL      ?=
 REAL     ?=
 SEASON   ?=
@@ -35,6 +62,9 @@ FIXTURES_DIR := $(if $(filter 1 yes,$(REAL)),$(HOME)/.cfb-demo/fixtures/latest,$
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record logos db-check \
         app-deps app-build app-test app-lint \
         app app-serve app-env app-user app-e2e app-perf app-preview app-fixtures
+.PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
+.PHONY: backfill refresh quota snapshot restore snapshots model model-check model-refresh model-docs
+.PHONY: model-perf
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -44,6 +74,8 @@ generate:
 
 bundle:
 	$(PY) -m vs.bundle
+	$(PY) -m loader.bundle
+	$(PY) -m model.step
 
 test:
 	$(RUN) pytest tests/unit tests/cli
@@ -61,19 +93,25 @@ lint:
 	$(RUN) mypy
 	@$(MAKE) --no-print-directory app-lint
 
-# Unit + CLI tests only. Each of the two runtime packages must reach 90 % (fail_under in pyproject.toml).
+# Unit + CLI tests only. Each of the three runtime packages (vs/cfbd_vs, vs/gen, loader) must reach 90 % (fail_under in pyproject.toml).
 coverage:
 	$(RUN) pytest --cov --cov-report= tests/unit tests/cli
 	$(RUN) coverage report --include="vs/cfbd_vs/*"
 	$(RUN) coverage report --include="vs/gen/*"
 	$(RUN) coverage report --include="$(APP_PURE_MODULES)"
+	$(RUN) coverage report --include="loader/*"
 
+# Loader settings: loader/load-plan.yaml, then the target's entry in vs/live/loader-config.yaml
+# (aws: the ledger's month cap and a reserve of 50, so a plain redeploy keeps the AWS budget), then
+# `LOADER_CONFIG="k=v,..."`, which wins per setting. All last until the next deploy.
+# `make deploy` also deploys the loader (loader/deploy.py), under the DEPLOY run lock once the
+# namespace has RUN_LOCK.
 # `ARGS` passes options through, e.g. make deploy ARGS="--prefix PROBE_ --no-sync-api-features".
 # `--prefix` deploys that namespace as sys (not TEST_, which the integration harness owns) and is
 # refused together with the real connection.
 # scripts.deploy rebuilds the bundle itself, so a direct `python -m scripts.deploy` is also safe.
 deploy: db-check bundle
-	$(PY) -m scripts.deploy $(ARGS)
+	$(PY) -m scripts.deploy $(if $(LOADER_CONFIG),--loader-config "$(LOADER_CONFIG)") $(ARGS)
 
 grants: db-check
 	$(PY) -m scripts.grants $(ARGS)
@@ -143,3 +181,35 @@ app-e2e: db-check app-build
 
 app-perf: db-check
 	$(PY) -m scripts.app perf
+backfill: db-check
+	$(PY) -m scripts.loader_cli --confirm "$(CONFIRM)" backfill --profile "$(or $(PROFILE),demo)" $(if $(FROM),--from-season "$(FROM)") $(if $(MAX_CALLS),--max-calls "$(MAX_CALLS)")
+
+refresh: db-check
+	$(PY) -m scripts.loader_cli --confirm "$(CONFIRM)" refresh $(if $(SEASON),--season "$(SEASON)") $(if $(WEEK),--week "$(WEEK)") $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)")
+
+quota: db-check
+	$(PY) -m scripts.loader_cli quota
+
+snapshot: db-check
+	$(PY) -m scripts.snapshot snapshot --name "$(NAME)"
+
+restore: db-check
+	$(PY) -m scripts.snapshot restore --name "$(NAME)" --confirm "$(CONFIRM)" --force "$(FORCE)"
+
+snapshots:
+	$(PY) -m scripts.snapshot list
+
+model: db-check
+	$(PY) -m scripts.model deploy $(ARGS)
+
+model-check: db-check
+	$(PY) -m scripts.model check --season "$(SEASON)" --week "$(WEEK)" $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(ARGS)
+
+model-refresh: db-check
+	$(PY) -m scripts.model refresh $(if $(SEASON),--season "$(SEASON)") $(if $(WEEK),--week "$(WEEK)") $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(ARGS)
+
+model-docs:
+	$(PY) -m scripts.model docs
+
+model-perf: db-check
+	$(PY) -m scripts.model perf $(ARGS)

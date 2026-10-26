@@ -163,12 +163,46 @@ class MockHandle:
         """Key-echo mode: reflect the bearer token in `X-Echo-Key` and in error bodies."""
         self._admin("POST", "/_admin/config", {"echo_key": enabled})
 
+    def set_info(
+        self,
+        mode: str,
+        *,
+        base_used: int | None = None,
+        used: int | None = None,
+        limit: int | None = None,
+        remaining: int | None = None,
+        tier: str | None = None,
+        reset_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Set how `/info` answers: `static` fields, or `counting` (`usedCalls` = `base_used` +
+        the API requests since the last reset; `/info` itself is free). Cleared by `reset`."""
+        named = {
+            "usedCalls": used,
+            "monthlyLimit": limit,
+            "remainingCalls": remaining,
+            "tierName": tier,
+            "resetAt": reset_at,
+        }
+        fields = {name: value for name, value in named.items() if value is not None}
+        spec: dict[str, Any] = {"mode": mode}
+        if base_used is not None:
+            spec["base_used"] = base_used
+        if fields:
+            spec["fields"] = fields
+        answer: dict[str, Any] = self._admin("POST", "/_admin/info", spec)
+        return answer
+
+    def info_state(self) -> dict[str, Any]:
+        """`{mode, base_used, fields, data_requests}`: how `/info` answers and what it counted."""
+        answer: dict[str, Any] = self._admin("GET", "/_admin/info")
+        return answer
+
     def set_doh_answers(self, answers: Mapping[str, list[str]]) -> None:
         """Set the A records the mock DoH endpoint serves, by host name."""
         self._admin("POST", "/_admin/doh-answers", dict(answers))
 
     def reset(self) -> None:
-        """Clear the logs, the scripted rules and key-echo mode."""
+        """Clear the logs, the scripted rules, key-echo mode and the `/info` mode."""
         self._admin("POST", "/_admin/reset")
 
     def stop(self) -> None:

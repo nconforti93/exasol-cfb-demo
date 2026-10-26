@@ -29,7 +29,16 @@ Admin API (JSON bodies and answers):
 * `POST /_admin/config` `{echo_key}`: key-echo mode reflects the bearer token in an `X-Echo-Key`
   header and in error bodies, so tests can check that the fetch UDF redacts it.
 * `POST /_admin/doh-answers` `{host: [ipv4, ...]}`: the A records the DoH endpoint serves.
-* `POST /_admin/reset`: clears the logs, the rules and the modes (DoH answers stay).
+* `POST /_admin/info` `{mode, base_used?, fields?}` and `GET /_admin/info`: how `/info` answers.
+  The body starts from the provider's `/info` answer (else the built-in one). `fields` overrides
+  `tierName`, `monthlyLimit`, `usedCalls`, `remainingCalls`, `resetAt`, `sharedPool`,
+  `patronLevel`, `products` or `features`; `remainingCalls` is `monthlyLimit - usedCalls` unless
+  given. `mode` `static` serves that. `mode` `counting` computes `usedCalls` as `base_used` plus
+  the API requests since the last reset, `/info` excluded (the API does not charge it). Scripted
+  failures count too, because retries count against the quota. `GET` answers
+  `{mode, base_used, fields, data_requests}` (`mode` is `default` until one is set).
+* `POST /_admin/reset`: clears the logs, the rules and the modes, `/info` included (DoH answers
+  stay).
 """
 
 import argparse
@@ -89,6 +98,22 @@ INFO_RESPONSE = {
         "graphQl": False,
     },
 }
+
+INFO_PATH = "/info"
+INFO_MODES = ("static", "counting")
+INFO_NUMBER_FIELDS = ("monthlyLimit", "remainingCalls", "usedCalls")
+INFO_FIELDS = frozenset(
+    {
+        *INFO_NUMBER_FIELDS,
+        "tierName",
+        "resetAt",
+        "sharedPool",
+        "patronLevel",
+        "products",
+        "features",
+    }
+)
+INFO_SPEC_KEYS = frozenset({"mode", "base_used", "fields"})
 
 Query = dict[str, list[str]]
 Provider = Callable[[str, Query], Any]
@@ -198,6 +223,46 @@ def bearer_token(headers: Mapping[str, str]) -> str | None:
 
 
 @dataclass
+class InfoMode:
+    """How `/info` answers: `static` fields, or `counting` data requests on top of `base_used`."""
+
+    mode: str
+    base_used: int
+    fields: dict[str, Any]
+
+
+def parse_info_mode(spec: Any) -> InfoMode:
+    """Validate an `/_admin/info` body; raises `ValueError` with the reason."""
+    if not isinstance(spec, Mapping):
+        raise ValueError("info spec must be a JSON object")
+    unknown = set(spec) - INFO_SPEC_KEYS
+    if unknown:
+        raise ValueError(f"unknown info spec keys: {sorted(unknown)}")
+    mode = spec.get("mode")
+    if mode not in INFO_MODES:
+        raise ValueError(f"mode must be one of {', '.join(INFO_MODES)}, got {mode!r}")
+    base_used = spec.get("base_used", 0)
+    if not _is_count(base_used):
+        raise ValueError(f"base_used must be a non-negative integer, got {base_used!r}")
+    fields = spec.get("fields") or {}
+    if not isinstance(fields, Mapping):
+        raise ValueError("fields must be a JSON object")
+    unknown_fields = set(fields) - INFO_FIELDS
+    if unknown_fields:
+        raise ValueError(f"unknown info fields: {sorted(unknown_fields)}")
+    for name in INFO_NUMBER_FIELDS:
+        if name in fields and not _is_count(fields[name]):
+            raise ValueError(f"{name} must be a non-negative integer, got {fields[name]!r}")
+    if mode == "counting" and "usedCalls" in fields:
+        raise ValueError("counting mode computes usedCalls; give base_used instead")
+    return InfoMode(mode, base_used, dict(fields))
+
+
+def _is_count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+@dataclass
 class MockState:
     """Everything the three listeners share; the HTTP handlers only translate to and from it."""
 
@@ -205,6 +270,7 @@ class MockState:
     echo_key: bool = False
     rules: list[Rule] = field(default_factory=list)
     doh_answers: dict[str, list[str]] = field(default_factory=dict)
+    info: InfoMode | None = None
     _log: list[dict[str, Any]] = field(default_factory=list)
     _doh_log: list[dict[str, Any]] = field(default_factory=list)
     _next_rule_id: int = 1
@@ -217,12 +283,33 @@ class MockState:
             self.rules.append(rule)
             return rule.id
 
+    def set_info(self, spec: Any) -> dict[str, Any]:
+        """Set how `/info` answers (see the module docstring) and return the new state."""
+        mode = parse_info_mode(spec)
+        with self._lock:
+            self.info = mode
+        return self.info_state()
+
+    def info_state(self) -> dict[str, Any]:
+        with self._lock:
+            info = self.info
+            return {
+                "mode": "default" if info is None else info.mode,
+                "base_used": 0 if info is None else info.base_used,
+                "fields": {} if info is None else dict(info.fields),
+                "data_requests": self._data_requests(),
+            }
+
+    def _data_requests(self) -> int:
+        return sum(1 for entry in self._log if entry["path"] != INFO_PATH)
+
     def reset(self) -> None:
         with self._lock:
             self._log.clear()
             self._doh_log.clear()
             self.rules.clear()
             self.echo_key = False
+            self.info = None
 
     def handle(self, method: str, target: str, headers: Mapping[str, str]) -> Reply:
         """Decide the reply for one API request and record it in the request log."""
@@ -301,12 +388,34 @@ class MockState:
             reply = self._scripted(rule, key)
         elif method != "GET":
             reply = self._error(HTTPStatus.METHOD_NOT_ALLOWED, key)
+        elif path == INFO_PATH and self.info is not None:
+            reply = self._info_reply(path, query, key, self.info)
         else:
             reply = self._from_provider(path, query, key)
         reply.delay_seconds = delay
         if self.echo_key and key is not None:
             reply.headers[ECHO_HEADER] = key
         return reply
+
+    def _info_reply(self, path: str, query: Query, key: str | None, info: InfoMode) -> Reply:
+        reply = self._from_provider(path, query, key)
+        try:
+            body = json.loads(reply.body)
+        except ValueError:
+            return reply
+        if reply.status != HTTPStatus.OK or not isinstance(body, dict):
+            return reply
+        body.update(info.fields)
+        if info.mode == "counting":
+            body["usedCalls"] = info.base_used + self._data_requests()
+        used, limit = body.get("usedCalls"), body.get("monthlyLimit")
+        if (
+            isinstance(used, int | float)
+            and isinstance(limit, int | float)
+            and "remainingCalls" not in info.fields
+        ):
+            body["remainingCalls"] = max(0, limit - used)
+        return Reply(int(reply.status), reply.headers, to_bytes(body))
 
     def _scripted(self, rule: Rule, key: str | None) -> Reply:
         status = rule.status if rule.status is not None else HTTPStatus.OK
@@ -476,6 +585,10 @@ class AdminServer(QuietServer):
             case ("POST", "config"):
                 state.echo_key = bool(payload["echo_key"])
                 return {"echo_key": state.echo_key}
+            case ("POST", "info"):
+                return state.set_info(payload)
+            case ("GET", "info"):
+                return state.info_state()
             case ("POST", "doh-answers"):
                 state.doh_answers.update(
                     {str(h).lower(): [str(a) for a in addrs] for h, addrs in payload.items()}

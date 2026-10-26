@@ -1,0 +1,84 @@
+-- Materialized (decision [40]): a table with the columns the view had, filled by the INSERT below. Every
+-- `make model` recreates it, and CFB_INFRA.REFRESH_MODEL rebuilds it (TRUNCATE + the INSERT, file order)
+-- after every load: refresh step 100, and the post-hook of `make backfill` / `make restore`.
+-- Team dimension (model/teams-conferences): one row per team id, from the stored team list and from the
+-- games. Both sources are joined with a FULL OUTER JOIN on the team id: a team in the list keeps its
+-- listed name, a team seen only in games (historic programs) takes the name of its most recent game.
+-- The team list is deduplicated by team id, newest fetch first (REQ_AT, then the later slice key, then
+-- the later row). Games come from GAME, which is already deduplicated; FIRST_SEASON and LAST_SEASON are
+-- window values over every game side of the team, taken on the row of its most recent game
+-- (season, kickoff, game id; a missing kickoff counts as the oldest).
+-- Colors, logos and the home-venue coordinates come from the team list only: the stored logo array
+-- lists the 500 px logo first and its dark variant second (checked on all stored teams, 2026-10-23).
+CREATE OR REPLACE TABLE {MODEL_SCHEMA}.TEAM (
+  TEAM_ID                DECIMAL(18,0)         COMMENT IS 'CFBD team id',
+  SCHOOL                 VARCHAR(2000) UTF8    COMMENT IS 'CFBD school name: the name in the stored team list, else the name on the team''s most recent stored game. SP+ ratings and games identify teams by this name',
+  MASCOT                 VARCHAR(2000) UTF8    COMMENT IS 'Mascot as the team list reports it; NULL for a team that is not in the list',
+  ABBREVIATION           VARCHAR(2000) UTF8    COMMENT IS 'Abbreviation as the team list reports it; NULL for a team that is not in the list',
+  ALTERNATE_NAMES        VARCHAR(2000000) UTF8 COMMENT IS 'Alternate names as the team list reports them (a JSON array as text); NULL for a team that is not in the list',
+  CURRENT_CONFERENCE     VARCHAR(2000) UTF8    COMMENT IS 'Conference as of the last load of the team list, CFBD name. Not a historical value: use TEAM_SEASON for the conference of any past season. NULL for a team that is not in the list',
+  CURRENT_DIVISION       VARCHAR(2000) UTF8    COMMENT IS 'Division as of the last load of the team list; NULL when none or when the team is not in the list. Use TEAM_SEASON for past seasons',
+  CURRENT_CLASSIFICATION VARCHAR(2000) UTF8    COMMENT IS 'Classification (fbs, fcs, ii or iii) as of the last load of the team list; NULL for a team that is not in the list. Use TEAM_SEASON for the classification of a past season',
+  HOME_VENUE_ID          DECIMAL(18,0)         COMMENT IS 'CFBD id of the team''s current home venue (VENUE.VENUE_ID); NULL for a team that is not in the list',
+  COLOR                  VARCHAR(2000) UTF8    COMMENT IS 'Primary team color as the team list reports it, a hex code such as #9e1b32; NULL for a team that is not in the list',
+  ALTERNATE_COLOR        VARCHAR(2000) UTF8    COMMENT IS 'Alternate team color as the team list reports it, a hex code; NULL for a team that is not in the list',
+  LOGO_URL               VARCHAR(2000) UTF8    COMMENT IS 'URL of the team logo for light backgrounds: the first URL of the team list''s logo array, where CFBD lists the 500 px logo. NULL when the array is empty or the team is not in the list. The model stores the URL only, not the image',
+  LOGO_DARK_URL          VARCHAR(2000) UTF8    COMMENT IS 'URL of the team logo for dark backgrounds: the second URL of the team list''s logo array, where CFBD lists the 500 px dark variant. NULL when the array has fewer than two URLs or the team is not in the list',
+  LATITUDE               DOUBLE                COMMENT IS 'Latitude of the team''s current home venue in degrees north (WGS 84), from the location in the team list; NULL when unknown or the team is not in the list',
+  LONGITUDE              DOUBLE                COMMENT IS 'Longitude of the team''s current home venue in degrees east (WGS 84, negative in the Americas), from the location in the team list; NULL when unknown or the team is not in the list',
+  IS_IN_TEAM_LIST        BOOLEAN               COMMENT IS 'TRUE when the team is in the stored team list (CFB_CORE.TEAMS); FALSE for a team that appears only in stored games',
+  FIRST_SEASON           DECIMAL(4,0)          COMMENT IS 'First season with a stored game of the team; NULL when no stored game has it',
+  LAST_SEASON            DECIMAL(4,0)          COMMENT IS 'Last season with a stored game of the team; NULL when no stored game has it',
+  LISTED_AT              TIMESTAMP(3)          COMMENT IS 'When the team list row shown was fetched (REQ_AT, UTC); NULL for a team that is not in the list'
+) COMMENT IS 'One row per team: every team of the stored team list (CFB_CORE.TEAMS, newest fetch wins) plus every team that appears only in stored games, such as historic programs (IS_IN_TEAM_LIST FALSE, named by its most recent game). CURRENT_* values are as of the last load of the team list; for any past season use TEAM_SEASON. Materialized: rebuilt by CFB_INFRA.REFRESH_MODEL after every load, so it is current as of the last load or refresh.';
+
+INSERT INTO {MODEL_SCHEMA}.TEAM
+WITH listed AS (
+  SELECT t."ID", t."SCHOOL", t."MASCOT", t."ABBREVIATION", t."ALTERNATE_NAMES", t."CONFERENCE",
+         t."DIVISION", t."CLASSIFICATION", t."LOCATION_ID", t."COLOR", t."ALTERNATE_COLOR",
+         t."LOGOS", t."LOCATION_LATITUDE", t."LOCATION_LONGITUDE", t."REQ_AT"
+    FROM {CORE_SCHEMA}."TEAMS" t
+ QUALIFY ROW_NUMBER() OVER (
+           PARTITION BY t."ID"
+           ORDER BY t."REQ_AT" DESC, t."REQ_SLICE" DESC, t."ROW_NO" DESC) = 1
+),
+sides AS (
+  SELECT g."SEASON", g."START_AT", g."GAME_ID", g."HOME_TEAM_ID" AS "TEAM_ID", g."HOME_TEAM" AS "SCHOOL"
+    FROM {MODEL_SCHEMA}."GAME" g
+   WHERE g."HOME_TEAM_ID" IS NOT NULL
+  UNION ALL
+  SELECT g."SEASON", g."START_AT", g."GAME_ID", g."AWAY_TEAM_ID", g."AWAY_TEAM"
+    FROM {MODEL_SCHEMA}."GAME" g
+   WHERE g."AWAY_TEAM_ID" IS NOT NULL
+),
+seen AS (
+  SELECT s."TEAM_ID", s."SCHOOL",
+         MIN(s."SEASON") OVER (PARTITION BY s."TEAM_ID") AS "FIRST_SEASON",
+         MAX(s."SEASON") OVER (PARTITION BY s."TEAM_ID") AS "LAST_SEASON"
+    FROM sides s
+ QUALIFY ROW_NUMBER() OVER (
+           PARTITION BY s."TEAM_ID"
+           ORDER BY s."SEASON" DESC, s."START_AT" DESC NULLS LAST, s."GAME_ID" DESC) = 1
+)
+SELECT COALESCE(l."ID", s."TEAM_ID"),
+       COALESCE(l."SCHOOL", s."SCHOOL"),
+       l."MASCOT",
+       l."ABBREVIATION",
+       l."ALTERNATE_NAMES",
+       l."CONFERENCE",
+       l."DIVISION",
+       l."CLASSIFICATION",
+       l."LOCATION_ID",
+       l."COLOR",
+       l."ALTERNATE_COLOR",
+       JSON_VALUE(l."LOGOS", '$[0]' RETURNING VARCHAR(2000) UTF8 NULL ON EMPTY NULL ON ERROR),
+       JSON_VALUE(l."LOGOS", '$[1]' RETURNING VARCHAR(2000) UTF8 NULL ON EMPTY NULL ON ERROR),
+       l."LOCATION_LATITUDE",
+       l."LOCATION_LONGITUDE",
+       l."ID" IS NOT NULL,
+       CAST(s."FIRST_SEASON" AS DECIMAL(4,0)),
+       CAST(s."LAST_SEASON" AS DECIMAL(4,0)),
+       l."REQ_AT"
+  FROM listed l
+  FULL OUTER JOIN seen s
+    ON l."ID" = s."TEAM_ID";

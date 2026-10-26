@@ -1,4 +1,4 @@
-"""`make deploy`: build the bundle, then deploy the CFBD virtual schema as sys.
+"""`make deploy`: build the bundle, then deploy the CFBD virtual schema, the loader and the model.
 
 The real deployment is created and owned by `sys` ([20]); the password is read at run time from
 the secrets file of the selected Exasol Personal deployment (`--target local|aws` or `TARGET`, see
@@ -6,28 +6,70 @@ the secrets file of the selected Exasol Personal deployment (`--target local|aws
 a separate namespace beside it, with its own schemas, scripts and virtual schema, by default
 reading the mock connection `CFBD_API_MOCK`; it is refused together with the real connection.
 
-Steps and their rules are documented in `vs/host/deploy.py`. The one thing to remember: the
-fetch UDF is replaced only when its body changed, because `CREATE OR REPLACE` drops its
-script-bound connection grant.
+Steps and their rules are documented in `vs/host/deploy.py` (virtual schema),
+`loader/deploy.py` (loader: plan tables, views, Lua scripts), which runs second on the same
+connection, and `model/deploy.py` (`CFB_MODEL`: lint, then one transaction), which runs last. The
+model files are linted before any connection is made, so a lint problem changes nothing. The one
+thing to remember: the fetch UDF is replaced only when its body changed, because
+`CREATE OR REPLACE` drops its script-bound connection grant.
+
+Loader settings: `loader/load-plan.yaml`, then the target's overrides in
+`vs/live/loader-config.yaml` (`loader/target_config.py`; on `aws` the budget follows the ledger's
+month cap), then `--loader-config "k=v,..."` (make: `LOADER_CONFIG=...`), which wins per setting.
+The deploy prints where each override came from; they last until the next deploy.
+
+Run lock: once the namespace has `<infra>.RUN_LOCK` (installed by its first deploy), the deploy
+holds one `DEPLOY` run lock (`loader.runlock.run_lock`) around the virtual schema, the loader and
+the model deploy, so it never replaces the plan, the views or the scripts under a running backfill
+or refresh. A running loader run refuses the deploy before anything changes. The first deploy
+runs the virtual schema and the loader without the lock and installs it; its model step then
+takes the lock itself, like `make model` (Phase 3 decision [35]).
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
+from loader import deploy as loader_deploy
+from loader import target_config
+from loader.runlock import HeldLock, RunLockError, RunLockRefused, lock_installed, run_lock
+from loader.target_config import TargetConfig, TargetConfigError
+from model import deploy as model_deploy
 from vs import bundle
 from vs.cfbd_vs.catalog import CatalogError
-from vs.host import deploy, target
+from vs.host import deploy, ledger, target
 from vs.host.namespace import Namespace, NamespaceError
 
 EXIT_OK = 0
 EXIT_ERROR = 2
+DEPLOY_KIND = "DEPLOY"
+DEPLOY_ARGS = "make deploy"
 
 Connector = Callable[[target.Target], Any]
 BundleWriter = Callable[[], bundle.BundleSizes]
+MonthCaps = Callable[[], Mapping[str, int]]
+
+
+class ModelDeployer(Protocol):
+    """`model.deploy.deploy_model`: under the caller's held lock, or its own when `lock` is None."""
+
+    def __call__(
+        self, connection: Any, namespace: Namespace, *, lock: HeldLock | None = None
+    ) -> model_deploy.ModelReport: ...
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def ledger_month_caps() -> Mapping[str, int]:
+    """The owner's month caps of `vs/live/ledger.yaml`."""
+    return ledger.load_config().months
 
 
 def connect_sys(deployment: target.Target) -> Any:
@@ -54,6 +96,11 @@ def main(
     *,
     connector: Connector = connect_sys,
     write_bundle: BundleWriter = bundle.write_bundle,
+    resolve: Callable[..., target.Target] | None = None,
+    clock: Callable[[], datetime] = utc_now,
+    month_caps: MonthCaps = ledger_month_caps,
+    target_settings: TargetConfig | None = None,
+    deploy_model: ModelDeployer | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -65,33 +112,73 @@ def main(
             force_fetch_replace=args.force_fetch_replace,
         )
         deploy.desired_properties(namespace, options)
-        deployment = target.resolve(args.target, dsn=args.dsn)
+        explicit = loader_deploy.parse_overrides(args.loader_config)
+        deployment = (resolve or target.resolve)(args.target, dsn=args.dsn)
+        overrides = target_config.resolve(
+            target_settings or target_config.load(),
+            deployment.name,
+            explicit=explicit,
+            month=ledger.month_of(clock()),
+            caps=month_caps,
+        )
+        for line in overrides.lines:
+            print(line)
+        loader_options = loader_deploy.LoaderOptions(config_overrides=overrides.values)
+        loader_deploy.validate(namespace, loader_options)
+        model_deploy.prepare(namespace)
         sizes = write_bundle()
         print(
             f"bundle: adapter {sizes.adapter_chars:,} and fetch UDF {sizes.fetch_chars:,} "
             f"characters, written to {bundle.DEFAULT_OUT_DIR}"
         )
-        report = _deploy(connector(deployment), namespace, options)
+        next_steps = deploy_namespace(
+            connector(deployment), namespace, options, loader_options, deploy_model
+        )
     except (
         deploy.DeployError,
         bundle.BundleError,
         CatalogError,
         NamespaceError,
         target.TargetError,
+        TargetConfigError,
+        ledger.LedgerError,
     ) as error:
         print(f"deploy failed: {error}", file=sys.stderr)
         return EXIT_ERROR
-    print("\n".join(report.lines))
-    for step in report.next_steps:
+    for step in next_steps:
         print(f"next: {step}")
     return EXIT_OK
 
 
-def _deploy(
-    connection: Any, namespace: Namespace, options: deploy.DeployOptions
-) -> deploy.DeployReport:
+def deploy_namespace(
+    connection: Any,
+    namespace: Namespace,
+    options: deploy.DeployOptions,
+    loader_options: loader_deploy.LoaderOptions,
+    deploy_model: ModelDeployer | None = None,
+) -> tuple[str, ...]:
+    """Deploy the virtual schema, the loader, then the model, under one run lock once installed.
+
+    The model deploys under the held lock (one `DEPLOY` run); on the first deploy, which installs
+    the lock, the model step takes it itself. A refusal of that step names what was deployed.
+    """
+    install_model = deploy_model or model_deploy.deploy_model
     try:
-        return deploy.deploy(connection, namespace, options)
+        with _deploy_lock(connection, namespace) as lock:
+            report = deploy.deploy(connection, namespace, options)
+            print("\n".join(report.lines))
+            loader = loader_deploy.deploy(connection, namespace, loader_options)
+            print("\n".join(loader.lines))
+            model = _deploy_model(install_model, connection, namespace, lock)
+            print("\n".join(model.lines))
+            if lock is not None:
+                plan = f"deployed plan {loader.plan_hash[:12]}"
+                lock.detail = f"{plan}; {lock.detail}" if lock.detail else plan
+        return report.next_steps
+    except RunLockRefused as error:
+        raise deploy.DeployError(f"{error}; nothing was deployed") from None
+    except RunLockError as error:
+        raise deploy.DeployError(str(error)) from None
     except deploy.DeployError:
         raise
     except Exception as error:
@@ -100,6 +187,32 @@ def _deploy(
         raise deploy.DeployError(f"Exasol rejected a statement: {first}") from None
     finally:
         connection.close()
+
+
+def _deploy_model(
+    install_model: ModelDeployer, connection: Any, namespace: Namespace, lock: HeldLock | None
+) -> model_deploy.ModelReport:
+    try:
+        return install_model(connection, namespace, lock=lock)
+    except RunLockRefused as error:
+        raise deploy.DeployError(
+            f"{error}; the virtual schema and the loader were deployed, the model was not: "
+            "run `make model` when the run has ended"
+        ) from None
+
+
+@contextmanager
+def _deploy_lock(connection: Any, namespace: Namespace) -> Iterator[HeldLock | None]:
+    if not lock_installed(connection, namespace):
+        print(
+            f"run lock: {namespace.infra_schema}.RUN_LOCK is not installed yet (first deploy), "
+            "so this deploy runs without the lock and installs it"
+        )
+        yield None
+        return
+    with run_lock(connection, namespace, DEPLOY_KIND, DEPLOY_ARGS) as lock:
+        print(f"run lock: {DEPLOY_KIND} run {lock.run_id}")
+        yield lock
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -126,6 +239,13 @@ def _parser() -> argparse.ArgumentParser:
         "--force-fetch-replace",
         action="store_true",
         help="replace the fetch UDF even if its body is unchanged (drops its connection grant)",
+    )
+    parser.add_argument(
+        "--loader-config",
+        default="",
+        metavar="k=v,...",
+        help="loader settings overriding the plan file and vs/live/loader-config.yaml, "
+        "e.g. monthly_call_budget=400",
     )
     parser.add_argument(
         "--target", default=None, help="local or aws (default: $TARGET, else local)"

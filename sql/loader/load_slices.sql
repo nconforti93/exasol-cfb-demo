@@ -1,0 +1,160 @@
+-- LOAD_SLICES: one row per planned slice, keyed by (TABLE_NAME, SLICE_KEY) (spec loader/load-plan).
+-- Slices: `season` entries get one slice per season from SEASON_FROM to SEASON_TO, never beyond the
+--   current season (SEASON_TO NULL = current season); `none` and `season_range` entries get one slice
+--   with SEASON NULL. SLICE_KEY is SLICE_TEMPLATE with {season} (or {season_from} and {season_to})
+--   filled in, so it equals the key the adapter plans for the same request.
+-- Gating: an entry whose table needs an API feature is listed only while the virtual schema's
+--   API_FEATURES holds it (LOAD_STATUS shows it as blocked otherwise).
+-- IS_GAP: the season is a known hole of the entry (LOAD_PLAN_GAPS); it is never fetched.
+-- FINAL_IF_LOADED_NOW: `static` always; `weekly` once NOW_UTC reached SEASON_FINAL_AFTER (MM-DD) of
+--   the following year (season 2026 from 2027-02-15). Anything else is not final.
+-- IS_STORED, IS_FINAL, ROWS_LOADED, LOADED_AT, LOADED_BY: the slice's LOAD_LOG row, if any.
+-- FAILURES, LAST_ERROR, LAST_FAILED_AT, LAST_FAILED_RUN_ID: its LOAD_FAILURES row (0 failures if none).
+-- IS_QUARANTINED: FAILURES reached QUARANTINE_AFTER.
+-- IS_PENDING: the backfill still needs it: not a gap, not quarantined, and missing or stored as
+--   non-final while it would be final if loaded now. Orphans, profiles and from_season are applied by
+--   BACKFILL_QUEUE and the scripts, not here.
+-- Rendered by vs/host/metaddl.py (render_loader_view).
+
+CREATE OR REPLACE VIEW "{META_SCHEMA}"."LOAD_SLICES" AS
+WITH ENTRIES AS (
+  SELECT
+    P."ENTRY_ID" AS "ENTRY_ID",
+    P."TABLE_NAME" AS "TABLE_NAME",
+    P."PROFILE_NAME" AS "PROFILE_NAME",
+    P."PROFILE_RANK" AS "PROFILE_RANK",
+    P."PRIORITY" AS "PRIORITY",
+    P."SLICING" AS "SLICING",
+    P."REFRESH_CLASS" AS "REFRESH_CLASS",
+    P."SEASON_FROM" AS "SEASON_FROM",
+    P."SEASON_TO" AS "SEASON_TO",
+    LEAST(COALESCE(P."SEASON_TO", CFG."CURRENT_SEASON"), CFG."CURRENT_SEASON") AS "SEASON_LAST",
+    P."SLICE_TEMPLATE" AS "SLICE_TEMPLATE",
+    CFG."NOW_UTC" AS "NOW_UTC",
+    CFG."SEASON_FINAL_AFTER" AS "SEASON_FINAL_AFTER",
+    CFG."QUARANTINE_AFTER" AS "QUARANTINE_AFTER"
+  FROM "{META_SCHEMA}"."LOAD_PLAN" P
+  CROSS JOIN "{META_SCHEMA}"."LOADER_SETTINGS" CFG
+  WHERE P."GATED_BY" IS NULL
+    OR INSTR(',' || CFG."API_FEATURES" || ',', ',' || P."GATED_BY" || ',') > 0
+),
+SEASONS AS (
+  SELECT DISTINCT
+    N."SEASON" AS "SEASON"
+  FROM "{META_SCHEMA}"."SEASON_NUMBERS" N
+),
+GAPS AS (
+  SELECT DISTINCT
+    G."ENTRY_ID" AS "ENTRY_ID",
+    G."SEASON" AS "SEASON"
+  FROM "{META_SCHEMA}"."LOAD_PLAN_GAPS" G
+),
+SLICE_KEYS AS (
+  SELECT
+    SE."ENTRY_ID" AS "ENTRY_ID",
+    SN."SEASON" AS "SEASON",
+    CAST(
+      REPLACE(SE."SLICE_TEMPLATE", '{season}', CAST(SN."SEASON" AS VARCHAR(4)))
+      AS VARCHAR(2000) UTF8
+    ) AS "SLICE_KEY"
+  FROM ENTRIES SE
+  INNER JOIN SEASONS SN
+    ON SN."SEASON" >= SE."SEASON_FROM"
+    AND SN."SEASON" <= SE."SEASON_LAST"
+  WHERE SE."SLICING" = 'season'
+  UNION ALL
+  SELECT
+    OE."ENTRY_ID" AS "ENTRY_ID",
+    CAST(NULL AS DECIMAL(4,0)) AS "SEASON",
+    CAST(
+      CASE
+        WHEN OE."SLICING" = 'season_range' THEN
+          REPLACE(
+            REPLACE(OE."SLICE_TEMPLATE", '{season_from}', CAST(OE."SEASON_FROM" AS VARCHAR(4))),
+            '{season_to}', CAST(OE."SEASON_TO" AS VARCHAR(4))
+          )
+        ELSE OE."SLICE_TEMPLATE"
+      END
+      AS VARCHAR(2000) UTF8
+    ) AS "SLICE_KEY"
+  FROM ENTRIES OE
+  WHERE OE."SLICING" IN ('none', 'season_range')
+),
+SLICE_STATE AS (
+  SELECT
+    EN."ENTRY_ID" AS "ENTRY_ID",
+    EN."TABLE_NAME" AS "TABLE_NAME",
+    EN."PROFILE_NAME" AS "PROFILE_NAME",
+    EN."PROFILE_RANK" AS "PROFILE_RANK",
+    EN."PRIORITY" AS "PRIORITY",
+    EN."SLICING" AS "SLICING",
+    EN."REFRESH_CLASS" AS "REFRESH_CLASS",
+    SK."SEASON" AS "SEASON",
+    SK."SLICE_KEY" AS "SLICE_KEY",
+    CASE WHEN GP."ENTRY_ID" IS NULL THEN FALSE ELSE TRUE END AS "IS_GAP",
+    CASE
+      WHEN EN."REFRESH_CLASS" = 'static' THEN TRUE
+      WHEN EN."REFRESH_CLASS" = 'weekly'
+        AND SK."SEASON" IS NOT NULL
+        AND (
+          YEAR(EN."NOW_UTC") > SK."SEASON" + 1
+          OR (
+            YEAR(EN."NOW_UTC") = SK."SEASON" + 1
+            AND TO_CHAR(EN."NOW_UTC", 'MM-DD') >= EN."SEASON_FINAL_AFTER"
+          )
+        ) THEN TRUE
+      ELSE FALSE
+    END AS "FINAL_IF_LOADED_NOW",
+    CASE WHEN LL."SLICE_KEY" IS NULL THEN FALSE ELSE TRUE END AS "IS_STORED",
+    CASE WHEN LL."IS_FINAL" THEN TRUE ELSE FALSE END AS "IS_FINAL",
+    LL."ROWS_LOADED" AS "ROWS_LOADED",
+    LL."LOADED_AT" AS "LOADED_AT",
+    LL."LOADED_BY" AS "LOADED_BY",
+    COALESCE(LF."FAILURES", 0) AS "FAILURES",
+    LF."LAST_ERROR" AS "LAST_ERROR",
+    LF."LAST_FAILED_AT" AS "LAST_FAILED_AT",
+    LF."LAST_RUN_ID" AS "LAST_FAILED_RUN_ID",
+    CASE WHEN COALESCE(LF."FAILURES", 0) >= EN."QUARANTINE_AFTER" THEN TRUE ELSE FALSE END
+      AS "IS_QUARANTINED"
+  FROM SLICE_KEYS SK
+  INNER JOIN ENTRIES EN
+    ON EN."ENTRY_ID" = SK."ENTRY_ID"
+  LEFT JOIN GAPS GP
+    ON GP."ENTRY_ID" = SK."ENTRY_ID"
+    AND GP."SEASON" = SK."SEASON"
+  LEFT JOIN "{META_SCHEMA}"."LOAD_LOG" LL
+    ON LL."TABLE_NAME" = EN."TABLE_NAME"
+    AND LL."SLICE_KEY" = SK."SLICE_KEY"
+  LEFT JOIN "{META_SCHEMA}"."LOAD_FAILURES" LF
+    ON LF."TABLE_NAME" = EN."TABLE_NAME"
+    AND LF."SLICE_KEY" = SK."SLICE_KEY"
+)
+SELECT
+  S."ENTRY_ID" AS "ENTRY_ID",
+  S."TABLE_NAME" AS "TABLE_NAME",
+  S."PROFILE_NAME" AS "PROFILE_NAME",
+  S."PROFILE_RANK" AS "PROFILE_RANK",
+  S."PRIORITY" AS "PRIORITY",
+  S."SLICING" AS "SLICING",
+  S."REFRESH_CLASS" AS "REFRESH_CLASS",
+  S."SEASON" AS "SEASON",
+  S."SLICE_KEY" AS "SLICE_KEY",
+  S."IS_GAP" AS "IS_GAP",
+  S."FINAL_IF_LOADED_NOW" AS "FINAL_IF_LOADED_NOW",
+  S."IS_STORED" AS "IS_STORED",
+  S."IS_FINAL" AS "IS_FINAL",
+  S."ROWS_LOADED" AS "ROWS_LOADED",
+  S."LOADED_AT" AS "LOADED_AT",
+  S."LOADED_BY" AS "LOADED_BY",
+  S."FAILURES" AS "FAILURES",
+  S."LAST_ERROR" AS "LAST_ERROR",
+  S."LAST_FAILED_AT" AS "LAST_FAILED_AT",
+  S."LAST_FAILED_RUN_ID" AS "LAST_FAILED_RUN_ID",
+  S."IS_QUARANTINED" AS "IS_QUARANTINED",
+  CASE
+    WHEN NOT S."IS_GAP"
+      AND NOT S."IS_QUARANTINED"
+      AND (NOT S."IS_STORED" OR (NOT S."IS_FINAL" AND S."FINAL_IF_LOADED_NOW")) THEN TRUE
+    ELSE FALSE
+  END AS "IS_PENDING"
+FROM SLICE_STATE S

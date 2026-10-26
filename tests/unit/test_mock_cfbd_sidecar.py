@@ -172,3 +172,33 @@ def test_module_level_wrappers_use_the_current_handle(monkeypatch: pytest.Monkey
 def test_server_file_is_mounted_where_the_sidecar_runs_it() -> None:
     assert (Path(__file__).resolve().parents[1] / "mock_cfbd" / "server.py").exists()
     assert sidecar.SERVER_IN_CONTAINER == "/repo/tests/mock_cfbd/server.py"
+
+
+def test_set_info_sends_the_mode_and_only_the_given_fields() -> None:
+    podman = FakePodman(admin_answer={"mode": "counting"})
+    handle = make_handle(podman)
+    handle.set_info("counting", base_used=100)
+    args, stdin = podman.calls[-1]
+    assert "/_admin/info" in args and "POST" in args and "--stdin" in args
+    assert json.loads(stdin or "") == {"mode": "counting", "base_used": 100}
+    handle.set_info("static", used=900, limit=1000, tier="Free", reset_at="2020-11-01T00:00:00Z")
+    assert json.loads(podman.calls[-1][1] or "") == {
+        "mode": "static",
+        "fields": {
+            "usedCalls": 900,
+            "monthlyLimit": 1000,
+            "tierName": "Free",
+            "resetAt": "2020-11-01T00:00:00Z",
+        },
+    }
+    handle.set_info("static", remaining=1)
+    assert json.loads(podman.calls[-1][1] or "") == {
+        "mode": "static",
+        "fields": {"remainingCalls": 1},
+    }
+
+
+def test_info_state_reads_the_counter() -> None:
+    podman = FakePodman(admin_answer={"mode": "counting", "data_requests": 3})
+    assert make_handle(podman).info_state()["data_requests"] == 3
+    assert "/_admin/info" in podman.calls[-1][0] and "GET" in podman.calls[-1][0]
