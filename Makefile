@@ -57,6 +57,8 @@
 #   what-if            TEAM=school|id [RUN_ID=id] WIN=next|game_id[,..] [LOSE=..]: the team's playoff odds
 #                      now and in the stored seasons where it wins (loses) those games, the matching
 #                      seasons and the query seconds; RUN_ID defaults to the newest DONE run. Read-only.
+#   predict            SEASON=y WEEK=w [SEASON_TYPE=regular|postseason]: freezes the score model's
+#                      next-week games through the point, marking missed games reconstructed. 0 calls.
 
 TARGET ?= local
 export TARGET
@@ -73,7 +75,7 @@ ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
 .PHONY: backfill refresh quota snapshot restore snapshots model model-check model-refresh model-docs
-.PHONY: model-perf sim sim-fit simulate what-if
+.PHONY: model-perf sim sim-fit simulate what-if predict
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -172,3 +174,6 @@ simulate: db-check
 
 what-if: db-check
 	$(PY) -m scripts.sim what-if --team "$(TEAM)" $(if $(RUN_ID),--run "$(RUN_ID)") $(if $(WIN),--win "$(WIN)") $(if $(LOSE),--lose "$(LOSE)") $(ARGS)
+
+predict: db-check
+	$(PY) -m scripts.sim predict --season "$(SEASON)" --week "$(WEEK)" $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(ARGS)

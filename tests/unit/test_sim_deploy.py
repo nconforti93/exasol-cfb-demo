@@ -29,6 +29,7 @@ LOCK = '"TEST_CFB_INFRA"."RUN_LOCK"'
 DATA_TABLES = (
     "CONF_CHAMP",
     "LEVERAGE",
+    "PREDICTION",
     "SIM_PATH",
     "SIM_RUN",
     "SIM_RUN_GAME",
@@ -98,15 +99,23 @@ def test_the_engine_script_and_its_comment_run_inside_the_transaction_after_the_
     assert '"TEST_CFB_INFRA"."SIM_ENGINE"' in statements[script]
     assert f"ENGINE_VERSION {report.engine_version}" in statements[comment]
     simulate = next(i for i, s in enumerate(statements) if "CREATE OR REPLACE LUA SCRIPT" in s)
+    predict = next(
+        i
+        for i, s in enumerate(statements)
+        if "CREATE OR REPLACE LUA SCRIPT" in s and "TEST_CFB_INFRA.PREDICT" in s
+    )
     assert "TEST_CFB_INFRA.SIMULATE" in statements[simulate]
+    assert "TEST_CFB_INFRA.PREDICT" in statements[predict]
     objects = [
         i
         for i, s in enumerate(statements)
-        if s.startswith(("CREATE OR REPLACE", "CREATE TABLE")) and i not in (script, simulate)
+        if s.startswith(("CREATE OR REPLACE", "CREATE TABLE"))
+        and i not in (script, simulate, predict)
     ]
-    assert max(objects) < script < simulate < statements.index("COMMIT")
+    assert max(objects) < script < simulate < predict < statements.index("COMMIT")
     assert any("script TEST_CFB_INFRA.SIM_ENGINE: replaced" in line for line in report.lines)
     assert any("script TEST_CFB_INFRA.SIMULATE: replaced" in line for line in report.lines)
+    assert any("script TEST_CFB_INFRA.PREDICT: replaced" in line for line in report.lines)
 
 
 def test_nothing_is_dropped_or_emptied_and_the_data_tables_are_created_if_missing(
@@ -125,7 +134,7 @@ def test_a_data_table_that_exists_is_kept_and_reported(options: SimOptions) -> N
     report = deploy_sim(connection, NAMESPACE, options)
     assert set(report.objects.kept) == set(DATA_TABLES)
     assert report.objects.differences == ()
-    assert any(line.startswith("data tables: 10 kept as they were") for line in report.lines)
+    assert any(line.startswith("data tables: 11 kept as they were") for line in report.lines)
 
 
 def test_under_a_lock_the_caller_holds_no_lock_statement_is_sent(options: SimOptions) -> None:
@@ -206,7 +215,7 @@ def test_lint_only_sends_nothing_and_opens_no_connection(
 ) -> None:
     assert run_cli(None, options, "deploy", "--lint-only") == cli.EXIT_OK
     out = capsys.readouterr().out
-    assert out.startswith("lint ok: 20 objects, engine script ")
+    assert out.startswith("lint ok: 25 objects, engine script ")
     assert "nothing sent, 0 CFBD calls" in out
 
 

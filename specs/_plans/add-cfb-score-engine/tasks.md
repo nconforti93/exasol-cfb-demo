@@ -22,7 +22,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [44]). Details, files, test
 ## Slice 2: predictions, the rooting guide and movement
 
 ### Group S2-A
-- [ ] 2.1 Predictions: freeze (`PREDICT`, step 2 of `SIMULATE`), grades, scorecard, calibration buckets, `GAME_WIN_PROB`
+- [x] 2.1 Predictions: freeze (`PREDICT`, step 2 of `SIMULATE`), grades, scorecard, calibration buckets, `GAME_WIN_PROB`
 - [ ] 2.2 `POINT_RUN`, `CURRENT_RUN`, `ODDS_MOVEMENT`, `ROOTING_GUIDE`
 
 ### Group S2-B

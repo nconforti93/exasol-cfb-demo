@@ -47,6 +47,7 @@ SIM_DIR = ROOT / "sql" / "sim"
 DATA_DIR = SIM_DIR / "data"
 LUA_DIR = ROOT / "engine" / "lua"
 SIMULATE_NAME = "SIMULATE"
+PREDICT_NAME = "PREDICT"
 SIMULATE_PARAMETERS = (
     "season",
     "week",
@@ -57,6 +58,7 @@ SIMULATE_PARAMETERS = (
     "run_label",
 )
 SIMULATE_ENTRY = "simulate.lua"
+PREDICT_ENTRY = "predict.lua"
 SIM_LIBRARY = "simlib.lua"
 AUTO_BID_CODES = {
     "TOP_CHAMPIONS": core.AUTO_BID_TOP_CHAMPIONS,
@@ -168,6 +170,25 @@ def simulate_script(namespace: Namespace, lua_directory: Path = LUA_DIR) -> str:
         raise DeployError(f"{SIMULATE_NAME}: {error}") from None
 
 
+def predict_script(namespace: Namespace, lua_directory: Path = LUA_DIR) -> str:
+    """`CREATE OR REPLACE LUA SCRIPT <infra>.PREDICT(...)` for `namespace`."""
+    try:
+        return lua_bundle.build_entry_script(
+            PREDICT_NAME,
+            ("season", "week", "season_type"),
+            lua_directory / PREDICT_ENTRY,
+            namespace,
+            extra_names={
+                "SIM_SCHEMA": namespace.sim_schema,
+                "MODEL_SCHEMA": namespace.model_schema,
+            },
+            prelude=render_prelude(),
+            libraries=(lua_directory / SIM_LIBRARY,),
+        )
+    except BundleError as error:
+        raise DeployError(f"{PREDICT_NAME}: {error}") from None
+
+
 def deploy_sim(
     connection: Any,
     namespace: Namespace,
@@ -187,12 +208,13 @@ def deploy_sim(
     except (bundle.BundleError, OSError) as error:
         raise DeployError(str(error)) from None
     simulate = simulate_script(namespace, options.lua_directory)
+    predict = predict_script(namespace, options.lua_directory)
     if lock is not None:
-        report = _install(connection, namespace, objects, (script, simulate), lock)
+        report = _install(connection, namespace, objects, (script, simulate, predict), lock)
         run_id = lock.run_id
     else:
         with run_lock(connection, namespace, LOCK_KIND, options.lock_args) as held:
-            report = _install(connection, namespace, objects, (script, simulate), held)
+            report = _install(connection, namespace, objects, (script, simulate, predict), held)
             run_id = held.run_id
     lines = (
         f"lint: {len(objects)} files clean",
@@ -200,6 +222,7 @@ def deploy_sim(
         f"script {namespace.infra_schema}.{bundle.SCRIPT_NAME}: replaced, "
         f"ENGINE_VERSION {script.version}, {len(script.create):,} characters",
         f"script {namespace.infra_schema}.{SIMULATE_NAME}: replaced, {len(simulate):,} characters",
+        f"script {namespace.infra_schema}.{PREDICT_NAME}: replaced, {len(predict):,} characters",
         f"simulation schema deployed as DEPLOY run {run_id}; 0 CFBD calls",
     )
     return SimReport(report, script.version, run_id, lines)
@@ -209,15 +232,15 @@ def _install(
     connection: Any,
     namespace: Namespace,
     objects: list[SqlObject],
-    scripts: tuple[bundle.EngineScript, str],
+    scripts: tuple[bundle.EngineScript, str, str],
     lock: HeldLock,
 ) -> DeployReport:
-    script, simulate = scripts
+    script, simulate, predict = scripts
     report = sqlobjects.deploy(
         connection,
         namespace.sim_schema,
         objects,
-        extra_statements=(*script.statements, simulate),
+        extra_statements=(*script.statements, simulate, predict),
         keep=KEPT_TABLES,
         lock=lock,
     )

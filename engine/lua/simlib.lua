@@ -262,6 +262,66 @@ end
 
 -- Register and snapshot ---------------------------------------------------------------------------
 
+-- Freeze only the current season. Each point is resolved first, then inserted with literal season
+-- and sequence filters so the as-of view sees one point rather than the entire history.
+function freeze_predictions(season, through_seq, frozen_by)
+  local current = run_sql('SELECT "AS_OF_SEASON" FROM ' .. model_object("CURRENT_AS_OF"))
+  if #current == 0 or whole_number(current[1].AS_OF_SEASON, "current season") ~= season then
+    return 0
+  end
+  local points = run_sql([[SELECT "AS_OF_WEEK_SEQ", "NEXT_WEEK_SEQ", "AS_OF_LABEL"
+FROM ]] .. model_object("AS_OF_POINT") .. [[ WHERE "AS_OF_SEASON" = :season
+  AND "AS_OF_WEEK_SEQ" <= :through_seq AND "NEXT_WEEK_SEQ" IS NOT NULL
+ORDER BY "AS_OF_WEEK_SEQ"]], {season = season, through_seq = through_seq})
+  local count = 0
+  for _, point in ipairs(points) do
+    local seq = int_sql(point.AS_OF_WEEK_SEQ, "freeze point")
+    local next_seq = int_sql(point.NEXT_WEEK_SEQ, "next week")
+    local available = run_sql([[SELECT COUNT(*) AS "N" FROM ]] .. model_object("GAME") .. [[ g
+WHERE g."SEASON" = :season AND g."WEEK_SEQ" = ]] .. next_seq .. [[
+  AND g."INVOLVES_FBS" AND g."HAS_TEAMS"
+  AND NOT EXISTS (SELECT 1 FROM ]] .. sim_table("PREDICTION") .. [[ p
+                   WHERE p."GAME_ID" = g."GAME_ID")]], {season = season})
+    if whole_number(available[1].N, "unfrozen next games") > 0 then
+      local clock = run_sql('SELECT CAST("NOW_UTC" AS VARCHAR(30)) AS "NOW_TEXT" FROM '
+        .. sim_name("META_SCHEMA", "LOADER_SETTINGS"))
+      local frozen_at = nz(clock[1].NOW_TEXT)
+      local result = run_sql([[INSERT INTO ]] .. sim_table("PREDICTION") .. [[ (
+  "GAME_ID", "SEASON", "SEASON_TYPE", "WEEK", "WEEK_SEQ", "START_AT", "HOME_TEAM_ID",
+  "AWAY_TEAM_ID", "IS_NEUTRAL_SITE", "IS_CONF_CHAMPIONSHIP", "IS_FBS_VS_FBS",
+  "FREEZE_SEASON", "FREEZE_WEEK_SEQ", "FREEZE_LABEL", "HOME_RATING", "AWAY_RATING",
+  "HOME_RATING_SOURCE", "AWAY_RATING_SOURCE", "MU", "SIGMA", "TOTAL", "HOME_POINTS_PRED",
+  "AWAY_POINTS_PRED", "HOME_WIN_PROB", "PICK_TEAM_ID", "PICK_WIN_PROB", "FROZEN_AT",
+  "FROZEN_BEFORE_KICKOFF", "FREEZE_KIND", "FROZEN_BY")
+SELECT s."GAME_ID", s."AS_OF_SEASON", s."SEASON_TYPE", s."WEEK", s."WEEK_SEQ", s."START_AT",
+  s."HOME_TEAM_ID", s."AWAY_TEAM_ID", s."IS_NEUTRAL_SITE", s."IS_CONF_CHAMPIONSHIP",
+  g."IS_FBS_GAME", s."AS_OF_SEASON", s."AS_OF_WEEK_SEQ", :label,
+  s."HOME_RATING", s."AWAY_RATING", s."HOME_RATING_SOURCE", s."AWAY_RATING_SOURCE",
+  s."MU", s."SIGMA", s."TOTAL", s."HOME_POINTS_PRED", s."AWAY_POINTS_PRED",
+  s."HOME_WIN_PROB",
+  CASE WHEN s."HOME_WIN_PROB" >= 0.5 THEN s."HOME_TEAM_ID" ELSE s."AWAY_TEAM_ID" END,
+  CASE WHEN s."HOME_WIN_PROB" >= 0.5 THEN s."HOME_WIN_PROB" ELSE 1 - s."HOME_WIN_PROB" END,
+  CAST(:frozen_at AS TIMESTAMP),
+  CASE WHEN s."START_AT" IS NOT NULL AND CAST(:frozen_at AS TIMESTAMP) < s."START_AT"
+       THEN TRUE ELSE FALSE END,
+  CASE WHEN s."START_AT" IS NOT NULL AND CAST(:frozen_at AS TIMESTAMP) < s."START_AT"
+       THEN 'IN_ADVANCE' ELSE 'RECONSTRUCTED' END, :frozen_by
+FROM ]] .. sim_table("GAME_SCORE_AS_OF") .. [[ s
+JOIN ]] .. model_object("GAME") .. [[ g ON g."GAME_ID" = s."GAME_ID"
+WHERE s."AS_OF_SEASON" = ]] .. int_sql(season, "freeze season") .. [[
+  AND s."AS_OF_WEEK_SEQ" = ]] .. seq .. [[ AND s."GAME_STATUS_AS_OF" = 'NEXT'
+  AND NOT EXISTS (SELECT 1 FROM ]] .. sim_table("PREDICTION") .. [[ p
+                   WHERE p."GAME_ID" = s."GAME_ID")]],
+        {label = sql_value(nz(point.AS_OF_LABEL)), frozen_at = frozen_at,
+         frozen_by = frozen_by})
+      count = count + whole_number(nz(result.rows_inserted) or nz(result.rows_affected) or 0,
+        "frozen games")
+    end
+  end
+  commit()
+  return count
+end
+
 local function register(args, point, origin, load_run_id, clock)
   run_sql("TRUNCATE TABLE " .. sim_table("SIM_STAGE"))
   run_sql("INSERT INTO " .. sim_table("SIM_RUN") .. [[ ("RUN_STATUS", "RUN_ORIGIN", "RUN_LABEL",
@@ -611,6 +671,10 @@ function simulate_run(args, point, origin, load_run_id)
   local step = "the input snapshot"
   local ok, result = pcall(function()
     local marks = {inputs_first = #clock.laps + 1}
+    step = "the prediction freeze"
+    freeze_predictions(args.season, point.week_seq, "SIMULATE " .. tostring(run_id))
+    lap(clock, "freeze")
+    step = "the input snapshot"
     local sizes = take_snapshot(run, args, point, clock)
     marks.inputs_last = #clock.laps
     marks.inputs = clock.last - clock.laps[1].seconds

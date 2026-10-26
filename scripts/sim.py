@@ -45,6 +45,9 @@
   after (`engine/whatif.py` over `SIM_PATH` and `SIM_TEAM`), the matching seasons and the seconds of
   the what-if query with the query cache off. Read-only, no lock, zero CFBD calls.
 
+- `predict` freezes the current season's next-week score model rows from every as-of point through
+  the given week. Earlier weeks are reconstructed and marked. Existing rows are never rewritten.
+
 Exit codes: 0 ok, 1 refused (the run lock is held, or the run's rules refuse it), 2 error.
 """
 
@@ -122,6 +125,13 @@ def simulate_call(namespace: Namespace, args: argparse.Namespace) -> str:
     ]
     script = qualified_name(namespace.infra_schema, sim_deploy.SIMULATE_NAME)
     return f"EXECUTE SCRIPT {script}({', '.join(values)})"
+
+
+def predict_call(namespace: Namespace, args: argparse.Namespace) -> str:
+    """`EXECUTE SCRIPT <infra>.PREDICT(season, week, season_type)`."""
+    season_type = string_literal(args.season_type or "regular")
+    script = qualified_name(namespace.infra_schema, sim_deploy.PREDICT_NAME)
+    return f"EXECUTE SCRIPT {script}({int(args.season)}, {int(args.week)}, {season_type})"
 
 
 def game_specs(value: str | None) -> list[str]:
@@ -211,6 +221,16 @@ class _Command:
             self._print_run(connection, namespace, int(result["RUN_ID"]), wall)
         finally:
             connection.close()
+        return EXIT_OK
+
+    def predict(self) -> int:
+        namespace = Namespace(self._args.prefix)
+        connection = self._connector(self._resolve(self._args.target, dsn=self._args.dsn))
+        try:
+            row = connection.execute(predict_call(namespace, self._args)).fetchone()
+        finally:
+            connection.close()
+        _print(f"predictions frozen: {int(row[0])}; 0 CFBD calls")
         return EXIT_OK
 
     def _print_run(self, connection: Any, namespace: Namespace, run_id: int, wall: float) -> None:
@@ -429,6 +449,12 @@ def _parser() -> argparse.ArgumentParser:
     simulate.add_argument("--batch", type=int, default=None, help="seasons per batch (5,000)")
     simulate.add_argument("--seed", type=int, default=None, help="run seed (season x 1000 + week)")
     simulate.add_argument("--label", default=None, help="free label of the run")
+    predict = commands.add_parser(
+        "predict", parents=[_common()], help="freeze next-week predictions through an as-of point"
+    )
+    predict.add_argument("--season", type=int, required=True)
+    predict.add_argument("--week", type=int, required=True)
+    predict.add_argument("--season-type", default=None, help="regular (default) or postseason")
     what = commands.add_parser(
         "what-if", parents=[_common()], help="a team's playoff odds if it wins or loses games"
     )
