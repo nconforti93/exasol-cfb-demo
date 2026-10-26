@@ -16,7 +16,7 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 - [x] 9.6 Real-data snapshot: `scripts/app_fixtures.py` + `make app-fixtures` + `make app-preview REAL=1` (owner, stored tables only, 0 CFBD calls, output `~/.cfb-demo/fixtures/`); run once on AWS after the backfill + Phase 3 views + `make logos` Run 2026-10-23 on AWS (Exasol 2026.1.1), season 2026 after week 7: 138 FBS teams, 138 on the map, 138 with logos, 138 team pages, 49 games this week, 10 statements, 0 CFBD calls, ~35 s.
 
 ## Group UI-R (gate: 2.2, Phase 2 merged, Phase 5 thin views P6-UI-b/c/d deployed)
-- [ ] 9.7 Routes `teams/map`, `team/{id}`, `league/week`, `league/stats` over `CFB_API`; `tests/it/test_app_team_it.py`
+- [x] 9.7 Routes `points`, `teams`, `teams/map`, `team/{id}`, `league/week`, `league/stats` over `CFB_API`; focused route tests and AWS live-data smoke (138 map teams, 56 week games, all routes HTTP 200). The stored-query inspector GET and zero-call plan support the page SQL buttons; full inspector/console task 4.3 remains open.
 
 ## Group UI-O (gate: Phases 4–5 merged, 3.1)
 - [ ] 9.8 Route `team/{id}/outlook` + run-dependent parts of `league/week` (our pick, stakes)
