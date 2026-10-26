@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-23 by Codex at the user-requested shutdown pause
+Last updated: 2026-10-26 by Codex after local restart
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Paused at Nico's request before shutdown.** No agent or database statement is running. Phase 4 task 1.4 is committed as `3fa2fbc`; task 1.5 verification and decision are committed as `61708de`. Local 10k simulation passed. AWS 100k run 1 finished in 14.496 s; AWS 1M run 2 finished in 32.672 s. From the 1M run, Auburn P(CFP) is 4.94% now, 11.20% if it beats LSU, and 1.31% if it loses. One-team what-if p95 was 0.163 s at k=1 and 0.148 s at k=3; layout A stays. AWS quota was unchanged at 241/400: zero CFBD calls. Phase 4 task 2.1 has uncommitted code in p4 and staged copies in `/tmp/p4pred/`; SQL/Lua still need DB verification. Phase 5 task 1.1 has one new test in p5 and staged, unapplied implementation in `/tmp/p5-stage/`. `/tmp` staging may not survive the shutdown; the p4 worktree code does. The first action on resume is the focused p4 unit test, followed by local `make sim` and `make predict` under the shared IT lock. Complete the p5 first serving slice after that. If `CFB_META.LOAD_RUN` shows an old `RUNNING` row, the run lock treats it as stale.
+**Resumed 2026-10-26.** Local Exasol was stopped after shutdown and was restarted with `exasol start -d local` under the shared IT lock; it is ready at 127.0.0.1:8563. The AWS deployment reports another `start` operation in progress, and its database port is unreachable; do not touch its lifecycle. Retry quota only after that operation completes. Phase 4 task 2.1 prediction work has resumed from uncommitted p4 code; focused tests and local SQL/Lua verification are next. Phase 5 task 1.1 is being reconstructed because `/tmp/p5-stage/` was wiped; p5 retains its new test and generalized deployer WIP. Week-8 AWS refresh and week-9 prediction freeze must complete before 2026-10-27 23:00 UTC. The 2026-10-23 AWS 1M result remains: Auburn P(CFP) 4.94% now, 11.20% after a win over LSU, 1.31% after a loss; quota unchanged at 241/400 then.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -132,6 +132,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Resumed after shutdown.** Local deployment restarted under the shared IT lock and is ready. AWS is unreachable while the launcher reports a separate `start` operation in progress; no AWS lifecycle action taken. Phase 4 2.1 focused checks and Phase 5 1.1 reconstruction resumed.
 
 - 2026-10-23: **Paused at Nico's shutdown request.** No agent or DB statement running. Phase 4 2.1 has uncommitted p4 code; focused tests and local DB verification next. Phase 5 1.1 has one new test in p5 and unapplied draft files in `/tmp/p5-stage/`.
 
