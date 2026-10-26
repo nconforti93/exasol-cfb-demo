@@ -63,7 +63,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 Phase 6 task 2.2 backend shell (`606b295`) and task 9.7 live routes (`ee1eba3`) are committed. The app at `http://127.0.0.1:8000/` serves real AWS data: 138 map teams, team pages, 56 games at the current model point, league stats, and per-browser SQL inspection. AWS normal startup privilege check passed; the browser homepage and map SQL button were HTTP-smoked. The separate preview at port 5173 still serves the Oct 23 snapshot. Normal **local** app startup is blocked by inherited `PUBLIC` SELECT/EXECUTE on unrelated `PREPROC_RT`; no object outside the project was touched. The local DB was started and left running. Phase 6 9.8 needs Phase 4/5 serving slice B.
 
-Phase 4 task 3.3 is committed as `000e3c3`: the official CFP bracket and selection protocol confirm the 2026 seed's G6 **team** bid, Notre Dame top-12 guarantee and December 6 selection day. `SELECTION_AT` at 12:00 UTC is documented as a conservative model cutoff, not an official CFP deadline. No CFBD calls or AWS changes.
+Phase 4 task 3.3 is committed as `000e3c3`: the official CFP bracket and selection protocol confirm the 2026 seed's G6 **team** bid, Notre Dame top-12 guarantee and December 6 selection day. `SELECTION_AT` at 12:00 UTC is documented as a conservative model cutoff, not an official CFP deadline. `make sim TARGET=aws` deployed the updated seed as DEPLOY run 14 with zero CFBD calls; existing run tables were kept.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -136,6 +136,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** only a local-app privilege decision, if local serving is required: inherited `PUBLIC` SELECT and EXECUTE on unrelated `PREPROC_RT` cause the app's strict startup check to refuse `CFB_APP_WEB`. The AWS live app passes. Do not alter that schema or weaken the check without Nico's direction.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Verified CFP source note deployed on AWS** as SIM DEPLOY run 14. Lint of 29 SQL files, 15 view compiles and all 463 comment checks passed; eleven run data tables were kept. Zero CFBD calls; no AWS lifecycle action.
 
 - 2026-10-26: **Phase 4 official CFP rules check committed** (`000e3c3`). CFP's 2026-27 bracket confirms the G6 automatic bid is for the highest-ranked team, Notre Dame gets a bid in the final top 12, and Selection Day is December 6. The seed values stand; `RULE_NOTE` cites the official pages and labels the 12:00 UTC cutoff as a model boundary. No CFBD calls or AWS changes.
 
