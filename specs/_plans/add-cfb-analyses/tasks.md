@@ -12,7 +12,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [41]). Details, files, test
 ### Group A-2
 - [x] 1.2 `TEAM_TRAVEL`, `WEEK_GAMES` and the stats views `ROAD_WARRIORS`, `SP_MOVERS`, `CONFERENCE_STRENGTH`, `WIN_STREAKS` (P6-UI-c)
 - [x] 1.3 Head-to-head (`MATCHUP_SERIES`, `MATCHUP_GAMES`, `MATCHUP_NEXT` from the schedule) and `UPSETS` from stored lines
-- [ ] 1.4 `CFB_API_LIVE` (`GAME_PREVIEW`, `QUOTA`), `REFRESH_TIMELINE`, `FETCHES`; the chat role refused on the live schema
+- [x] 1.4 `CFB_API_LIVE.QUOTA`, `REFRESH_TIMELINE`, `FETCHES`; chat refused on the live schema. `GAME_PREVIEW` view blocked by N1 and transferred to Phase 6's operator path (see decision log).
 
 ### Group A-3
 - [ ] 1.5 Slice A on AWS and local (0 calls), timings, `make api-docs`, user guide and `CLAUDE.md` bullets → Phase 6's 9.7 gate
