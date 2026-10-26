@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex after Phase 6 backend shell commit
+Last updated: 2026-10-26 by Codex after the Phase 6 live app slice
 
 ---
 
@@ -61,7 +61,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 **Resumed 2026-10-26.** The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 rows, no orphan slices). Nico recreated `CFBD_API`; **week-8 refresh run 5 is DONE** with four CFBD calls and model step 100 done. Phase 4 2.1 is committed as `e3a401e`; AWS `make predict SEASON=2026 WEEK=8` froze 622 rows, including all **56 week-9 FBS games** `IN_ADVANCE` on Oct 26 09:32 UTC before Oct 27 23:00 UTC kickoff. A new week-8 AWS 1M simulation is `DONE` as SIM_RUN 1 in 31.63 s; Auburn P(CFP) is 1.17% now and 5.81% if it beats Ole Miss in week 9. Quota remains 245/400, 75 ledger calls left. `CURRENT_AS_OF` still shows week 7 because 17 incomplete week-8 games are all non-FBS; a fresh games fetch after 2026-10-27 06:59 UTC can advance it. Phase 5 14 map/team/week/stats views are on AWS as DEPLOY run 9; APP/MCP grants verified, 138 FBS teams. Phase 5 1.3 head-to-head/upsets was committed as `5834c4b` after local IT/lint and real-data checks; all 18 API views deployed on AWS as DEPLOY run 12 with zero CFBD calls. Phase 5 1.4 is paused with uncommitted draft files after Python startup stalled; lint passed but focused IT did not complete. Phase 4 2.2 was committed as `ba97006`; the new views deployed on AWS as DEPLOY run 10. Week-7 and week-6 1M simulation runs 2 and 3 are DONE, so odds movement and the rooting guide answer. Task 2.3 verification evidence was committed as `f9060df`; task 3.1 refresh integration is paused with drafts in `/tmp/p4-31/`, only its task marker changed in p4. Phase 6 merged recorded Phases 2–3 as `a2cc67f`; its backend agent resumed task 2.2. The web app still serves snapshot preview until its live routes are wired.
 
-Phase 6 task 2.2 backend shell and CLI is committed as `606b295` after 8 focused tests, Ruff and strict mypy. Task 9.7 live read routes are in progress; the browser still shows the snapshot preview.
+Phase 6 task 2.2 backend shell (`606b295`) and task 9.7 live routes (`ee1eba3`) are committed. The app at `http://127.0.0.1:8000/` serves real AWS data: 138 map teams, team pages, 56 games at the current model point, league stats, and per-browser SQL inspection. AWS normal startup privilege check passed; the browser homepage and map SQL button were HTTP-smoked. The separate preview at port 5173 still serves the Oct 23 snapshot. Normal **local** app startup is blocked by inherited `PUBLIC` SELECT/EXECUTE on unrelated `PREPROC_RT`; no object outside the project was touched. The local DB was started and left running. Phase 6 9.8 needs Phase 4/5 serving slice B.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -70,7 +70,7 @@ Phase 6 task 2.2 backend shell and CLI is committed as `606b295` after 8 focused
 | 3 Analytical model | add-cfb-analytical-model | recorded, **`main` = 2a26584** | **Done.** `CFB_MODEL` is live on AWS and local. 8 derived tables are rebuilt by refresh step 100 `CFB_INFRA.REFRESH_MODEL`, registered on both targets. Also as-of views and `MODEL_CHECKS`. ADR-031..046. Page queries run in 0.07–0.8 s on AWS. **Rule:** filter as-of views with literal `AS_OF_SEASON`/`AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF` |
 | 4 Score engine | add-cfb-score-engine | **p4** (HEAD e3a401e) | Tasks 1.1–2.1 done. Prediction freeze/grade code passed focused tests and AWS deployment. Week-9 picks for 56 FBS-involving games are frozen in advance from week 8, before the Oct 27 cutoff. **Next:** 2.2 movement + rooting guide, 2.3 AWS slice. AWS SIM odds runs were lost in reset; run a new week-8 simulation when needed. Then slice 3 |
 | 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 6674dd5) | Tasks 1.1–1.2 committed. Target-selection fix committed; 14 views deployed on AWS and local. APP/MCP AWS grants verified by catalog query; zero CFBD calls. 1.3 head-to-head/upsets and 1.4 live view/timeline in progress, then 1.5 docs/dictionary; slice B after Phase 4 2.2 |
-| 6 Web app | add-cfb-app | **p6** (HEAD 606b295) | UI revision 9.0–9.6 and backend shell 2.2 done. Snapshot preview at http://127.0.0.1:5173/ still serves JSON from `~/.cfb-demo/fixtures/latest` (2026-10-23, not live DB). Real snapshot: map/team/week/stats/search; sample: odds/predictions/upsets/H2H/outlooks. Task 9.7 live routes are in progress over the deployed CFB_API views; 9.8 waits for Phase 4/5 slice B. The logo router is mounted by 2.2. |
+| 6 Web app | add-cfb-app | **p6** (HEAD ee1eba3) | UI revision 9.0–9.6, backend shell 2.2 and live routes 9.7 done. `http://127.0.0.1:8000/` uses AWS CFB_API with the normal privilege check and serves map/team/week/stats/search; browser SQL buttons open the stored-query inspector. The separate port 5173 preview still uses the Oct 23 snapshot. Outlook/odds/predictions/upsets/H2H remain fixture-only until Phase 4/5 slice B and task 9.8/Group C. Local app startup hits unrelated `PREPROC_RT` PUBLIC grants; AWS works. |
 | 7 Chat | add-cfb-chat | p7 (HEAD 89f21ae) | Groups A–B done. Group C+ is blocked until Phases 5 and 6 merge (gate 3.0). Hand-off `P7-secrets`: adopt `vs/host/appenv.py`. There is no Anthropic key, so build and test only |
 | 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed under the heavy process; do a light replan first. Due: the freeze rule and CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
 
@@ -131,9 +131,11 @@ Phase 6 task 2.2 backend shell and CLI is committed as `606b295` after 8 focused
 
 Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relevant: U3 `ANTHROPIC_API_KEY` in `.env` when he has it; U4 Claude Desktop MCP entry by Nov 13; U6 confirm demo date and venue network; U8 license/CFBD terms/team marks.
 
-**Blocked on Nico:** none.
+**Blocked on Nico:** only a local-app privilege decision, if local serving is required: inherited `PUBLIC` SELECT and EXECUTE on unrelated `PREPROC_RT` cause the app's strict startup check to refuse `CFB_APP_WEB`. The AWS live app passes. Do not alter that schema or weaken the check without Nico's direction.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Phase 6 task 9.7 committed and live on AWS** (`ee1eba3`). Map, team, points/search, week and stats read `CFB_API` only; 138 FBS teams, 56 games at the current point, all AWS routes HTTP 200. The normal AWS privilege check passed; `make app-user TARGET=aws` provisioned app/console users without exposing passwords. The loopback server at port 8000 serves the built SPA and a per-browser stored-query inspector; real HTTP smoke confirmed the map SQL button and zero-call plan. Focused route/inspector tests, Ruff and strict mypy passed. No CFBD calls. Local DB was started and local users provisioned, but normal local app startup refuses inherited `PUBLIC` grants on unrelated `PREPROC_RT`; no outside schema changed.
 
 - 2026-10-26: **Phase 6 task 2.2 committed** (`606b295`). FastAPI shell, one-worker serve/dev CLI, user provisioning, security middleware and cached logo route are in place. Eight focused CLI/shell tests passed; Ruff and strict mypy clean. Corrected dev child-process monitoring, validated static-directory serving, and the user lookup's bound literal. No DB or CFBD call. App still shows the snapshot; 9.7 live read routes in progress.
 
