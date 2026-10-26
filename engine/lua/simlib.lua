@@ -228,6 +228,37 @@ function sim_point(args)
   return point
 end
 
+function require_refresh_run(run_id)
+  local rows = run_sql('SELECT COUNT(*) AS "N" FROM ' .. sim_name("META_SCHEMA", "LOAD_RUN")
+    .. [[ WHERE "RUN_ID" = :run AND "RUN_STATUS" = 'RUNNING'
+      AND "RUN_KIND" = 'REFRESH_WEEK' AND "SESSION_ID" = CURRENT_SESSION]], {run = run_id})
+  if whole_number(rows[1].N, "refresh run count") ~= 1 then
+    error(string.format("run_id %d is not a running REFRESH_WEEK run of this session", run_id), 0)
+  end
+end
+
+-- Only a holder of the shared run lock calls this. No simulation can still be writing its
+-- outputs; a killed script cannot mark its own row. Input snapshots remain for diagnosis.
+function cleanup_abandoned_runs()
+  local rows = run_sql('SELECT COUNT(*) AS "N" FROM ' .. sim_table("SIM_RUN")
+    .. [[ WHERE "RUN_STATUS" = 'RUNNING']])
+  local count = whole_number(rows[1].N, "abandoned simulation count")
+  if count > 0 then
+    local old_runs = '(SELECT "RUN_ID" FROM ' .. sim_table("SIM_RUN")
+      .. [[ WHERE "RUN_STATUS" = 'RUNNING')]]
+    for _, name in ipairs(SIM_OUTPUT_TABLES) do
+      run_sql('DELETE FROM ' .. sim_table(name) .. ' WHERE "RUN_ID" IN ' .. old_runs)
+    end
+    run_sql('UPDATE ' .. sim_table("SIM_RUN") .. [[ SET "RUN_STATUS" = 'ABANDONED',
+      "ENDED_AT" = ]] .. SIM_UTC_NOW .. [[,
+      "DETAIL" = 'abandoned: the previous simulation ended without closing its run'
+      WHERE "RUN_STATUS" = 'RUNNING']])
+  end
+  run_sql('TRUNCATE TABLE ' .. sim_table("SIM_STAGE"))
+  commit()
+  return count
+end
+
 -- Clock -------------------------------------------------------------------------------------------
 
 local function utc_now()

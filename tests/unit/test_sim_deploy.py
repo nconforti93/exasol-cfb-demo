@@ -98,7 +98,7 @@ def test_the_engine_script_and_its_comment_run_inside_the_transaction_after_the_
     assert comment == script + 1
     assert '"TEST_CFB_INFRA"."SIM_ENGINE"' in statements[script]
     assert f"ENGINE_VERSION {report.engine_version}" in statements[comment]
-    simulate = next(i for i, s in enumerate(statements) if "CREATE OR REPLACE LUA SCRIPT" in s)
+    simulate = next(i for i, s in enumerate(statements) if "TEST_CFB_INFRA.SIMULATE" in s)
     predict = next(
         i
         for i, s in enumerate(statements)
@@ -106,16 +106,37 @@ def test_the_engine_script_and_its_comment_run_inside_the_transaction_after_the_
     )
     assert "TEST_CFB_INFRA.SIMULATE" in statements[simulate]
     assert "TEST_CFB_INFRA.PREDICT" in statements[predict]
+    refresh_predict = next(
+        i for i, s in enumerate(statements) if "TEST_CFB_INFRA.REFRESH_PREDICT" in s
+    )
+    refresh_simulate = next(
+        i for i, s in enumerate(statements) if "TEST_CFB_INFRA.REFRESH_SIMULATE" in s
+    )
+    assert "TEST_CFB_INFRA.REFRESH_PREDICT" in statements[refresh_predict]
+    assert "TEST_CFB_INFRA.REFRESH_SIMULATE" in statements[refresh_simulate]
     objects = [
         i
         for i, s in enumerate(statements)
         if s.startswith(("CREATE OR REPLACE", "CREATE TABLE"))
-        and i not in (script, simulate, predict)
+        and i not in (script, simulate, predict, refresh_predict, refresh_simulate)
     ]
-    assert max(objects) < script < simulate < predict < statements.index("COMMIT")
+    assert max(objects) < script < simulate < predict < refresh_predict < refresh_simulate
+    assert refresh_simulate < statements.index("COMMIT")
     assert any("script TEST_CFB_INFRA.SIM_ENGINE: replaced" in line for line in report.lines)
     assert any("script TEST_CFB_INFRA.SIMULATE: replaced" in line for line in report.lines)
     assert any("script TEST_CFB_INFRA.PREDICT: replaced" in line for line in report.lines)
+    assert any("script TEST_CFB_INFRA.REFRESH_SIMULATE: replaced" in line for line in report.lines)
+
+
+def test_target_refresh_defaults_are_inserted_without_changing_manual_defaults(
+    options: SimOptions,
+) -> None:
+    connection = connection_for()
+    report = deploy_sim(connection, NAMESPACE, options, target_name="aws")
+    seed = next(s for s in connection.statements if "'REFRESH_N_SIMS'" in s)
+    assert "'REFRESH_N_SIMS', 1000000" in seed
+    assert "'REFRESH_SIMS_PER_BATCH', 10000" in seed
+    assert "aws 1,000,000 seasons in batches of 10,000" in "\n".join(report.lines)
 
 
 def test_nothing_is_dropped_or_emptied_and_the_data_tables_are_created_if_missing(
@@ -172,7 +193,7 @@ def test_a_refused_lock_changes_nothing(options: SimOptions) -> None:
 def test_a_database_error_rolls_back_and_names_the_statement(options: SimOptions) -> None:
     connection = connection_for()
     connection.fail["CREATE OR REPLACE PYTHON3"] = "syntax error"
-    with pytest.raises(DeployError, match="extra statement 1: syntax error"):
+    with pytest.raises(DeployError, match="extra statement 2: syntax error"):
         deploy_sim(connection, NAMESPACE, options)
     assert "COMMIT" not in connection.statements
     assert "ROLLBACK" in connection.statements

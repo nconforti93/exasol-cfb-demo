@@ -24,6 +24,10 @@ local given = {season = nz(season), week = nz(week), season_type = nz(season_typ
 local args = sim_arguments(given)
 local point = sim_point(args)
 local job = new_job(LOCK_KIND, sim_arguments_text(args))
+local cleaned, cleanup_result = pcall(cleanup_abandoned_runs)
+if not cleaned then
+  fail(job, cleanup_result)
+end
 local ok, result = pcall(simulate_run, args, point, ORIGIN, nil)
 if not ok then
   fail(job, result)

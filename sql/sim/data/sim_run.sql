@@ -1,5 +1,6 @@
 -- Data table: created when missing, never replaced or dropped (sim-engine/deploy). A run is registered
--- as RUNNING, filled, and ends DONE or FAILED; readers see DONE runs only.
+-- as RUNNING and filled, then ends DONE or FAILED; readers see DONE runs only. A killed RUNNING
+-- run is later marked ABANDONED by the next lock holder; its input snapshot stays.
 CREATE TABLE IF NOT EXISTS {SIM_SCHEMA}.SIM_RUN (
   RUN_ID           DECIMAL(18,0) IDENTITY NOT NULL COMMENT IS 'Run number, assigned on registration',
   RUN_STATUS       VARCHAR(10) UTF8 NOT NULL COMMENT IS 'RUNNING while the script works, DONE when every output is stored, FAILED after an error',

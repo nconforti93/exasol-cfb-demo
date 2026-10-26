@@ -12,9 +12,8 @@
    A caller that already holds a `DEPLOY` lock passes it instead (slice 3's `make deploy`).
 4. `sqlobjects.deploy`: one transaction, `CREATE SCHEMA IF NOT EXISTS`, orphans dropped, the data
    tables created when missing, the reference tables, functions and views in file order, then
-   `CFB_INFRA.SIM_ENGINE` and its comment and the Lua run script `CFB_INFRA.SIMULATE`, a compile
-   pass over every view, comment read-back, `COMMIT`; any failure rolls everything back, so the
-   previous schema and scripts stay.
+   target refresh defaults and the engine/manual/refresh scripts, a compile pass over every view,
+   comment read-back, `COMMIT`; any failure rolls everything back, so the previous schema stays.
 
 `SIMULATE` is bundled like the loader's scripts (`loader.bundle.build_entry_script`): the namespace
 constants plus `SIM_SCHEMA` and `MODEL_SCHEMA`, a prelude generated from `engine/core.py` (the
@@ -33,6 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from engine import bundle, core
 from loader import bundle as lua_bundle
 from loader.runlock import HeldLock, run_lock
@@ -46,8 +47,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SIM_DIR = ROOT / "sql" / "sim"
 DATA_DIR = SIM_DIR / "data"
 LUA_DIR = ROOT / "engine" / "lua"
+CONFIG_PATH = ROOT / "engine" / "sim-config.yaml"
 SIMULATE_NAME = "SIMULATE"
 PREDICT_NAME = "PREDICT"
+REFRESH_PREDICT_NAME = "REFRESH_PREDICT"
+REFRESH_SIMULATE_NAME = "REFRESH_SIMULATE"
 SIMULATE_PARAMETERS = (
     "season",
     "week",
@@ -59,6 +63,8 @@ SIMULATE_PARAMETERS = (
 )
 SIMULATE_ENTRY = "simulate.lua"
 PREDICT_ENTRY = "predict.lua"
+REFRESH_PREDICT_ENTRY = "refresh_predict.lua"
+REFRESH_SIMULATE_ENTRY = "refresh_simulate.lua"
 SIM_LIBRARY = "simlib.lua"
 AUTO_BID_CODES = {
     "TOP_CHAMPIONS": core.AUTO_BID_TOP_CHAMPIONS,
@@ -103,6 +109,7 @@ class SimOptions:
     data_directory: Path = DATA_DIR
     engine_directory: Path = bundle.ENGINE_DIR
     lua_directory: Path = LUA_DIR
+    config_path: Path = CONFIG_PATH
     lock_args: str = LOCK_ARGS
 
 
@@ -189,12 +196,75 @@ def predict_script(namespace: Namespace, lua_directory: Path = LUA_DIR) -> str:
         raise DeployError(f"{PREDICT_NAME}: {error}") from None
 
 
+def refresh_script(name: str, entry: str, namespace: Namespace, lua_directory: Path) -> str:
+    """Build one registered refresh step, which takes the refresh's run id and no lock."""
+    try:
+        return lua_bundle.build_entry_script(
+            name,
+            ("run_id", "season", "week", "season_type"),
+            lua_directory / entry,
+            namespace,
+            extra_names={
+                "SIM_SCHEMA": namespace.sim_schema,
+                "MODEL_SCHEMA": namespace.model_schema,
+            },
+            prelude=render_prelude(),
+            libraries=(lua_directory / SIM_LIBRARY,),
+        )
+    except BundleError as error:
+        raise DeployError(f"{name}: {error}") from None
+
+
+def refresh_settings(path: Path = CONFIG_PATH) -> dict[str, tuple[int, int]]:
+    """Validate both target defaults before a deploy opens a connection."""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise DeployError(f"sim config {path}: {error}") from None
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"targets"}
+        or not isinstance(data["targets"], dict)
+    ):
+        raise DeployError(f"sim config {path}: expected targets.local and targets.aws")
+    targets = data["targets"]
+    if set(targets) != {"local", "aws"}:
+        raise DeployError(f"sim config {path}: expected only local and aws")
+    settings: dict[str, tuple[int, int]] = {}
+    for name, value in targets.items():
+        if not isinstance(value, dict) or set(value) != {"n_sims", "sims_per_batch"}:
+            raise DeployError(f"sim config {path}: {name} needs n_sims and sims_per_batch")
+        n_sims, batch = value["n_sims"], value["sims_per_batch"]
+        if (
+            type(n_sims) is not int
+            or type(batch) is not int
+            or not 100 <= batch <= 20000
+            or n_sims < batch
+            or n_sims % batch != 0
+            or n_sims // batch > 10000
+        ):
+            raise DeployError(f"sim config {path}: invalid sizes for {name}")
+        settings[name] = n_sims, batch
+    return settings
+
+
+def refresh_seed(namespace: Namespace, n_sims: int, batch: int) -> str:
+    """Add the selected target's defaults to the reference SIM_PARAMS table."""
+    return (
+        f'INSERT INTO "{namespace.sim_schema}"."SIM_PARAMS" VALUES '
+        f"('REFRESH_N_SIMS', {n_sims}, 'ASSUMED', 'Seasons per weekly refresh simulation'), "
+        f"('REFRESH_SIMS_PER_BATCH', {batch}, 'ASSUMED', "
+        "'Seasons per engine batch in a weekly refresh')"
+    )
+
+
 def deploy_sim(
     connection: Any,
     namespace: Namespace,
     options: SimOptions | None = None,
     *,
     lock: HeldLock | None = None,
+    target_name: str = "local",
 ) -> SimReport:
     """Lint, render and deploy `CFB_SIM` and `SIM_ENGINE` under the DEPLOY run lock.
 
@@ -202,6 +272,10 @@ def deploy_sim(
     takes the lock itself, as `options.lock_args`.
     """
     options = options or SimOptions()
+    settings = refresh_settings(options.config_path)
+    if target_name not in settings:
+        raise DeployError(f"sim config has no target {target_name!r}")
+    n_sims, batch = settings[target_name]
     objects = prepare(namespace, options.directory, options.data_directory)
     try:
         script = bundle.build(namespace, options.engine_directory)
@@ -209,12 +283,20 @@ def deploy_sim(
         raise DeployError(str(error)) from None
     simulate = simulate_script(namespace, options.lua_directory)
     predict = predict_script(namespace, options.lua_directory)
+    refresh_predict = refresh_script(
+        REFRESH_PREDICT_NAME, REFRESH_PREDICT_ENTRY, namespace, options.lua_directory
+    )
+    refresh_simulate = refresh_script(
+        REFRESH_SIMULATE_NAME, REFRESH_SIMULATE_ENTRY, namespace, options.lua_directory
+    )
+    scripts = (script, simulate, predict, refresh_predict, refresh_simulate)
+    seed = refresh_seed(namespace, n_sims, batch)
     if lock is not None:
-        report = _install(connection, namespace, objects, (script, simulate, predict), lock)
+        report = _install(connection, namespace, objects, scripts, seed, lock)
         run_id = lock.run_id
     else:
         with run_lock(connection, namespace, LOCK_KIND, options.lock_args) as held:
-            report = _install(connection, namespace, objects, (script, simulate, predict), held)
+            report = _install(connection, namespace, objects, scripts, seed, held)
             run_id = held.run_id
     lines = (
         f"lint: {len(objects)} files clean",
@@ -223,6 +305,11 @@ def deploy_sim(
         f"ENGINE_VERSION {script.version}, {len(script.create):,} characters",
         f"script {namespace.infra_schema}.{SIMULATE_NAME}: replaced, {len(simulate):,} characters",
         f"script {namespace.infra_schema}.{PREDICT_NAME}: replaced, {len(predict):,} characters",
+        f"script {namespace.infra_schema}.{REFRESH_PREDICT_NAME}: replaced, "
+        f"{len(refresh_predict):,} characters",
+        f"script {namespace.infra_schema}.{REFRESH_SIMULATE_NAME}: replaced, "
+        f"{len(refresh_simulate):,} characters",
+        f"refresh simulation defaults: {target_name} {n_sims:,} seasons in batches of {batch:,}",
         f"simulation schema deployed as DEPLOY run {run_id}; 0 CFBD calls",
     )
     return SimReport(report, script.version, run_id, lines)
@@ -232,15 +319,23 @@ def _install(
     connection: Any,
     namespace: Namespace,
     objects: list[SqlObject],
-    scripts: tuple[bundle.EngineScript, str, str],
+    scripts: tuple[bundle.EngineScript, str, str, str, str],
+    seed: str,
     lock: HeldLock,
 ) -> DeployReport:
-    script, simulate, predict = scripts
+    script, simulate, predict, refresh_predict, refresh_simulate = scripts
     report = sqlobjects.deploy(
         connection,
         namespace.sim_schema,
         objects,
-        extra_statements=(*script.statements, simulate, predict),
+        extra_statements=(
+            seed,
+            *script.statements,
+            simulate,
+            predict,
+            refresh_predict,
+            refresh_simulate,
+        ),
         keep=KEPT_TABLES,
         lock=lock,
     )

@@ -184,6 +184,7 @@ class _Command:
 
     def deploy(self) -> int:
         namespace = Namespace(self._args.prefix)
+        sim_deploy.refresh_settings(self._options.config_path)
         objects = sim_deploy.prepare(
             namespace, self._options.directory, self._options.data_directory
         )
@@ -194,9 +195,12 @@ class _Command:
                 f"characters, ENGINE_VERSION {script.version}; nothing sent, 0 CFBD calls"
             )
             return EXIT_OK
-        connection = self._connector(self._resolve(self._args.target, dsn=self._args.dsn))
+        deployment = self._resolve(self._args.target, dsn=self._args.dsn)
+        connection = self._connector(deployment)
         try:
-            report = sim_deploy.deploy_sim(connection, namespace, self._options)
+            report = sim_deploy.deploy_sim(
+                connection, namespace, self._options, target_name=deployment.name
+            )
         finally:
             connection.close()
         for line in report.lines:
