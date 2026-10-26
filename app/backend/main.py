@@ -20,6 +20,7 @@ from app.backend.operator import OperatorPath
 from app.backend.routes.inspector import make_router as inspector_router
 from app.backend.routes.logos import make_router as logo_router
 from app.backend.routes.read import make_router as read_router
+from app.backend.routes.timeline import make_router as timeline_router
 from app.backend.sessions import SessionStore
 from app.backend.settings import Settings
 from vs.host import ledger as ledger_module
@@ -123,6 +124,7 @@ def create_app(
     app.state.sessions = sessions
     app.include_router(logo_router(settings.logo_dir, enabled=settings.logos_enabled))
     app.include_router(read_router(settings, sessions))
+    app.include_router(timeline_router(settings, sessions))
     app.include_router(inspector_router(sessions))
 
     @app.get("/api/health")
