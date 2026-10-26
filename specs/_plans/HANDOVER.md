@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex after AWS snapshot restore
+Last updated: 2026-10-26 by Codex after week-8 refresh
 
 ---
 
@@ -59,14 +59,14 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Resumed 2026-10-26.** Local Exasol was restarted under the shared IT lock. Its CFB schemas survived, and Phase 4 prediction code deployed locally (`DEPLOY` run 20); `make predict SEASON=2026 WEEK=7` froze 566 rows at zero CFBD calls. A test-clock seam fix is pending focused IT. The reset AWS database is recovered through the stored-data stage: `make deploy TARGET=aws` recreated CFB/CFBD schemas, then `make restore NAME=aws-demo-2026-10-23 TARGET=aws CONFIRM=yes` restored 155,521 rows as RESTORE run 2 and rebuilt 8 model tables, all at zero CFBD calls. `LOAD_ORPHANS` has 0 rows and `CFB_CORE.GAMES` has 112,674. The reset removed `CFBD_API`; Nico is recreating it through plain SQL. Do not run the week-8 refresh until connection existence, `/info` quota and ledger room are checked. The week-9 freeze deadline is 2026-10-27 23:00 UTC. Phase 5 1.1 code is applied in p5 but has not reached DB verification. The old AWS SIM objects and runs were lost in the reset; deploy the verified p4 sim code after local IT. The 2026-10-23 AWS 1M odds remain historical evidence, not a current stored run.
+**Resumed 2026-10-26.** Local Exasol was restarted under the shared IT lock; its CFB schemas survived. Phase 4 prediction code deployed locally and `make predict SEASON=2026 WEEK=7` froze 566 rows at zero CFBD calls. Focused TEST_ IT then passed 2 tests in 59.25 s with the NOW_UTC test-clock fix. An independent review found a kickoff-time race: `freeze_predictions` reads NOW_UTC once before iterating historical points; task 2.1 is back in progress for a fresh-clock-per-insert fix and retest. The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 stored rows, 8 model tables rebuilt, zero orphan slices). Nico recreated `CFBD_API`; the second deploy synced API_FEATURES and grants. **Week-8 AWS refresh run 5 is DONE:** four CFBD calls, all four fetch steps and model step 100 DONE. Post-run `/info` and ledger agree at 245/400 October calls, 75 ledger calls left. Next: fix/retest prediction clock, deploy sim on AWS and run `make predict TARGET=aws SEASON=2026 WEEK=8` before 2026-10-27 23:00 UTC. Phase 5 slice A is in local verification. The old AWS SIM objects and runs were lost in the reset; the 2026-10-23 1M odds are historical evidence, not a current stored run.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
 | 1 VS foundation | add-cfbd-vs-foundation | recorded | **Done.** Live on AWS |
 | 2 Persistence & refresh | add-cfb-persistence-refresh | recorded | **Done.** 221 live calls. AWS `CFB_CORE`: 155k rows (GAMES 1869–2026, SP+/WP 2013–2026, polls 2014–2026, TEAMS 1933, VENUES 852). 2026 is refreshed through regular week 7. The local DB has an identical copy (snapshot restore; Oct 31 restore gate **passed**) |
 | 3 Analytical model | add-cfb-analytical-model | recorded, **`main` = 2a26584** | **Done.** `CFB_MODEL` is live on AWS and local. 8 derived tables are rebuilt by refresh step 100 `CFB_INFRA.REFRESH_MODEL`, registered on both targets. Also as-of views and `MODEL_CHECKS`. ADR-031..046. Page queries run in 0.07–0.8 s on AWS. **Rule:** filter as-of views with literal `AS_OF_SEASON`/`AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF` |
-| 4 Score engine | add-cfb-score-engine | **p4** (HEAD 61708de) | Tasks 1.1–1.5 done. AWS 1M run and Auburn what-if verified; `docs/engine-verification.md` committed. **2.1 in progress, uncommitted:** prediction table, four views, Lua freeze and `PREDICT` entry, deploy/CLI wiring and focused tests. Need focused tests, local deploy/predict under lock, then AWS before the Oct 27 cutoff. Then 2.2 movement + guide, 2.3 live, slice 3 |
+| 4 Score engine | add-cfb-score-engine | **p4** (HEAD 61708de) | Tasks 1.1–1.5 done. **2.1 in progress, uncommitted:** prediction objects deployed locally; 29 focused unit tests and 2 TEST_ IT passed. Risk review found a kickoff-time freeze-clock race, being fixed before AWS. The AWS SIM objects/runs were lost in the reset and need redeploy; run `make predict` at week 8 before Oct 27 cutoff. Then 2.2 movement + guide, 2.3 live, slice 3 |
 | 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 1af6214) | Slice A 1.1→1.5 is 20 engine-free `CFB_API` views, roles and `make api`. **1.1 staged, not applied:** existing seven generalized deployer WIP files in p5, one new `tests/unit/test_api_sql.py`; remaining draft implementation in `/tmp/p5-stage/` (may not survive shutdown). No DB or CFBD calls. Slice B waits on Phase 4 2.1/2.2 |
 | 6 Web app | add-cfb-app | **p6** (HEAD b900208) | UI revision done:<br>• 9.0 foundation 3342b9c<br>• 9.1 shell + 9.2 US map 3545207<br>• 9.3 team page + 9.4 league week/stats 7003bcb<br>• 9.5 logos 15779cc (138 FBS logos in `~/.cfb-demo/logos`, from cdn.collegefootballdata.com, [43])<br>• 9.6 real-data snapshot preview a307279<br>• secrets loader bc401d0 ([44])<br>**The preview runs at http://127.0.0.1:5173/** (`make app-preview REAL=1` with `CHOKIDAR_USEPOLLING=1`; it serves JSON from `~/.cfb-demo/fixtures/latest`, a snapshot taken 2026-10-23 08:01 UTC, **not live DB**). Real: map, team pages, this week, stats, search. Sample: odds, predictions, upsets, H2H, outlooks. **Next:** 2.2 `app/backend/main.py` + `scripts/app.py` (serve/user; users `CFB_APP_WEB`/`CFB_CONSOLE_WEB`, passwords from `~/.cfb-demo/app.env`), 9.7 live routes over `CFB_API` (needs Phase 5 slice A), 9.8 outlook (needs Phase 4 slice 1–2 + Phase 5 slice B). The logo route `make_router` is not mounted yet |
 | 7 Chat | add-cfb-chat | p7 (HEAD 89f21ae) | Groups A–B done. Group C+ is blocked until Phases 5 and 6 merge (gate 3.0). Hand-off `P7-secrets`: adopt `vs/host/appenv.py`. There is no Anthropic key, so build and test only |
@@ -132,6 +132,10 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Week-8 AWS refresh completed.** `REFRESH_WEEK` run 5 fetched GAMES, WP pregame, SP ratings and polls; step 100 rebuilt the model. Four calls recorded; `/info` and ledger now 245/400, 75 ledger calls left. Prediction freeze waits for the reviewed clock-race fix and retest.
+
+- 2026-10-26: **Phase 4 prediction TEST_ integration passed.** Two tests in 59.25 s after local redeploy; independent review then found a fresh-clock-per-insert race to fix before AWS.
 
 - 2026-10-26: **AWS stored data restored.** `make deploy TARGET=aws` recreated the project schemas and loader/model; private snapshot `aws-demo-2026-10-23` restored 155,521 rows as RESTORE run 2 and rebuilt 8 model tables. Orphans 0, core games 112,674, zero CFBD calls. `CFBD_API` is absent after reset; Nico is recreating it.
 
