@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex after AWS reset discovery
+Last updated: 2026-10-26 by Codex after AWS snapshot restore
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Resumed 2026-10-26.** Local Exasol was restarted under the shared IT lock. Its CFB schemas survived, and Phase 4 prediction code deployed locally (`DEPLOY` run 20); `make predict SEASON=2026 WEEK=7` froze 566 rows at zero CFBD calls. A test-clock seam fix is pending before focused IT. AWS is now reachable and `database_ready`, but the connected three-node database has **no CFB schemas and no `CFBD_API` connection**. `make quota TARGET=aws` therefore fails with missing `CFB_META.QUOTA`. Do not run refresh on it yet. The private snapshot `aws-demo-2026-10-23` exists (11 tables, 155,521 rows, 6.5 MB); the documented `make restore` path can recover stored data after the schema deploy. Nico must recreate the CFBD key connection himself through plain SQL before a live week-8 refresh. The week-9 freeze deadline is 2026-10-27 23:00 UTC. Phase 5 1.1 code is now applied in p5 but has not reached DB verification. The 2026-10-23 AWS 1M result remains: Auburn P(CFP) 4.94% now, 11.20% after a win over LSU, 1.31% after a loss; quota was 241/400 then.
+**Resumed 2026-10-26.** Local Exasol was restarted under the shared IT lock. Its CFB schemas survived, and Phase 4 prediction code deployed locally (`DEPLOY` run 20); `make predict SEASON=2026 WEEK=7` froze 566 rows at zero CFBD calls. A test-clock seam fix is pending focused IT. The reset AWS database is recovered through the stored-data stage: `make deploy TARGET=aws` recreated CFB/CFBD schemas, then `make restore NAME=aws-demo-2026-10-23 TARGET=aws CONFIRM=yes` restored 155,521 rows as RESTORE run 2 and rebuilt 8 model tables, all at zero CFBD calls. `LOAD_ORPHANS` has 0 rows and `CFB_CORE.GAMES` has 112,674. The reset removed `CFBD_API`; Nico is recreating it through plain SQL. Do not run the week-8 refresh until connection existence, `/info` quota and ledger room are checked. The week-9 freeze deadline is 2026-10-27 23:00 UTC. Phase 5 1.1 code is applied in p5 but has not reached DB verification. The old AWS SIM objects and runs were lost in the reset; deploy the verified p4 sim code after local IT. The 2026-10-23 AWS 1M odds remain historical evidence, not a current stored run.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -132,6 +132,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **AWS stored data restored.** `make deploy TARGET=aws` recreated the project schemas and loader/model; private snapshot `aws-demo-2026-10-23` restored 155,521 rows as RESTORE run 2 and rebuilt 8 model tables. Orphans 0, core games 112,674, zero CFBD calls. `CFBD_API` is absent after reset; Nico is recreating it.
 
 - 2026-10-26: **AWS reset discovered.** AWS is `database_ready` but has no CFB schemas or `CFBD_API` connection. The 2026-10-23 private snapshot is intact (155,521 rows); prepare schema deploy and documented restore, then Nico must recreate the key connection before week-8 refresh. No live call or AWS lifecycle action taken.
 
