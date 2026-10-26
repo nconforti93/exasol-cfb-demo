@@ -50,7 +50,7 @@ Worktree: ../exasol-cfb-demo-p6 (branch add-cfb-app, from the foundation)
 
 ## Group B (gate: Phases 2–5 merged; **2.2 only:** Phase 2 merged + P6-UI-b/c/d deployed, for slice S2)
 - [ ] 1.10 Probe, late part
-- [ ] 2.2 `app/backend/main.py`, `scripts/app.py` (`serve`, `dev`, `user`) and the Makefile targets:
+- [x] 2.2 `app/backend/main.py`, `scripts/app.py` (`serve`, `dev`, `user`) and the Makefile targets:
   - `scripts/app.py user` reads `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` through `vs/host/appenv.py` (environment, then `~/.cfb-demo/app.env`; never the repo `.env`, [44]); it creates no secrets file (`make app-env` does) and never prints a password.
 - [ ] 2.3 `tests/it/app_stack.py` and `tests/it/fixtures/load-plan.app.yaml`, per Key Interfaces
 
