@@ -10,7 +10,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [41]). Details, files, test
 - [x] 1.1 Serving deploy (`make api`), roles `CFB_APP`/`CFB_MCP`, harness users, and the thin slice: `CURRENT_POINT`, `AS_OF_POINTS`, `TEAMS`, `GAMES`, `TEAM_GAMES`, `TEAM_SEASONS`, `RANKINGS`, `SP_RATINGS` (P6-UI-b, P6-UI-d)
 
 ### Group A-2
-- [ ] 1.2 `TEAM_TRAVEL`, `WEEK_GAMES` and the stats views `ROAD_WARRIORS`, `SP_MOVERS`, `CONFERENCE_STRENGTH`, `WIN_STREAKS` (P6-UI-c)
+- [x] 1.2 `TEAM_TRAVEL`, `WEEK_GAMES` and the stats views `ROAD_WARRIORS`, `SP_MOVERS`, `CONFERENCE_STRENGTH`, `WIN_STREAKS` (P6-UI-c)
 - [ ] 1.3 Head-to-head (`MATCHUP_SERIES`, `MATCHUP_GAMES`, `MATCHUP_NEXT` from the schedule) and `UPSETS` from stored lines
 - [ ] 1.4 `CFB_API_LIVE` (`GAME_PREVIEW`, `QUOTA`), `REFRESH_TIMELINE`, `FETCHES`; the chat role refused on the live schema
 
