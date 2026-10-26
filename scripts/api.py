@@ -22,7 +22,7 @@ def main(
 ) -> int:
     """Lint the serving files, then deploy them to the selected Exasol target."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=("local", "aws"), default="local")
+    parser.add_argument("--target", choices=("local", "aws"))
     parser.add_argument("--dsn")
     parser.add_argument("--prefix", default="")
     parser.add_argument("--lint-only", action="store_true")
