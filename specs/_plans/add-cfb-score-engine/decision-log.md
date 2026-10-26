@@ -746,6 +746,12 @@ The owner changed the process; the orchestrator relayed the brief and the planne
 - **Rationale:** the old seed covered the two-member gap in 2024–2025 but excluded the current season. The interval keeps that gap and restores the current format; it affects conference-title odds and the resume path.
 - **Promotes to ADR:** yes
 
+### [59] Official CFP check confirms the 2026 selection seed
+
+- **Decision:** keep `POWER_CHAMPIONS_PLUS_G6`, `G6_BID` `TEAM`, Notre Dame's top-12 guarantee, and Selection Day on 2026-12-06. The 12:00 UTC `SELECTION_AT` is a conservative model cutoff before the announcement, not an official CFP deadline.
+- **Evidence:** checked on 2026-10-26 against the [2026-27 CFP bracket](https://collegefootballplayoff.com/sports/2026/8/9/bracket-place-holder) and [selection protocol](https://collegefootballplayoff.com/sports/2016/10/24/selection-committee-protocol). The bracket explicitly awards the fifth automatic bid to the highest-ranked **team** from the American, Conference USA, MAC, Mountain West, Pac-12 or Sun Belt, and a bid to Notre Dame when it is in the final top 12. It lists Selection Day as December 6, noon–3 p.m. ET.
+- **Promotes to ADR:** no; this verifies [9] and [50] without changing their design.
+
 ### Status of [1]–[43] under the light plan
 
 | Status | Decisions |
@@ -758,8 +764,8 @@ The owner changed the process; the orchestrator relayed the brief and the planne
 
 | # | Assumption | Verify step | If wrong |
 |---|---|---|---|
-| Q1 | The 2026 G6 automatic bid goes to the best-ranked G6 team, champion or not (confirmed by the review's sources) | Task 1.11: check the official CFP format/selection protocol on cfp.org before the first 2026 committee ranking (about 2026-11-03); record the source in `SELECTION_RULES.SOURCE_NOTE` | Set `G6_BID` to `CHAMPION` in `011_selection_rules.sql` (one value) and redeploy; no engine change |
-| Q2 | The Notre Dame guarantee means "selected if ranked 12 or better in the final ranking", counted as an automatic bid (confirmed by the review's sources) | Same source as Q1 (task 1.11) | Adjust the guarantee semantics in `engine/core.py` (new engine version) and the selection-rules scenario |
+| Q1 | Resolved 2026-10-26: the official bracket says the highest-ranked G6 **team** | Task 3.3 and [59] | No seed change |
+| Q2 | Resolved 2026-10-26: Notre Dame receives an automatic bid when ranked in the final top 12 | Task 3.3 and [59] | No engine change |
 | Q3 | CFBD carries pregame Elo for FCS teams in their games against FBS teams, so most non-FBS opponents are rated by Elo | `SELECT CLASSIFICATION, COUNT(*), COUNT(ELO_AS_OF) FROM CFB_MODEL.TEAM_SEASON_AS_OF WHERE AS_OF_SEASON = 2024 AND AS_OF_WEEK_SEQ = 9 GROUP BY 1` on AWS (6.2) | `CLASS_DEFAULT` covers them; record the shares and check the `NON_FBS_RATING` fit size |
 | Q4 | The 2026 Pac-12 holds a championship game, which the Phase 3 seed `CONFERENCE_CHAMPIONSHIP` (Pac-12 2011–2023) does not list. Under 2026 rules it affects only `P_CONF_CHAMPION`, not selection | Look for a week-15 Pac-12 conference game in the stored 2026 schedule after the regular season, or the conference's announcement | Add a Pac-12 row from 2026 to Phase 3's seed (owned by `model/games`); no change here |
 | Q5 | Deriving layout C at 400 games takes ≤ 5 s at 100k locally and ≤ 10 s at 1M on AWS | Probe 1.1c, both targets, group A ([34]) | Store layout A on both targets per D20's fallback ([16]) |
@@ -792,7 +798,7 @@ The owner changed the process; the orchestrator relayed the brief and the planne
 | Q15 | Fixed by Phase 3 (`CONFERENCE_CHAMPIONSHIP_GAME.POWER_CHAMPIONSHIP_WEEK` limits the detection) |
 | Q17 | Replaced by the cleanup test of task 3.1 (a `RUNNING` row of a gone session) |
 | Q18 (new) | Resolved by task 1.5: the AWS 1M one-team p95 is 0.163 s at k = 1 and 0.148 s at k = 3; layout A stays ([47]) |
-| Q19 (new) | Selection day 2026-12-06: task 3.3 |
+| Q19 (new) | Resolved 2026-10-26: Selection Day is 2026-12-06; 12:00 UTC remains a conservative model cutoff ([59]) |
 
 ## Review Findings
 

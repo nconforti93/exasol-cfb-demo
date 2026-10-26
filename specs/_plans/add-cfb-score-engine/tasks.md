@@ -31,9 +31,9 @@ Light, demo-first replan of 2026-10-23 (decision-log [44]). Details, files, test
 ## Slice 3: hardening, only as far as the demo needs
 
 ### Group S3-A
-- [ ] 3.1 Refresh steps 200 `PREDICT` and 300 `SIMULATE`, per-target defaults, killed-run cleanup, `make deploy` includes the sim
+- [~] 3.1 Refresh steps 200 `PREDICT` and 300 `SIMULATE`, per-target defaults, killed-run cleanup, `make deploy` includes the sim
 - [ ] 3.2 Calibration report (`make sim-fit ARGS=--report`), reported, never gated
-- [ ] 3.3 CFP rules check on cfp.org before about 2026-11-03 (one seed value if the reading differs)
+- [x] 3.3 CFP rules check on cfp.org before about 2026-11-03 (official sources confirm the seed values; source and cutoff caveat recorded)
 - [ ] 3.5 (optional) BucketFS parameter file as a showcase beat; never a dependency
 - [ ] 3.6 (only if triggered by 1.5 or 2.3) What-if storage fallback: `PARTITION BY RUN_ID`, or layout C
 
