@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex at the runtime slowdown checkpoint
+Last updated: 2026-10-26 by Codex after Phase 6 backend shell commit
 
 ---
 
@@ -61,6 +61,8 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 **Resumed 2026-10-26.** The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 rows, no orphan slices). Nico recreated `CFBD_API`; **week-8 refresh run 5 is DONE** with four CFBD calls and model step 100 done. Phase 4 2.1 is committed as `e3a401e`; AWS `make predict SEASON=2026 WEEK=8` froze 622 rows, including all **56 week-9 FBS games** `IN_ADVANCE` on Oct 26 09:32 UTC before Oct 27 23:00 UTC kickoff. A new week-8 AWS 1M simulation is `DONE` as SIM_RUN 1 in 31.63 s; Auburn P(CFP) is 1.17% now and 5.81% if it beats Ole Miss in week 9. Quota remains 245/400, 75 ledger calls left. `CURRENT_AS_OF` still shows week 7 because 17 incomplete week-8 games are all non-FBS; a fresh games fetch after 2026-10-27 06:59 UTC can advance it. Phase 5 14 map/team/week/stats views are on AWS as DEPLOY run 9; APP/MCP grants verified, 138 FBS teams. Phase 5 1.3 head-to-head/upsets was committed as `5834c4b` after local IT/lint and real-data checks; all 18 API views deployed on AWS as DEPLOY run 12 with zero CFBD calls. Phase 5 1.4 is paused with uncommitted draft files after Python startup stalled; lint passed but focused IT did not complete. Phase 4 2.2 was committed as `ba97006`; the new views deployed on AWS as DEPLOY run 10. Week-7 and week-6 1M simulation runs 2 and 3 are DONE, so odds movement and the rooting guide answer. Task 2.3 verification evidence was committed as `f9060df`; task 3.1 refresh integration is paused with drafts in `/tmp/p4-31/`, only its task marker changed in p4. Phase 6 merged recorded Phases 2–3 as `a2cc67f`; its backend agent resumed task 2.2. The web app still serves snapshot preview until its live routes are wired.
 
+Phase 6 task 2.2 backend shell and CLI is committed as `606b295` after 8 focused tests, Ruff and strict mypy. Task 9.7 live read routes are in progress; the browser still shows the snapshot preview.
+
 | Phase | Plan | Where | State |
 |---|---|---|---|
 | 1 VS foundation | add-cfbd-vs-foundation | recorded | **Done.** Live on AWS |
@@ -68,7 +70,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 | 3 Analytical model | add-cfb-analytical-model | recorded, **`main` = 2a26584** | **Done.** `CFB_MODEL` is live on AWS and local. 8 derived tables are rebuilt by refresh step 100 `CFB_INFRA.REFRESH_MODEL`, registered on both targets. Also as-of views and `MODEL_CHECKS`. ADR-031..046. Page queries run in 0.07–0.8 s on AWS. **Rule:** filter as-of views with literal `AS_OF_SEASON`/`AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF` |
 | 4 Score engine | add-cfb-score-engine | **p4** (HEAD e3a401e) | Tasks 1.1–2.1 done. Prediction freeze/grade code passed focused tests and AWS deployment. Week-9 picks for 56 FBS-involving games are frozen in advance from week 8, before the Oct 27 cutoff. **Next:** 2.2 movement + rooting guide, 2.3 AWS slice. AWS SIM odds runs were lost in reset; run a new week-8 simulation when needed. Then slice 3 |
 | 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 6674dd5) | Tasks 1.1–1.2 committed. Target-selection fix committed; 14 views deployed on AWS and local. APP/MCP AWS grants verified by catalog query; zero CFBD calls. 1.3 head-to-head/upsets and 1.4 live view/timeline in progress, then 1.5 docs/dictionary; slice B after Phase 4 2.2 |
-| 6 Web app | add-cfb-app | **p6** (HEAD b900208) | UI revision 9.0–9.6 done; snapshot preview at http://127.0.0.1:5173/ serves JSON from `~/.cfb-demo/fixtures/latest` (2026-10-23, not live DB). Real snapshot: map/team/week/stats/search; sample: odds/predictions/upsets/H2H/outlooks. **2.2 backend main, scripts/app.py serve/user has started** now that the 14 CFB_API map/team/week/stats views are deployed on both targets with APP role grants. Then 9.7 live routes; 9.8 waits for Phase 4/5 slice B. The logo router is not mounted until 2.2 |
+| 6 Web app | add-cfb-app | **p6** (HEAD 606b295) | UI revision 9.0–9.6 and backend shell 2.2 done. Snapshot preview at http://127.0.0.1:5173/ still serves JSON from `~/.cfb-demo/fixtures/latest` (2026-10-23, not live DB). Real snapshot: map/team/week/stats/search; sample: odds/predictions/upsets/H2H/outlooks. Task 9.7 live routes are in progress over the deployed CFB_API views; 9.8 waits for Phase 4/5 slice B. The logo router is mounted by 2.2. |
 | 7 Chat | add-cfb-chat | p7 (HEAD 89f21ae) | Groups A–B done. Group C+ is blocked until Phases 5 and 6 merge (gate 3.0). Hand-off `P7-secrets`: adopt `vs/host/appenv.py`. There is no Anthropic key, so build and test only |
 | 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed under the heavy process; do a light replan first. Due: the freeze rule and CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
 
@@ -132,6 +134,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Phase 6 task 2.2 committed** (`606b295`). FastAPI shell, one-worker serve/dev CLI, user provisioning, security middleware and cached logo route are in place. Eight focused CLI/shell tests passed; Ruff and strict mypy clean. Corrected dev child-process monitoring, validated static-directory serving, and the user lookup's bound literal. No DB or CFBD call. App still shows the snapshot; 9.7 live read routes in progress.
 
 - 2026-10-26: **Runtime slowdown checkpoint.** Simple commands, Python startup, P5 focused IT, and p6 frontend build stalled on the OneDrive worktrees despite free memory; interrupted checks have no pass result. P5 task 1.4 is uncommitted/paused (20 stored and 2 live views statically linted; unit generator 2/2; IT pending). P4 task 3.1 is paused with only a task marker changed and drafts in `/tmp/p4-31/`. Local IT lock is free. Phase 6 backend/live map routes have priority while the other agents pause worktree activity.
 
