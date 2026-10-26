@@ -6,6 +6,7 @@ from typing import Any, Never
 
 import pytest
 
+from analyses import deploy as api_deploy
 from loader import target_config
 from loader.runlock import HeldLock, RunLockRefused
 from model import deploy as model_deploy
@@ -111,6 +112,16 @@ def model_calls(monkeypatch: pytest.MonkeyPatch) -> ModelCalls:
     return calls
 
 
+@pytest.fixture(autouse=True)
+def stub_api_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
+    def install(
+        connection: Any, namespace: Namespace, *, lock: HeldLock | None = None
+    ) -> api_deploy.ApiReport:
+        return api_deploy.ApiReport(None, None, 42, ("api line",))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(api_deploy, "deploy_api", install)
+
+
 def test_property_arguments_are_split_and_upper_cased() -> None:
     assert deploy_cli.parse_property_arguments(["max_calls_per_query=5", "DOH_URL=off"]) == {
         "MAX_CALLS_PER_QUERY": "5",
@@ -182,6 +193,23 @@ def test_the_model_is_deployed_last_on_the_same_connection(
         out.index("load plan in PROBE_CFB_META") < out.index("model line") < out.index(MODEL_LINE)
     )
     assert db.closed
+
+
+def test_serving_views_are_deployed_after_the_model_on_the_same_connection(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[tuple[object, str]] = []
+
+    def install(connection: Any, namespace: Namespace, *, lock: HeldLock | None = None) -> Any:
+        calls.append((connection, namespace.api_schema))
+        return api_deploy.ApiReport(None, None, 42, ("api line",))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(api_deploy, "deploy_api", install)
+    db = ClosableDatabase()
+    assert deploy_main(db) == deploy_cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert calls == [(db, "PROBE_CFB_API")]
+    assert out.index(MODEL_LINE) < out.index("api line")
 
 
 def test_a_refused_model_deploy_is_an_error_after_the_earlier_steps_printed(

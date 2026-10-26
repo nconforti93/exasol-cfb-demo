@@ -63,6 +63,29 @@ class Namespace:
         return f"{self.prefix}CFB_MODEL"
 
     @property
+    def sim_schema(self) -> str:
+        """The simulation schema: score model views, run tables and prediction tables."""
+        return f"{self.prefix}CFB_SIM"
+
+    @property
+    def api_schema(self) -> str:
+        """The read-only serving schema."""
+        return f"{self.prefix}CFB_API"
+
+    @property
+    def api_live_schema(self) -> str:
+        """The serving schema whose views may reach a virtual table."""
+        return f"{self.prefix}CFB_API_LIVE"
+
+    @property
+    def app_role(self) -> str:
+        return f"{self.prefix}CFB_APP"
+
+    @property
+    def mcp_role(self) -> str:
+        return f"{self.prefix}CFB_MCP"
+
+    @property
     def vs_name(self) -> str:
         return f"{self.prefix}CFBD_VS"
 

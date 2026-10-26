@@ -33,6 +33,12 @@ def test_test_namespace_prefixes_schemas_and_users() -> None:
     assert ns.fetch_script == "TEST_CFB_INFRA.CFBD_FETCH"
 
 
+def test_the_simulation_schema_follows_the_prefix() -> None:
+    assert Namespace("").sim_schema == "CFB_SIM"
+    assert Namespace("TEST_").sim_schema == "TEST_CFB_SIM"
+    assert Namespace("PERF_").sim_schema == "PERF_CFB_SIM"
+
+
 @pytest.mark.parametrize("prefix", ["test_", "TEST", "TEST-", "_", "1_", "A B_", "T;_"])
 def test_invalid_prefixes_are_rejected(prefix: str) -> None:
     with pytest.raises(NamespaceError, match="prefix"):

@@ -60,6 +60,16 @@ def test_dropping_the_namespace_also_drops_stale_test_connections() -> None:
     assert not any("OTHER" in statement for statement in dropped)
 
 
+def test_dropping_namespace_removes_serving_schemas_and_roles() -> None:
+    connection = FakeConnection()
+    assert harness.drop_namespace(connection, TEST) == []
+    statements = connection.statements
+    assert "DROP SCHEMA IF EXISTS TEST_CFB_API CASCADE" in statements
+    assert "DROP SCHEMA IF EXISTS TEST_CFB_API_LIVE CASCADE" in statements
+    assert "DROP ROLE IF EXISTS TEST_CFB_APP CASCADE" in statements
+    assert "DROP ROLE IF EXISTS TEST_CFB_MCP CASCADE" in statements
+
+
 def test_no_drop_statement_ever_names_the_real_connection() -> None:
     connection = FakeConnection({"EXA_DBA_CONNECTIONS": [(REAL_CONNECTION,), (MOCK_CONNECTION,)]})
     harness.drop_namespace(connection, TEST)
@@ -84,6 +94,11 @@ def test_leftovers_report_a_stale_test_connection() -> None:
 
 def test_leftovers_are_empty_when_everything_is_gone() -> None:
     assert harness.leftovers(FakeConnection(), TEST) == []
+
+
+def test_leftovers_reports_serving_role() -> None:
+    connection = FakeConnection({"EXA_DBA_ROLES": [("TEST_CFB_APP",)]})
+    assert harness.leftovers(connection, TEST) == ["role TEST_CFB_APP"]
 
 
 def test_the_session_check_flags_a_test_schema_without_any_property_row() -> None:

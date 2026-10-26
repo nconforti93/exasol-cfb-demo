@@ -35,6 +35,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from analyses import deploy as api_deploy
 from loader import deploy as loader_deploy
 from loader import target_config
 from loader.runlock import HeldLock, RunLockError, RunLockRefused, lock_installed, run_lock
@@ -61,6 +62,14 @@ class ModelDeployer(Protocol):
     def __call__(
         self, connection: Any, namespace: Namespace, *, lock: HeldLock | None = None
     ) -> model_deploy.ModelReport: ...
+
+
+class ApiDeployer(Protocol):
+    """`analyses.deploy.deploy_api` under the caller's held lock when available."""
+
+    def __call__(
+        self, connection: Any, namespace: Namespace, *, lock: HeldLock | None = None
+    ) -> api_deploy.ApiReport: ...
 
 
 def utc_now() -> datetime:
@@ -101,6 +110,7 @@ def main(
     month_caps: MonthCaps = ledger_month_caps,
     target_settings: TargetConfig | None = None,
     deploy_model: ModelDeployer | None = None,
+    deploy_api: ApiDeployer | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -126,13 +136,14 @@ def main(
         loader_options = loader_deploy.LoaderOptions(config_overrides=overrides.values)
         loader_deploy.validate(namespace, loader_options)
         model_deploy.prepare(namespace)
+        api_deploy.prepare(namespace)
         sizes = write_bundle()
         print(
             f"bundle: adapter {sizes.adapter_chars:,} and fetch UDF {sizes.fetch_chars:,} "
             f"characters, written to {bundle.DEFAULT_OUT_DIR}"
         )
         next_steps = deploy_namespace(
-            connector(deployment), namespace, options, loader_options, deploy_model
+            connector(deployment), namespace, options, loader_options, deploy_model, deploy_api
         )
     except (
         deploy.DeployError,
@@ -156,13 +167,15 @@ def deploy_namespace(
     options: deploy.DeployOptions,
     loader_options: loader_deploy.LoaderOptions,
     deploy_model: ModelDeployer | None = None,
+    deploy_api: ApiDeployer | None = None,
 ) -> tuple[str, ...]:
-    """Deploy the virtual schema, the loader, then the model, under one run lock once installed.
+    """Deploy the virtual schema, loader, model and API under one run lock once installed.
 
     The model deploys under the held lock (one `DEPLOY` run); on the first deploy, which installs
     the lock, the model step takes it itself. A refusal of that step names what was deployed.
     """
     install_model = deploy_model or model_deploy.deploy_model
+    install_api = deploy_api or api_deploy.deploy_api
     try:
         with _deploy_lock(connection, namespace) as lock:
             report = deploy.deploy(connection, namespace, options)
@@ -171,6 +184,8 @@ def deploy_namespace(
             print("\n".join(loader.lines))
             model = _deploy_model(install_model, connection, namespace, lock)
             print("\n".join(model.lines))
+            api = install_api(connection, namespace, lock=lock)
+            print("\n".join(api.lines))
             if lock is not None:
                 plan = f"deployed plan {loader.plan_hash[:12]}"
                 lock.detail = f"{plan}; {lock.detail}" if lock.detail else plan
