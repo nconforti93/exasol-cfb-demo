@@ -26,7 +26,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [44]). Details, files, test
 - [x] 2.2 `POINT_RUN`, `CURRENT_RUN`, `ODDS_MOVEMENT`, `ROOTING_GUIDE`
 
 ### Group S2-B
-- [ ] 2.3 Live slice 2 on AWS (reconstructed weeks 1–8, the week-6 run for movement) and the hand-off column check
+- [x] 2.3 Live slice 2 on AWS (reconstructed weeks 1–8, the week-6 run for movement) and the hand-off column check
 
 ## Slice 3: hardening, only as far as the demo needs
 
