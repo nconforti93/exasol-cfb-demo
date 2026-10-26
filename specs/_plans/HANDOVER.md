@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex after corrected AWS API deployment
+Last updated: 2026-10-26 by Codex during the Phase 6 main merge
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Resumed 2026-10-26.** The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 rows, no orphan slices). Nico recreated `CFBD_API`; **week-8 refresh run 5 is DONE** with four CFBD calls and model step 100 done. Phase 4 2.1 is committed as `e3a401e` after a reviewed clock-race fix, cutoff test, 30 unit tests and 3 TEST_ IT tests. AWS prediction deploy run 6 and `make predict SEASON=2026 WEEK=8` froze 622 rows. All **56 week-9 FBS games** are `IN_ADVANCE`, frozen Oct 26 09:32 UTC before the Oct 27 23:00 UTC kickoff. A new week-8 AWS 1M simulation is `DONE` as SIM_RUN 1 in 31.63 s (143 teams, 321 games); Auburn P(CFP) is 1.17% now and 5.81% if it beats Ole Miss in week 9. Post-run quota remains 245/400, 75 ledger calls left. `CURRENT_AS_OF` still shows week 7 because 17 incomplete week-8 games are all non-FBS; a fresh games fetch after 2026-10-27 06:59 UTC can advance it. Phase 5 tasks 1.1–1.2 are committed and deployed locally. The API target bug was fixed in `6674dd5`; corrected `make api TARGET=aws` deployed 14 views as AWS DEPLOY run 9. `make grants TARGET=aws` gave APP and MCP SELECT on CFB_API and APP SELECT on CFB_API_LIVE, verified in EXA_DBA_OBJ_PRIVS. AWS CFB_API returns 138 FBS teams and current point after week 7. Phase 6 backend 2.2 has started; the web app still serves snapshot preview until its live routes are wired. Phase 4 2.2 and Phase 5 1.3–1.4 are in progress.
+**Resumed 2026-10-26.** The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 rows, no orphan slices). Nico recreated `CFBD_API`; **week-8 refresh run 5 is DONE** with four CFBD calls and model step 100 done. Phase 4 2.1 is committed as `e3a401e`; AWS `make predict SEASON=2026 WEEK=8` froze 622 rows, including all **56 week-9 FBS games** `IN_ADVANCE` on Oct 26 09:32 UTC before Oct 27 23:00 UTC kickoff. A new week-8 AWS 1M simulation is `DONE` as SIM_RUN 1 in 31.63 s; Auburn P(CFP) is 1.17% now and 5.81% if it beats Ole Miss in week 9. Quota remains 245/400, 75 ledger calls left. `CURRENT_AS_OF` still shows week 7 because 17 incomplete week-8 games are all non-FBS; a fresh games fetch after 2026-10-27 06:59 UTC can advance it. Phase 5 14 map/team/week/stats views are on AWS as DEPLOY run 9; APP/MCP grants verified, 138 FBS teams. Phase 5 1.3–1.4 are being built; Phase 4 2.2 local IT is nearly done. Phase 6 backend 2.2 is paused while `main` (recorded Phases 2–3) merges into p6: conflicts in Makefile, pyproject.toml and uv.lock are being resolved by its agent. The web app still serves snapshot preview until its live routes are wired.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -132,6 +132,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Phase 6 main merge started.** p6 lacked recorded Phase 2–3 dependencies for backend 2.2; `git merge main --no-edit` stopped at Makefile, pyproject.toml and uv.lock conflicts. P6 agent is resolving them before backend coding resumes. No DB or CFBD calls.
 
 - 2026-10-26: **Corrected AWS API deployment verified.** Target fix committed in p5 (6674dd5); 14 map/team/week/stats views deployed as AWS DEPLOY run 9. APP/MCP CFB_API SELECT and APP CFB_API_LIVE SELECT verified in AWS catalog. CFB_API returns 138 FBS teams. Phase 6 backend 2.2 started; app remains snapshot preview until routes are live.
 
