@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex after advance week-9 prediction freeze
+Last updated: 2026-10-26 by Codex after refreshed week-8 odds
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Resumed 2026-10-26.** The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 stored rows, 8 model tables rebuilt, zero orphan slices). Nico recreated `CFBD_API`; deploy synced API_FEATURES and grants. **Week-8 AWS refresh run 5 is DONE:** four CFBD calls, all fetch steps and model step 100 DONE; quota 245/400, 75 ledger calls left. Phase 4 task 2.1 is committed as `e3a401e` after a fresh-clock-per-insert fix, cutoff boundary test, 30 focused unit tests and 3 focused TEST_ IT tests. AWS `make sim` deployed the prediction schema as DEPLOY run 6. `make predict TARGET=aws SEASON=2026 WEEK=8` froze 622 rows, including **56 week-9 FBS-involving games** from week-8 point: all `IN_ADVANCE`, `FROZEN_BEFORE_KICKOFF=TRUE`, frozen at 2026-10-26 09:32:38 UTC before first kickoff 2026-10-27 23:00 UTC. Post-predict quota remains 245/400: zero calls. `CURRENT_AS_OF` still shows week 7 because 17 incomplete week-8 games are all non-FBS; the season-week completion fallback requires a fresh games fetch after 2026-10-27 06:59 UTC. Next: Phase 5 slice A week/stats views and the live app. The old AWS SIM odds runs were lost in the reset; the 2026-10-23 1M odds are historical evidence, not a current stored run.
+**Resumed 2026-10-26.** The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 rows, no orphan slices). Nico recreated `CFBD_API`; **week-8 refresh run 5 is DONE** with four CFBD calls and model step 100 done. Phase 4 2.1 is committed as `e3a401e` after a reviewed clock-race fix, cutoff test, 30 unit tests and 3 TEST_ IT tests. AWS prediction deploy run 6 and `make predict SEASON=2026 WEEK=8` froze 622 rows. All **56 week-9 FBS games** are `IN_ADVANCE` and were frozen on Oct 26 09:32 UTC before the Oct 27 23:00 UTC first kickoff. A new week-8 AWS 1M simulation is `DONE` as SIM_RUN 1 in 31.63 s (143 teams, 321 games); Auburn P(CFP) is 1.17% now and 5.81% if it beats Ole Miss in week 9. Post-run quota remains 245/400, 75 ledger calls left. `CURRENT_AS_OF` still shows week 7 because 17 incomplete week-8 games are all non-FBS; the completion fallback needs a fresh games fetch after 2026-10-27 06:59 UTC. Phase 5 task 1.2 week/stats views are deployed locally and focused IT passed; task commit is pending. The app still serves a snapshot preview; live routes remain next after Phase 5 slice A.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -132,6 +132,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Fresh week-8 AWS odds stored.** 1M-season SIM_RUN 1 `DONE` in 31.63 s; 143 teams, 321 games. Auburn P(CFP) 1.17% now vs 5.81% if it beats Ole Miss (week 9, 0.612 s query). Post-run quota unchanged 245/400: zero CFBD calls. Phase 5 1.2 local deploy and focused IT passed; commit pending.
 
 - 2026-10-26: **Week-9 predictions frozen in advance on AWS.** Phase 4 2.1 committed (e3a401e) after clock-race fix and 3 focused TEST_ IT. AWS sim deploy run 6 and `make predict` froze 622 rows; 56 week-9 FBS games are all `IN_ADVANCE` from week-8 point at 09:32 UTC, before first kickoff Oct 27 23:00 UTC. Quota unchanged 245/400, zero calls.
 
