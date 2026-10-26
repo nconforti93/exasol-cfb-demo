@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex after the Phase 6 main merge
+Last updated: 2026-10-26 by Codex after the Phase 5 matchup deploy
 
 ---
 
@@ -59,7 +59,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 
 ## 4. Current state (update this section after every milestone)
 
-**Resumed 2026-10-26.** The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 rows, no orphan slices). Nico recreated `CFBD_API`; **week-8 refresh run 5 is DONE** with four CFBD calls and model step 100 done. Phase 4 2.1 is committed as `e3a401e`; AWS `make predict SEASON=2026 WEEK=8` froze 622 rows, including all **56 week-9 FBS games** `IN_ADVANCE` on Oct 26 09:32 UTC before Oct 27 23:00 UTC kickoff. A new week-8 AWS 1M simulation is `DONE` as SIM_RUN 1 in 31.63 s; Auburn P(CFP) is 1.17% now and 5.81% if it beats Ole Miss in week 9. Quota remains 245/400, 75 ledger calls left. `CURRENT_AS_OF` still shows week 7 because 17 incomplete week-8 games are all non-FBS; a fresh games fetch after 2026-10-27 06:59 UTC can advance it. Phase 5 14 map/team/week/stats views are on AWS as DEPLOY run 9; APP/MCP grants verified, 138 FBS teams. Phase 5 1.3 head-to-head/upsets compiled locally (18 views total), with real-data checks; its agent is checking series latency before commit. Phase 4 2.2 was committed as `ba97006`, and its AWS deployment/verification is next. Phase 6 merged recorded Phases 2–3 as `a2cc67f`; its backend agent resumed task 2.2. The web app still serves snapshot preview until its live routes are wired.
+**Resumed 2026-10-26.** The reset AWS database was recovered from `aws-demo-2026-10-23` (155,521 rows, no orphan slices). Nico recreated `CFBD_API`; **week-8 refresh run 5 is DONE** with four CFBD calls and model step 100 done. Phase 4 2.1 is committed as `e3a401e`; AWS `make predict SEASON=2026 WEEK=8` froze 622 rows, including all **56 week-9 FBS games** `IN_ADVANCE` on Oct 26 09:32 UTC before Oct 27 23:00 UTC kickoff. A new week-8 AWS 1M simulation is `DONE` as SIM_RUN 1 in 31.63 s; Auburn P(CFP) is 1.17% now and 5.81% if it beats Ole Miss in week 9. Quota remains 245/400, 75 ledger calls left. `CURRENT_AS_OF` still shows week 7 because 17 incomplete week-8 games are all non-FBS; a fresh games fetch after 2026-10-27 06:59 UTC can advance it. Phase 5 14 map/team/week/stats views are on AWS as DEPLOY run 9; APP/MCP grants verified, 138 FBS teams. Phase 5 1.3 head-to-head/upsets was committed as `5834c4b` after local IT/lint and real-data checks; all 18 API views deployed on AWS as DEPLOY run 12 with zero CFBD calls. Phase 5 1.4 is in progress. Phase 4 2.2 was committed as `ba97006`, and its AWS deployment/verification is next. Phase 6 merged recorded Phases 2–3 as `a2cc67f`; its backend agent resumed task 2.2. The web app still serves snapshot preview until its live routes are wired.
 
 | Phase | Plan | Where | State |
 |---|---|---|---|
@@ -132,6 +132,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Phase 5 task 1.3 committed and deployed on AWS** (`5834c4b`, DEPLOY run 12). Head-to-head series/games, next matchup and upsets extend CFB_API to 18 views; 2 focused local IT, lint and real-data checks passed. Michigan–Ohio State has 121 games; initial cold series query 1.077 s, warm median 0.018 s. AWS deployment compiled all 18 views and 419 comments, zero CFBD calls. Task 1.4 started.
 
 - 2026-10-26: **Phase 6 main merge committed** (`a2cc67f`). Makefile, pyproject.toml and uv.lock conflicts resolved; staged diff check, TOML parse, offline uv lock check and Make target parsing passed. Backend 2.2 resumed. No DB or CFBD calls.
 
