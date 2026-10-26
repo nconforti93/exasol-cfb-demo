@@ -4,7 +4,7 @@
 
 **Living document.** Whoever is orchestrating (Claude Code until it runs out, then Codex) updates the **Current state** and **Log** sections after every milestone: a commit, a merge, a live run, a decision, or a new blocker. Bump the "Last updated" line. Commit it on the main tree branch with a message `handover: <what changed>`.
 
-Last updated: 2026-10-26 by Codex after week-8 refresh
+Last updated: 2026-10-26 by Codex after Phase 5 first serving slice
 
 ---
 
@@ -67,7 +67,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 | 2 Persistence & refresh | add-cfb-persistence-refresh | recorded | **Done.** 221 live calls. AWS `CFB_CORE`: 155k rows (GAMES 1869–2026, SP+/WP 2013–2026, polls 2014–2026, TEAMS 1933, VENUES 852). 2026 is refreshed through regular week 7. The local DB has an identical copy (snapshot restore; Oct 31 restore gate **passed**) |
 | 3 Analytical model | add-cfb-analytical-model | recorded, **`main` = 2a26584** | **Done.** `CFB_MODEL` is live on AWS and local. 8 derived tables are rebuilt by refresh step 100 `CFB_INFRA.REFRESH_MODEL`, registered on both targets. Also as-of views and `MODEL_CHECKS`. ADR-031..046. Page queries run in 0.07–0.8 s on AWS. **Rule:** filter as-of views with literal `AS_OF_SEASON`/`AS_OF_WEEK_SEQ`; never join `CURRENT_AS_OF` |
 | 4 Score engine | add-cfb-score-engine | **p4** (HEAD 61708de) | Tasks 1.1–1.5 done. **2.1 in progress, uncommitted:** prediction objects deployed locally; 29 focused unit tests and 2 TEST_ IT passed. Risk review found a kickoff-time freeze-clock race, being fixed before AWS. The AWS SIM objects/runs were lost in the reset and need redeploy; run `make predict` at week 8 before Oct 27 cutoff. Then 2.2 movement + guide, 2.3 live, slice 3 |
-| 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD 1af6214) | Slice A 1.1→1.5 is 20 engine-free `CFB_API` views, roles and `make api`. **1.1 staged, not applied:** existing seven generalized deployer WIP files in p5, one new `tests/unit/test_api_sql.py`; remaining draft implementation in `/tmp/p5-stage/` (may not survive shutdown). No DB or CFBD calls. Slice B waits on Phase 4 2.1/2.2 |
+| 5 Analyses / CFB_API | add-cfb-analyses | **p5** (HEAD e065b98) | Slice A task 1.1 is done: eight `CFB_API` map/team views, `make api`, CFB_APP/CFB_MCP roles. Local deploy/grants and focused TEST_ IT (2/2) passed, `make lint` clean, zero CFBD calls. Task 1.2 week/stats views has started. AWS API deploy and Phase 6 live app gate still pending. Slice B waits on Phase 4 2.1/2.2 |
 | 6 Web app | add-cfb-app | **p6** (HEAD b900208) | UI revision done:<br>• 9.0 foundation 3342b9c<br>• 9.1 shell + 9.2 US map 3545207<br>• 9.3 team page + 9.4 league week/stats 7003bcb<br>• 9.5 logos 15779cc (138 FBS logos in `~/.cfb-demo/logos`, from cdn.collegefootballdata.com, [43])<br>• 9.6 real-data snapshot preview a307279<br>• secrets loader bc401d0 ([44])<br>**The preview runs at http://127.0.0.1:5173/** (`make app-preview REAL=1` with `CHOKIDAR_USEPOLLING=1`; it serves JSON from `~/.cfb-demo/fixtures/latest`, a snapshot taken 2026-10-23 08:01 UTC, **not live DB**). Real: map, team pages, this week, stats, search. Sample: odds, predictions, upsets, H2H, outlooks. **Next:** 2.2 `app/backend/main.py` + `scripts/app.py` (serve/user; users `CFB_APP_WEB`/`CFB_CONSOLE_WEB`, passwords from `~/.cfb-demo/app.env`), 9.7 live routes over `CFB_API` (needs Phase 5 slice A), 9.8 outlook (needs Phase 4 slice 1–2 + Phase 5 slice B). The logo route `make_router` is not mounted yet |
 | 7 Chat | add-cfb-chat | p7 (HEAD 89f21ae) | Groups A–B done. Group C+ is blocked until Phases 5 and 6 merge (gate 3.0). Hand-off `P7-secrets`: adopt `vs/host/appenv.py`. There is no Anthropic key, so build and test only |
 | 8 Demo hardening | add-cfb-demo-hardening | main tree (plan only) | Plan reviewed under the heavy process; do a light replan first. Due: the freeze rule and CLAUDE.md hard rules by **Oct 31**; `make weekly` by **Nov 8** |
@@ -132,6 +132,8 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"). Most relev
 **Blocked on Nico:** none.
 
 ## 7. Log (newest first; one line per milestone)
+
+- 2026-10-26: **Phase 5 task 1.1 committed** (e065b98). Eight CFB_API views for map/team data, `make api`, APP/MCP roles; local real-data deploy/grants, 2 focused TEST_ IT and lint passed, zero CFBD calls. Task 1.2 week/stats views started; app still uses the snapshot preview.
 
 - 2026-10-26: **Week-8 AWS refresh completed.** `REFRESH_WEEK` run 5 fetched GAMES, WP pregame, SP ratings and polls; step 100 rebuilt the model. Four calls recorded; `/info` and ledger now 245/400, 75 ledger calls left. Prediction freeze waits for the reviewed clock-race fix and retest.
 
