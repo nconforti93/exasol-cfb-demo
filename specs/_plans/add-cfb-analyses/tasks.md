@@ -11,7 +11,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [41]). Details, files, test
 
 ### Group A-2
 - [x] 1.2 `TEAM_TRAVEL`, `WEEK_GAMES` and the stats views `ROAD_WARRIORS`, `SP_MOVERS`, `CONFERENCE_STRENGTH`, `WIN_STREAKS` (P6-UI-c)
-- [ ] 1.3 Head-to-head (`MATCHUP_SERIES`, `MATCHUP_GAMES`, `MATCHUP_NEXT` from the schedule) and `UPSETS` from stored lines
+- [x] 1.3 Head-to-head (`MATCHUP_SERIES`, `MATCHUP_GAMES`, `MATCHUP_NEXT` from the schedule) and `UPSETS` from stored lines
 - [ ] 1.4 `CFB_API_LIVE` (`GAME_PREVIEW`, `QUOTA`), `REFRESH_TIMELINE`, `FETCHES`; the chat role refused on the live schema
 
 ### Group A-3
