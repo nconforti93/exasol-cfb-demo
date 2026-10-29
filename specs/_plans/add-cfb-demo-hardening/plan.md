@@ -1,5 +1,23 @@
 # Plan: add-cfb-demo-hardening
 
+## Light replan (2026-10-27): read this first
+
+The owner's light process (2026-10-23: "this is a demo, not a full-blown product offering") applies to this plan. This section and `tasks.md` override the scope and the task list below; the rest of the document stays as background and for the parts that are kept (decision [43]).
+
+- **Kept, in date order:**
+  - the freeze rule and the `CLAUDE.md` hard rules by Sat Oct 31 (L1);
+  - the Sunday captures (L2), started early with a 0-call `aws-2026-w08` snapshot now, so Nov 1's recording already builds a kit (`2026-w08-w09`);
+  - a thin `make weekly` over the existing targets by Nov 8 (L3);
+  - a merged `make rehearse` and `make demo-abort` (L4);
+  - a 0-call checklist preflight and the Nov 9 tier decision (L5);
+  - the demo script, README, LICENSE, and docs (L6);
+  - the rehearsals and the demo (L7).
+- **Cut or deferred:** `CFB_BENCH`, bench sync, the scale card and dial button, the benchmark harness, transcript replay, kit facts/previews tooling, a separate `demo-mode` command, and the release check beyond the freeze (deferred to the Labs publication gate). See `tasks.md` § Cut.
+- **The freeze pins content digests, not commit tree ids** (decision [44]). There are no commits until the owner's final commit, so the rule must see the working tree. The pins are taken on Nov 1 from the integrated tree that AWS runs: `loader/load-plan.yaml` differs between p4/p5 (with Phase 4's refresh steps, deployed on AWS) and p6.
+- **Where the code goes:** the worktree `../exasol-cfb-demo-p8` from `main`; integrated with p4–p6 before Nov 1.
+- **Budget:** unchanged, 70 calls under `add-cfb-demo-hardening`, from November; the ledger already lists the plan.
+- **Risk carried:** the laptop app's strict startup still refuses inherited `PUBLIC` grants on the unrelated `PREPROC_RT` schema (blocked on the owner). The stage app runs on AWS until that is decided; the preflight reports it.
+
 ## Summary
 
 Roadmap Phase 8 ("Demo hardening"): turn the platform of Phases 1–7 into a ~25-minute demo that runs the same way every time, live or offline, in the week of Nov 16–20, 2026, and make the repository ready for an Exasol Labs release. Revised on 2026-10-23 after the independent review; `review.md` § Review resolution maps every finding to its change.

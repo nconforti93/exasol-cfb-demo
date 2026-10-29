@@ -771,3 +771,25 @@ Applied:
 ## Review Findings
 
 <!-- Populated by speq-implement after code review. -->
+
+### [43] Light replan: keep the dated captures and the stage path, cut the measuring machinery (2026-10-27)
+
+- **Decision:** `tasks.md` replaces the task list. Kept: the freeze and the hard rules (Oct 31), the Sunday captures, a thin `make weekly`, a merged `make rehearse` with `make demo-abort`, a checklist preflight, the tier decision, the docs and the rehearsals. Cut or deferred: `CFB_BENCH`, bench sync, the scale card and dial button, the benchmark harness, transcript replay, kit facts/previews tooling, a separate `demo-mode`, and the release check beyond the freeze.
+- **Alternatives:** the reviewed heavy plan (46 tasks); dropping the kits and rehearsing live.
+- **Rationale:** the owner switched to the light process on 2026-10-23 and asked for a usable app on real data first. What cannot be redone later (the Sunday captures, the freeze before the first kit) stays; what only measures or polishes is done by hand or after the demo. The release check guards the Labs publication, an owner decision after the demo.
+- **Promotes to ADR:** no
+
+### [44] The freeze pins content digests of the working tree
+
+- **Decision:** `demo/freeze.yaml` pins, per frozen path, a SHA-256 over the sorted `(path, git blob id)` pairs of the files that git would track there (`git ls-files -co --exclude-standard`), read from the working tree. The rule compares the same digest. The spec's "git tree id" is amended accordingly.
+- **Alternatives:** commit tree ids (`git rev-parse HEAD:<path>`), as the spec said.
+- **Rationale:** the owner asked for no commits until his final one. A commit tree id would not see an uncommitted change to a frozen path, which is exactly what the freeze must catch. Blob ids keep the digest independent of line-ending settings and file modes.
+- **Promotes to ADR:** no
+
+### [45] Snapshot "after week 8" now, so the first recording builds a kit
+
+- **Decision:** take `aws-2026-w08` on 2026-10-27 at 0 calls, while AWS's point is "after week 8" (run 18) and before week 9's refresh. Nov 1's cadence then records the week-9 slices against it, and kit `2026-w08-w09` becomes the first rehearsal kit, a week earlier than planned.
+- **Alternatives:** wait for Nov 1 and record nothing that day (the heavy plan's rule without a w08 base).
+- **Rationale:** the base exists only until the week-9 refresh, and the snapshot costs no call. An earlier kit gives one more week to find rehearsal problems before Nov 9.
+- **Promotes to ADR:** no
+

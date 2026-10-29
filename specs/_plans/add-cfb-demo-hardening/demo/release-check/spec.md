@@ -7,7 +7,7 @@ The repository is meant to go public under exasol-labs. Before anyone decides to
 - **Commands:**
   - `make release-check` (`scripts/release_check.py`, full): tracked files and history, plus the known-secret scan.
   - `make lint` runs `scripts/release_check.py --fast`: tracked files only, the pattern, data, release, hygiene and freeze rules. It reads no deployment file, no home-directory file and no history.
-  - `make demo-freeze FROM=<date> UNTIL=<date>` writes `demo/freeze.yaml`: the dates, and the current git tree id of each frozen path.
+  - `make demo-freeze FROM=<date> UNTIL=<date>` writes `demo/freeze.yaml`: the dates, and the current content digest of each frozen path (a SHA-256 over its files' paths and git blob ids in the working tree, decision [44]).
 - **Findings** are `FAIL` or `WARN`. Each has the rule id, the path, the line (or, in history, the commit and path), and a masked excerpt: a secret is shown as its rule name and length, never as its value or a prefix of it. The exit code is 2 when any `FAIL` was found, else 0. A report is also written to `cache/release-check/<UTC time>.json` with the same masking.
 - **Secret rules** (FAIL):
   - `private-key`: a PEM private-key header;
@@ -40,9 +40,9 @@ The repository is meant to go public under exasol-labs. Before anyone decides to
   - `LICENSE` exists and is the MIT license text;
   - `README.md` contains "Data provided by CollegeFootballData.com" and states that the project is not affiliated with the NCAA or the College Football Playoff;
   - the app's footer source contains the same credit.
-- **Freeze rule** (`freeze`, FAIL in both checks). While `demo/freeze.yaml` exists and today (or `--now`) lies between its `from` and `until` dates, each frozen path must have the git tree id pinned for it.
+- **Freeze rule** (`freeze`, FAIL in both checks). While `demo/freeze.yaml` exists and today (or `--now`) lies between its `from` and `until` dates, each frozen path must have the content digest pinned for it, read from the working tree so an uncommitted change counts.
   - The frozen paths are the definitions that kit snapshots depend on: `vs/catalog/`, `sql/core/`, `sql/meta/load_log.sql`, `sql/meta/fetch_log.sql` and `loader/load-plan.yaml`.
-  - A finding names the path, both tree ids, the kits at risk, and the way out: a migration that also re-fingerprints the existing snapshots, decided by the owner.
+  - A finding names the path, both digests, the kits at risk, and the way out: a migration that also re-fingerprints the existing snapshots, decided by the owner.
   - After `until` the rule passes, with a `WARN` to remove the file.
 - **Hygiene rules** (WARN): absolute home paths (`/home/<user>`, `C:\Users\<user>`), OneDrive folder names, agent scratchpad paths (`/tmp/claude-`), and e-mail addresses in tracked file contents. Commit metadata is not checked.
 - If `gitleaks` is installed, the full check also runs it on the history and lists its findings as `WARN`. Its absence is noted and does not fail the check.
@@ -111,8 +111,8 @@ The repository is meant to go public under exasol-labs. Before anyone decides to
 ### Scenario: A change to a frozen path fails the check during the freeze
 
 * *GIVEN* a temporary repository with `vs/catalog/catalog.json`, `sql/core/x.sql` and `loader/load-plan.yaml`, and `demo/freeze.yaml` written by `make demo-freeze FROM=2026-11-01 UNTIL=2026-11-21`
-* *WHEN* a later commit changes `sql/core/x.sql`, and the check runs with `--fast` and `--now 2026-11-10`, then with `--now 2026-11-25`
-* *THEN* the first run MUST report `FAIL freeze sql/core`, naming both tree ids and the way out, and exit with 2
+* *WHEN* `sql/core/x.sql` is then changed (committed or not), and the check runs with `--fast` and `--now 2026-11-10`, then with `--now 2026-11-25`
+* *THEN* the first run MUST report `FAIL freeze sql/core`, naming both digests and the way out, and exit with 2
 * *AND* the second run MUST pass the rule and report a `WARN` to remove `demo/freeze.yaml`
 * *AND* with the change reverted, the first run MUST pass the rule
 

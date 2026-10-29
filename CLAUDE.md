@@ -33,6 +33,12 @@ A college football analytics platform on Exasol: an OpenAPI-generated Virtual Sc
 - **Shared IT lock:** the `TEST_` namespace and the mock are single-session. Several sessions or agents that share the local DB must serialize integration runs with one lock file: `flock <scratchpad>/cfb-it.lock make test-it` (create the file with any `flock` if /tmp was wiped). Never run two at once, and never run them while a benchmark has the DB.
 - **`make test-network`:** only the `network`-marked test (DoH end to end from the UDF sandbox plus a TLS handshake with `api.collegefootballdata.com`, no HTTP request, 0 CFBD calls). Needs HTTPS egress and never skips; it is excluded from `make test-it`. `make dns-check` is the same check as a live gate.
 
+## Demo hard rules (Phase 8, `add-cfb-demo-hardening` L1)
+
+- **Demo freeze:** while `demo/freeze.yaml` is in force (planned 2026-11-01 to 2026-11-21), `vs/catalog/`, `sql/core/`, `sql/meta/load_log.sql`, `sql/meta/fetch_log.sql` and `loader/load-plan.yaml` must keep their pinned content digests: the rehearsal kits' snapshots cannot be retaken. `make lint` runs `scripts/release_check.py --fast` last and fails on any change, committed or not. The only way out is an owner-approved migration that re-fingerprints the snapshots, then `make demo-freeze FROM= UNTIL= FORCE=yes`. Pins are taken from the tree deployed on AWS.
+- **Demo week (Nov 16–20):** no `make deploy` on the real local namespace except through `make rehearse`.
+- **Never run `exakit` runtime commands or plain `exakit mcp-doctor` on this machine:** `deployments/default` is the AWS instance. Only `exakit mcp-doctor --json` is safe. The local DB is driven only with `exasol start/stop -d local`.
+
 ## Environment
 
 - The repo path contains spaces (OneDrive). Quote paths, and pass `CURDIR` explicitly to make if a target breaks (adbc-vs-rs lesson).
