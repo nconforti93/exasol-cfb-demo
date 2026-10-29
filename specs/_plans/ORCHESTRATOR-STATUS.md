@@ -1,5 +1,7 @@
 # Orchestrator status (autonomous run, started 2026-10-22)
 
+> **Superseded as the live status by `HANDOVER.md` (2026-10-23).** Kept as history.
+
 Mandate: finish the mission end to end through the speq loop (plan → review → implement → verify → record).
 
 Limits:
@@ -8,6 +10,25 @@ Limits:
 - Commit locally only, never push.
 - Make decisions myself and log them.
 - Check Exasol syntax and reserved words with the `exasol:*` skills.
+
+## PROCESS CHANGE (owner, 2026-10-23): lighter process
+
+Nico: "Let's do a lighter process moving forward, this is a demo, not a full-blown product offering. We also don't need a crazy amount of tests really. Ideally I could test the web app today."
+- From now on, run thin end-to-end slices first, then harden. Each remaining phase gets one plan or revision pass at most, with no separate plan review. Code review only for risky code (spend, locks, SQL guard). No coverage audits.
+- Tests: a few per feature that cover the demo path. Don't chase scenario-by-scenario coverage.
+- Today's priority: a clickable web app. Step 1 is `make app-preview` on fixture data (running now). Step 2 is a real-data path: merge Phase 2 → live backfill on AWS → Phase 3 views → a minimal Phase 4 engine → only the Phase 5 views the pages need → Phase 6 routes.
+
+## STOP POINT (usage limit, 2026-10-23)
+
+- **Phase 3 (p3):** group E is committed (f21b00c). 6817 unit/CLI tests pass and lint is clean. Task 3.8 TEAM_SEASON is `[~]` and an expert agent was working on it when the session stopped. Its output is uncommitted and may be incomplete.
+- **Phase 2 (p2):** DONE. Verification and live group J are done (a93501a). AWS stores 155k rows over 9 tables (GAMES 1869–2026, SP+/WP/polls 2013/14–2026), with week 7 of 2026 refreshed. **The Oct 31 restore gate PASSED** (snapshot `~/.cfb-demo/snapshots/aws-demo-2026-10-23` restored onto local in about 20 s; local now holds the same data). Ledger: plan 221/300; October /info 240 of 3000 used, ledger 242/400. Recording is running, then fast-forward main.
+- **Phase 6 UI revision (owner, 2026-10-23):** a US map home with team logos and a conference filter, then a team page, then league tabs (predictions, matchups, stats). The planner is revising the Phase 6 plan. Logos are cached locally and never committed. The fixture preview `make app-preview` is committed (64f983a); the owner found it not useful without real data.
+- **Phase 7 (p7):** groups A and B are done (2.1 committed 89f21ae; spec text aligned with [28]; FU-2 coverage list). **Group C onward is blocked** until Phases 5 and 6 merge to main (plan sequencing; gate 3.0 checks P7-a..e in Phase 6).
+- **Resume:**
+  1. Run `git status` and `git diff --stat` in p2, p3 and p7.
+  2. Re-run `make test` and `make lint` under the IT lock.
+  3. Commit each task if it's green. Otherwise start a fresh agent pointed at the files already on disk.
+  4. Then go on with Phase 3 groups G–K, Phase 2 V.1–V.3 and live group J (by Oct 31), and Phase 7 group C.
 
 ## RESUME AFTER RESTART (planned machine restart ~14:33 CEST, 2026-10-22)
 
@@ -20,15 +41,18 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 5. **AWS `default` is FREE** (exasol-cfb-demo-a4 confirmed at 14:06; add-engine-spikes is finished with both DBs). The AWS DB has no schemas; the `CFBD_API` connection should still exist, and 9.2 verifies it via `EXA_DBA_CONNECTIONS`. Never stop the instance (mandate). It also holds the shared files `docs/roadmap.md`, `specs/architecture.md` and `CLAUDE.md` until it sends "4.1 done". Check with ListAgents and SendMessage after the restart, because that session may also have restarted.
 6. Then continue with the queue under "Next steps".
 
-## Plan pipeline
+## Plan pipeline (updated 2026-10-23 morning)
 
-| Plan | Roadmap phase | State |
-|---|---|---|
-| add-cfbd-vs-foundation | Phase 0 S1/S2 + Phase 1 | Groups A–G done. Review R.1 done. Fixes F.1–F.3 done, F.4 open. Group H integration tests running on local (see tasks.md). Docs 8.2–8.4 wait for "4.1 done". Live group J waits for "AWS free" |
-| add-engine-spikes | Phase 0 S3/S4 | Owned by the parallel session |
-| add-cfb-persistence-refresh | Phase 2 | Reviewed (approve with changes), revised, validates. Implementation waits for the foundation |
-| add-cfb-analytical-model | Phase 3 | Plan complete and validated: 27 tasks, 10 specs, 18 views plus 5 seeded reference tables. **Next: independent review**, then revise. 12 open questions (Q1–Q12) are answered by zero-call checks in its task 7.2 |
-| Phases 4–8 | | Not started. Phase 4 builds on the add-engine-spikes S3/S4 results |
+| Plan | Phase | Where | State |
+|---|---|---|---|
+| add-cfbd-vs-foundation | 1 | main | **Recorded**. Live on AWS. Ledger 21 calls |
+| add-cfb-persistence-refresh | 2 | worktree p2 | All groups A–I and code review done. **Review fixes F.1 running**. Then verification and the live group J on AWS (217 calls; Oct 31 restore gate) |
+| add-cfb-analytical-model | 3 | worktree p3 | Groups A–B done. **Group C running** (3.1 GAME+X1, 2.5, 3.2) |
+| add-cfb-score-engine | 4 | main (plan) | Reviewed and revised. Starts after Phase 3 group C/D |
+| add-cfb-analyses | 5 | main (plan) | Reviewed and revised |
+| add-cfb-app | 6 | worktree p6 | Group A done (backend core + whole frontend, 582 FE tests). **2.1 db/operator running**. Rest gated on Phases 2–5 merging |
+| add-cfb-chat | 7 | worktree p7 (from p6) | Reviewed and revised. **Group A running** |
+| add-cfb-demo-hardening | 8 | main (plan) | Reviewed. **Revision running** |
 
 ## Inputs for Phase 4 (from add-engine-spikes, 2026-10-22)
 
@@ -50,6 +74,14 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 - **Deployment:** `CFBD_VS` is deployed on AWS (137 tables) together with `CFB_READER`. Read-through and aggregates work on 2026.1.1, with no UNION ALL crash.
 - **AWS BucketFS:** there is no host directory or exapump profile for it, so replay recordings live in `cache/replay/` and on local BucketFS only.
 
+## STOP POINT (usage limit, 2026-10-22 evening)
+
+- **Phase 2 (worktree p2):** groups A–E are done and committed. Task 4.2 (Lua `loadlib.lua`/`backfill.lua`, plus H1 lock kinds) was STOPPED mid-work. Its files are on disk in p2, uncommitted. On resume: inspect `git status` in p2, then start a fresh 4.2 expert agent pointed at the existing files and the 4.2 brief, and run the integration tests under the lock. After that: 4.3, then 5.2, then group H, then group I docs, then live group J (217 calls, must finish by 2026-10-31).
+- **Phase 3 (worktree p3):** group A is done. Group B waits for Phase 2 tasks 4.2/4.3.
+- **Phase 4 (main):** the plan is reviewed and revised. Implementation follows Phase 3.
+- **Phase 5 (main):** plan `add-cfb-analyses` is written (69 scenarios, 31 tasks) and validates. **Next: independent review.** U3/Q13 needs Nico: head-to-head drops `/teams/matchup` and uses stored games plus a 1-call game preview. Q2 is a security probe; escalate to Nico if it fails.
+- **Phases 6–8:** not planned yet.
+
 ## Next steps (queue)
 
 1. Finish the foundation integration tests 7.1–7.4 on local, then F.4 (redact the key after JSON parsing too).
@@ -69,11 +101,31 @@ State at stop: all work is committed locally on branch `add-cfbd-vs-foundation` 
 - **Fan-out is one SET group plus a thread pool, `MAX_PARALLEL_FETCHES` (foundation [18]).**
 - **The 401/403 message follows the gating spec (foundation [22]).** Body redaction is key-only ([23]). Recordings store attempts ([24]). The catalog hash covers generated content ([25]).
 
-## Blocked on Nico
+## Owner answers (2026-10-22 evening)
 
-- **November CFBD budget.** Needed only if the Phase 2 backfill can't finish by 2026-10-31.
-- **The DoH-success network test was never run (foundation 7.4 stays `[~]`).** Auto mode blocked `flock … make test-network` as "Interfere With Workloads". You can run it yourself with `! make test-network`; it needs HTTPS egress to 1.1.1.1 plus a TLS handshake with the CFBD host, and makes no API call. The AWS dns-check (9.0) resolved via the **system** resolver, so the DoH fallback is still unverified.
-- **Two V.3 manual steps were blocked by auto mode.** Staging a stored slice on local was blocked, so the read-through manual row wasn't run; integration tests and the live 9.5b result cover it. `ALTER VIRTUAL SCHEMA` on AWS was blocked as "Modify Shared Resources", so the properties row ran on local instead.
-- **Local Personal has the real namespace deployed** (`CFB_INFRA`, `CFB_META`, `CFB_CORE`, `CFBD_VS`). It is in `FETCH_MODE='replay'` from V.3. `make grants` was not run there.
-- **Stale podman container `exasol-db-49afcb12` (Created).** Auto mode denied `podman rm`, so it is still there.
-- **Phase 7 chat has no Anthropic API key.** It will be built against a stub.
+- **November CFBD budget:** 1000 calls, recorded in `vs/live/ledger.yaml` on the Phase 2 branch. October stays at 400.
+- **Head-to-head without `/teams/matchup`:** confirmed (Phase 5 U3).
+- **Network DoH test:** passed (run by Nico). Foundation task 7.4 is closed. Stale podman container `exasol-db-49afcb12`: removed by Nico.
+- **Anthropic key:** Nico will provide it later.
+- **Demo date and replay week:** the demo is around mid-November 2026. The replay/rehearsal snapshot uses the latest completed week at the time of the Phase 2/8 live runs (Phase 8 input).
+
+## Owner actions (final list from the Phase 8 plan, 2026-10-23)
+
+- **U1.** Approve up to $10 of Anthropic spend for Phase 8 and up to $20 for Phase 7 verification. The ledger entries are done.
+- **U2 (conditional).** A local `CFBD_API` connection, due Sun Nov 1, needed only if the Oct 31 restore gate (AWS 2026.1.1 → laptop 2026.2) fails, or for U11.
+- **U3.** `ANTHROPIC_API_KEY` in `.env` when it's available. The orchestrator generates the app, console and chat passwords and creates their users.
+- **U4.** A Claude Desktop `exasol-cfb` entry via `wsl.exe -e ~/.local/bin/uvx exasol-mcp-server@<v>`, by Fri Nov 13.
+- **U5 (fallback only).** `make weekly WEEK=n CONFIRM=yes` if no session has run the Sunday cadence by Monday evening.
+- **U6.** Confirm the demo date (Nov 16–20 assumed) and the venue network. Approve the bubble team and team pairs on Nov 15.
+- **U7.** A fallback video and screenshots at dress rehearsal #1 (Nov 9–13).
+- **U8.** Confirm the license (MIT, Exasol AG), the CFBD terms, that team marks appear in private media only, and the dependency inventory.
+- **U9.** What ships publicly, any history rewrite, and when to publish.
+- **U10.** One click-through rehearsal. On demo day: `exasol stop/start -d local` (never exakit), mains power, and a backup network.
+- **U11 (optional).** Live data on the laptop on stage (needs U2).
+
+Key dates: Oct 31 restore gate · Nov 1/8/15 Sunday cadence · Nov 3/10 predictions before kickoff · Nov 9 go/no-go on the demo tier · Nov 16–20 demo.
+
+## Notes (information only)
+
+- **Two V.3 manual steps were blocked by auto mode.** Integration tests and the live 9.5b run cover them.
+- **Local Personal has the real namespace deployed**, in `FETCH_MODE='replay'`.
