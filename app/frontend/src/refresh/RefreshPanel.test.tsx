@@ -80,6 +80,18 @@ describe('RefreshPanel', () => {
     expect(backend.count('POST /api/refresh/run')).toBe(0)
   })
 
+  it('uses the calendar target when the next week is postseason', async () => {
+    const backend = configWith((config) => {
+      config.refresh_target = { season: 2026, week: 1, season_type: 'postseason' }
+    }).on('POST /api/refresh/plan', () => fixture('refresh-plan.json'))
+    await plan(backend)
+    expect(backend.requests('POST /api/refresh/plan')[0]?.body).toEqual({
+      season: 2026,
+      week: 1,
+      season_type: 'postseason',
+    })
+  })
+
   it('shows the live plan: the estimate, the retries, the quota, the ledger room and the week', async () => {
     const backend = planBackend('refresh-plan.live.json')
     await plan(backend)

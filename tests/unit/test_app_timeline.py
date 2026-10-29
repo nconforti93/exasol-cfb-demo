@@ -15,6 +15,7 @@ from starlette.responses import Response
 from app.backend.routes.timeline import make_router, read_timeline
 from app.backend.sessions import QueryLog, SessionStore
 from app.backend.settings import Settings
+from vs.host import ledger
 
 POINT = {
     "AS_OF_SEASON": "2026",
@@ -83,11 +84,15 @@ def app_with_pool(
     pool = FakePool(rows)
     app = FastAPI()
     app.state.database = SimpleNamespace(pool=pool)
+    app.state.operator = SimpleNamespace(enabled=False)
+    app.state.reconciled = True
     settings = cast(
         Settings,
         SimpleNamespace(api_schema="TEST_CFB_API", api_live_schema="TEST_CFB_API_LIVE"),
     )
-    app.include_router(make_router(settings, SessionStore()))
+    app.include_router(
+        make_router(settings, SessionStore(), ledger.Ledger(tmp_path / "ledger", enabled=False))
+    )
 
     @app.middleware("http")
     async def session(

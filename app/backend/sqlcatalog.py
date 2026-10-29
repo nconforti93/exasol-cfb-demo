@@ -34,11 +34,11 @@ SERVING_VIEWS = frozenset(
         "PLAYOFF_ODDS",
         "PUBLISHED_RUNS",
         "ROOTING_GUIDE",
-        "FORCED_RUN_ODDS",
         "WHATIF_RUN",
         "WHATIF_GAMES",
         "WHATIF_OUTCOMES",
         "WHATIF_PLAYOFF",
+        "WHATIF_TEAMS",
         "ANALYSIS_SETTINGS",
         "PREDICTIONS",
         "SCORECARD_WEEKS",
@@ -180,10 +180,18 @@ _STATEMENTS = (
     _define("conference_strength", "CONFERENCE_STRENGTH", _POINT, '"STRENGTH_RANK"'),
     _define("win_streaks", "WIN_STREAKS", _POINT, '"WIN_STREAK_RANK"'),
     _define("odds_rows", "PLAYOFF_ODDS", _POINT, '"ODDS_RANK"'),
+    _define(
+        "team_odds_history",
+        "PLAYOFF_ODDS",
+        '"AS_OF_SEASON" = {season!d} AND "AS_OF_WEEK_SEQ" <= {week_seq!d} '
+        'AND "TEAM_ID" = {team_id!d}',
+        '"AS_OF_WEEK_SEQ"',
+    ),
     _define("published_run", "PUBLISHED_RUNS", _POINT),
     _define("analysis_settings", "ANALYSIS_SETTINGS", order='"SETTING_NAME"'),
     _define("whatif_run", "WHATIF_RUN"),
     _define("whatif_games", "WHATIF_GAMES", order='"WEEK_SEQ", "START_AT", "GAME_ID"'),
+    _define("whatif_base_odds", "PLAYOFF_ODDS", '"RUN_ID" = {run_id!d}'),
     _define(
         "rooting_guide_top",
         "ROOTING_GUIDE",
@@ -199,13 +207,14 @@ _STATEMENTS = (
     _define(
         "predictions_for_week",
         "PREDICTIONS",
-        '"SEASON" = {season!d} AND "WEEK_SEQ" = {week_seq!d}',
+        '"SEASON" = {season!d} AND "WEEK_SEQ" = {next_week_seq!d} '
+        'AND "FREEZE_SEASON" = {season!d} AND "FREEZE_WEEK_SEQ" = {week_seq!d}',
         '"START_AT", "GAME_ID"',
     ),
     _define(
         "predictions_graded_in_week",
         "PREDICTIONS",
-        '"SEASON" = {season!d} AND "GAME_WEEK_SEQ" = {week_seq!d}',
+        '"SEASON" = {season!d} AND "PLAYED_WEEK_SEQ" = {week_seq!d}',
         '"START_AT", "GAME_ID"',
     ),
     _define(
@@ -215,16 +224,22 @@ _STATEMENTS = (
         '"FREEZE_KIND"',
     ),
     _define(
+        "scorecard_all_weeks",
+        "SCORECARD_WEEKS",
+        '"SEASON" = {season!d} AND "POPULATION" = {population}',
+        '"WEEK_SEQ", "FREEZE_KIND"',
+    ),
+    _define(
         "scorecard_season",
         "SCORECARD_SEASONS",
-        f'{_POINT} AND "POPULATION" = {{population}}',
+        '"SEASON" = {season!d} AND "POPULATION" = {population}',
         '"FREEZE_KIND"',
     ),
     _define(
         "scorecard_calibration",
         "SCORECARD_CALIBRATION",
         '"SEASON" = {season!d} AND "POPULATION" = {population}',
-        '"FREEZE_KIND", "BUCKET_FROM"',
+        '"FREEZE_KIND", "BUCKET"',
     ),
     _define(
         "upsets_week",
@@ -235,6 +250,12 @@ _STATEMENTS = (
     _define("upsets_all_time", "UPSETS", '"ALL_TIME_RANK" <= 25', '"ALL_TIME_RANK", "GAME_ID"'),
     _define("upsets_line_era", "UPSETS", '"LINE_ERA_RANK" <= 25', '"LINE_ERA_RANK", "GAME_ID"'),
     _define("matchup_series", "MATCHUP_SERIES", _PAIR),
+    _define(
+        "team_rivalries",
+        "MATCHUP_SERIES",
+        '"TEAM_ID" = {team_id!d}',
+        '"MEETINGS" DESC, "OPPONENT_TEAM_ID" LIMIT 5',
+    ),
     _define("matchup_games", "MATCHUP_GAMES", _PAIR, '"SEASON" DESC, "GAME_ID" DESC'),
     _define("matchup_next", "MATCHUP_NEXT", _PAIR),
     _define("quota", "QUOTA"),

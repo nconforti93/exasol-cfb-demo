@@ -3,6 +3,7 @@
   "target": "local",
   "dev": false,
   "fetch_mode": "REPLAY",
+  "refresh_target": {"season": 2026, "week": 10, "season_type": "regular"},
   "operator": {
     "enabled": true,
     "reason": null

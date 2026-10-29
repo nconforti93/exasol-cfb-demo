@@ -593,7 +593,7 @@ The owner (Nico) was away and delegated the decisions on the independent review 
 - **Decision:**
   - The app's runtime spend (rehearsals and the demo) counts under `app` (cap 60, all months). Task 8.2 runs under `add-cfb-app` (cap 12). The months are capped at 400 (2026-10) and 1000 (2026-11, authorized by the owner). The caps are on the Phase 2 branch; this plan does not edit `vs/live/ledger.yaml`.
   - Previews and console runs are checked against `BACKFILL_SPENDABLE`, which is `GREATEST(0, REFRESH_SPENDABLE − REFRESH_RESERVE)`, with the headroom `MAX_ATTEMPTS − 1`. On-demand spend therefore never eats the weekly refresh's reserve. The refresh keeps Phase 2's rule: its `CHECK` compares with `REFRESH_SPENDABLE` and may use the reserve.
-  - **Refresh retries (m5).** The refresh's ledger check adds the retry headroom of one request (`MAX_ATTEMPTS − 1`), and its confirmation reads "up to N live calls, plus retries". `REFRESH_WEEK` takes no limit, so the label states the truth. A headroom of `(MAX_ATTEMPTS − 1) × estimate` would make a 4-call refresh need 16 calls of room and would fail task 8.2 under its cap of 12. Phase 2's per-table `REFRESH_SPENDABLE` check stays the hard limit in the database.
+  - **Refresh retries (m5; superseded by [45]).** The original check added one request's retry headroom. `REFRESH_WEEK` takes no limit. Decision [45] tightens the check to all planned slices so the hard ledger cap cannot be exceeded by retries.
   - Every refresh plan reads `/info` fresh (m6); previews and the console keep the 5-minute reading.
   - **Visible state (m4).** `GET /api/config` reports the ledger plan, whether the ledger is on, the caps and the rooms, and whether live actions are possible. A missing plan or month cap, or `LEDGER=off`, shows in the header from the start ("live actions disabled: no ledger cap for plan app", "ledger off"), and every live control shows the reason instead of a cost.
 - **Alternatives:**
@@ -700,7 +700,8 @@ The owner (Nico) was away and delegated the decisions on the independent review 
   - Pre-projected TopoJSON plus one projection function is the smallest correct way: about 35 kB of minified code and 30 kB of gzipped geometry.
   - The atlas is public-domain Census geometry under ISC.
   - A `viewBox` zoom and a 60-line relaxation are easier to test than two more libraries.
-- **Promotes to ADR:** yes. Maps are drawn from bundled, pre-projected geometry; tile maps and runtime CDNs are rejected because of the offline demo.
+- **Promotes to ADR:** yes
+  - Maps are drawn from bundled, pre-projected geometry; tile maps and runtime CDNs are rejected because of the offline demo.
 
 ### [36] Logo overlap: deterministic relaxation with leader lines, plus conference zoom; no clustering
 
@@ -741,7 +742,8 @@ The owner (Nico) was away and delegated the decisions on the independent review 
   - The logos make the page; the cache makes them offline and keeps the marks out of the repo.
   - The download is an external fetch (not CFBD, no quota), so it runs by hand, once, with tight rules, and is documented.
   - Reading the URLs from `CFB_CORE` as the owner keeps logo URLs out of the serving layer, where no page needs them.
-- **Promotes to ADR:** yes. Third-party media (team marks) live only in a private cache outside the repository, are fetched by an explicit owner command, and are served by the app itself; never hotlinked or committed.
+- **Promotes to ADR:** yes
+  - Third-party media (team marks) live only in a private cache outside the repository, are fetched by an explicit owner command, and are served by the app itself; never hotlinked or committed.
 
 ### [38] A small design system: tokens, cards, team colors as accents only
 
@@ -878,3 +880,15 @@ The owner (Nico) was away and delegated the decisions on the independent review 
   - `make app-env` (`scripts/app_env.py init`) creates the file with mode 0600 (directory 0700) and random `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` (`secrets.token_urlsafe(24)`: letters, digits, `_` and `-`, so they need no escaping inside `IDENTIFIED BY "..."`). It never overwrites a key, prints names only, adds a commented `ANTHROPIC_API_KEY` placeholder, and creates no database user (`make app-user`, task 2.2, reads the passwords from this file).
 - **Alternatives:** keep `.env` and exclude it from OneDrive sync (a per-machine setting the repo cannot enforce); warn only on a wide mode; encrypt the file.
 - **Rationale:** the secret must be outside every synced folder by construction, and the check must fail closed. This amends [16] (a tool now generates the two app passwords) and the "no password in `.env`" lines of the plan, spec and tasks. Phase 7's chat settings still read `.env`; the hand-off is in `tasks.md` "Cross-plan items".
+
+## [45] Refresh plans reserve the retry bound of every due slice (2026-10-27, implementation)
+- **Decision:** a live refresh may start only when `estimate × MAX_ATTEMPTS` fits both its ledger plan and `REFRESH_SPENDABLE`. The button still confirms the first-attempt estimate and says "plus retries". The worker rechecks the same bound under the ledger lock immediately before sending `EXECUTE SCRIPT`.
+- **Reason:** `REFRESH_WEEK` has no `max_calls` argument. Four due slices can each use four attempts, so the previous one-request headroom from [29] could allow 16 calls against the Phase 6 cap of 12. The owner's hard cap takes precedence over the planned live rehearsal.
+- **Observed result:** the AWS week-8 plan has four due slices and 11 of 12 Phase 6 calls left after the preview. It correctly refuses live execution. The refresh button is verified in local replay at zero calls; a later live run needs sufficient room under an authorized plan and month.
+- **Promotes to ADR:** no
+
+## [46] Owner lifts the app-specific plan caps for weekly refresh (2026-10-27)
+- **Decision:** `add-cfb-app` and `app` each have a ledger plan cap of 1400, the sum of the currently authorized October and November monthly caps. The monthly limits remain 400 in October and 1000 in November. The refresh still reserves `estimate × MAX_ATTEMPTS`, checks `REFRESH_SPENDABLE`, takes the shared ledger lock and records actual calls. The app remains on `APP_LEDGER_PLAN=add-cfb-app` for this run.
+- **Reason:** the owner explicitly requested that the app's 12-call verification allocation stop preventing the overdue weekly refresh. With four due slices, the worst-case retry bound is 16, while the old plan had 11 calls left. The new cap removes that separate restriction for the authorized months without weakening the monthly limit.
+- **Supersedes:** the plan-specific amounts in [21], [29] and the earlier owner-cap reference in [45]. The retry-bound rule in [45] still applies.
+- **Promotes to ADR:** no

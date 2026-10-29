@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.backend import models
+from app.backend import models, reconcile
 from app.backend.routes.read import ReadService, Row, _iso, _number
 from app.backend.sessions import SessionStore
 from app.backend.settings import Settings
+from loader.guard import ReconcilePending
+from vs.host import ledger
 
 STUCK_AFTER = timedelta(minutes=10)
 
@@ -82,11 +85,12 @@ def read_timeline(
     run_id: int | None = None,
     *,
     now: datetime | None = None,
+    latest_rows: list[Row] | None = None,
 ) -> Row:
     """Assemble the route body from three stored serving-view reads."""
     if run_id is not None and run_id <= 0:
         raise HTTPException(400, "run must be a positive integer")
-    latest = service.fetch("timeline_latest_run")
+    latest = latest_rows if latest_rows is not None else service.fetch("timeline_latest_run")
     rows = latest if run_id is None else service.fetch("timeline_run", run_id=run_id)
     current = service.fetch("current_point")
     if not current:
@@ -118,13 +122,43 @@ def read_timeline(
     }
 
 
-def make_router(settings: Settings, store: SessionStore) -> APIRouter:
+def make_router(settings: Settings, store: SessionStore, book: ledger.Ledger) -> APIRouter:
     """Make the read-only timeline route on the app's read pool."""
     router = APIRouter()
+    seen: tuple[int | None, str | None] | None = None
+    seen_lock = threading.Lock()
 
     @router.get("/api/timeline", response_model=models.TimelineResponse)
     def timeline(request: Request, run: int | None = None) -> Row:
-        service = ReadService(request, settings, store)
-        return read_timeline(service, run)
+        nonlocal seen
+        service = ReadService(request, settings, store, cached=False)
+        latest = service.fetch("timeline_latest_run")
+        response = read_timeline(service, run, latest_rows=latest)
+        current = (
+            int(latest[0]["RUN_ID"]) if latest else None,
+            str(latest[0]["RUN_STATUS"]) if latest else None,
+        )
+        with seen_lock:
+            changed = current != seen
+            should_reconcile = (
+                current[0] is not None
+                and current[1] != "RUNNING"
+                and (changed or not request.app.state.reconciled)
+                and request.app.state.operator.enabled
+            )
+            seen = current
+        # A run that started or finished may have changed the stored model: drop cached reads.
+        if changed:
+            for cache_name in ("read_cache", "memo"):
+                cache = getattr(request.app.state, cache_name, None)
+                if cache is not None:
+                    cache.clear()
+        if should_reconcile:
+            try:
+                reconcile.startup(settings, request.app.state.operator, book)
+                request.app.state.reconciled = True
+            except ReconcilePending:
+                request.app.state.reconciled = False
+        return response
 
     return router

@@ -87,6 +87,7 @@ export interface ConfigResponse {
   target: string
   dev: boolean
   fetch_mode: FetchMode | null
+  refresh_target: RefreshTarget | null
   operator: Capability
   console: Capability
   ledger: LedgerConfig
@@ -288,11 +289,11 @@ export interface GuideRow {
   home_school: string
   away_team_id: number
   away_school: string
-  root_for_team_id: number
-  root_for_school: string
-  p_if_home_win: number
-  p_if_away_win: number
-  leverage: number
+  root_for_team_id: number | null
+  root_for_school: string | null
+  p_if_home_win: number | null
+  p_if_away_win: number | null
+  leverage: number | null
   low_sample: boolean
 }
 
@@ -463,10 +464,10 @@ export interface MatchupNext {
   week_seq: number
   start_at: string | null
   site: SiteKind
-  prediction_kind: 'FROZEN' | 'CURRENT'
-  team_win_prob: number
-  pred_team_points: number
-  pred_opponent_points: number
+  prediction_kind: 'FROZEN' | 'CURRENT' | null
+  team_win_prob: number | null
+  pred_team_points: number | null
+  pred_opponent_points: number | null
   stakes_run_id: number | null
   team_p_in_cfp_if_win: number | null
   team_p_in_cfp_if_lose: number | null
@@ -717,6 +718,8 @@ export interface QueryLogEntry {
   error: string | null
   requests: RequestLine[]
   calls_spent: number
+  /** Served from the backend read cache; `ms` is the time of the original database run. */
+  cached?: boolean
 }
 
 export interface InspectorResponse {
@@ -897,8 +900,8 @@ export interface OutlookGame {
   opponent: Team
   opponent_rank: number | null
   team_win_prob: number
-  pred_team_points: number
-  pred_opponent_points: number
+  pred_team_points: number | null
+  pred_opponent_points: number | null
   spread: number | null
   prediction_kind: PredictionKind
 }

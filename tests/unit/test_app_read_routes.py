@@ -161,6 +161,128 @@ def test_week_only_shows_fbs_games_and_has_one_game_of_the_week(tmp_path: Path) 
     assert week.queries["games"] == "q-slate_games"
 
 
+def test_outlook_and_week_use_frozen_prediction_odds_and_stakes(tmp_path: Path) -> None:
+    rows = base_rows()
+    rows["current_point"] = [{**CURRENT, "RUN_ID": 17}]
+    rows["team_odds_history"] = [
+        {
+            "AS_OF_SEASON": 2026,
+            "AS_OF_WEEK_SEQ": 8,
+            "AS_OF_LABEL": CURRENT["AS_OF_LABEL"],
+            "P_IN_CFP": 0.46,
+            "P_BYE": 0.11,
+            "P_CHAMPION": 0.04,
+            "MOVE": "UP",
+            "DELTA_P_IN_CFP": 0.03,
+        }
+    ]
+    rows["slate_games"] = [
+        {
+            "GAME_ID": 12,
+            "WEEK_SEQ": 9,
+            "START_AT": "2026-10-27 23:00:00",
+            "VENUE_NAME": "Jordan-Hare",
+            "HOME_TEAM_ID": 1,
+            "HOME_TEAM": "Auburn",
+            "AWAY_TEAM_ID": 2,
+            "AWAY_TEAM": "Ole Miss",
+            "HOME_AP_RANK": 20,
+            "AWAY_AP_RANK": None,
+            "PREGAME_SPREAD": -3.5,
+            "HOME_PREGAME_WIN_PROB": 0.59,
+            "MODEL_HOME_WIN_PROB": 0.72,
+            "HOME_POINTS_PRED": 31.2,
+            "AWAY_POINTS_PRED": 22.4,
+            "PREDICTION_KIND": "FROZEN",
+            "IS_FBS_GAME": True,
+            "IS_NEUTRAL_SITE": False,
+            "STAKES": 0.23,
+        }
+    ]
+    rows["rooting_guide_top"] = [
+        {
+            "RUN_ID": 17,
+            "TEAM_ID": 1,
+            "GAME_ID": 12,
+            "SEASON": 2026,
+            "WEEK_SEQ": 9,
+            "IS_NEXT_WEEK": True,
+            "GUIDE_RANK": 1,
+            "NEXT_WEEK_RANK": 1,
+            "HOME_TEAM_ID": 1,
+            "HOME_SCHOOL": "Auburn",
+            "AWAY_TEAM_ID": 2,
+            "AWAY_SCHOOL": "Ole Miss",
+            "ROOT_FOR_TEAM_ID": 1,
+            "ROOT_FOR_SCHOOL": "Auburn",
+            "P_IF_HOME_WIN": 0.6,
+            "P_IF_AWAY_WIN": 0.37,
+            "LEVERAGE": 0.23,
+            "LOW_SAMPLE": False,
+        }
+    ]
+    rows["rooting_guide_coming"] = rows["rooting_guide_top"]
+    service = FakeRead(rows, tmp_path)
+    outlook = models.TeamOutlookResponse.model_validate(service.team_outlook(1, None, None))
+    week = models.LeagueWeekResponse.model_validate(service.league_week(None, None))
+    assert outlook.run_id == week.run_id == 17
+    assert outlook.odds.current is not None and outlook.odds.current.p_in_cfp == 0.46
+    assert outlook.this_week.game is not None
+    assert outlook.this_week.game.team_win_prob == 0.72
+    assert outlook.this_week.game.pred_team_points == 31.2
+    assert outlook.watch.guide is not None and outlook.watch.guide.top[0].leverage == 0.23
+    assert week.games[0].home_win_prob == 0.72
+    assert week.games[0].win_prob_source == "OURS" and week.games[0].stakes == 0.23
+    assert week.games[0].game_of_week
+
+
+def test_odds_route_uses_shown_run_and_current_whatif(tmp_path: Path) -> None:
+    rows = base_rows()
+    rows["current_point"] = [{**CURRENT, "RUN_ID": 17}]
+    rows["odds_rows"] = [
+        {
+            "ODDS_RANK": 1,
+            "TEAM_ID": 1,
+            "SCHOOL": "Auburn",
+            "CONFERENCE": "SEC",
+            "P_IN_CFP": 0.82,
+            "P_BYE": 0.24,
+            "P_QUARTERFINAL": 0.42,
+            "P_SEMIFINAL": 0.3,
+            "P_FINAL": 0.17,
+            "P_CHAMPION": 0.09,
+            "P_CONF_CHAMPION": 0.5,
+            "EXPECTED_WINS": 10.1,
+            "MEAN_SEED": 3.2,
+            "PREV_AS_OF_LABEL": "2026, after week 7",
+            "PREV_P_IN_CFP": 0.79,
+            "DELTA_P_IN_CFP": 0.03,
+            "DELTA_P_CHAMPION": 0.01,
+            "RANK_CHANGE": 2,
+            "MOVE": "UP",
+        }
+    ]
+    rows["published_run"] = [
+        {
+            "RUN_ID": 17,
+            "RUN_ORIGIN": "MANUAL",
+            "N_SIMS": 1000000,
+            "SECONDS_TOTAL": 30.5,
+            "SIMS_PER_SECOND": 32786.9,
+            "NODES": 3,
+            "INSTANCES": 12,
+            "ENDED_AT": "2026-10-27 12:00:00",
+        }
+    ]
+    rows["whatif_run"] = [{"RUN_ID": 17, "AS_OF_LABEL": CURRENT["AS_OF_LABEL"]}]
+    rows["analysis_settings"] = [{"SETTING_NAME": "MOVE_THRESHOLD", "SETTING_NUMBER": 0.007}]
+    odds = models.OddsResponse.model_validate(FakeRead(rows, tmp_path).odds(None, None))
+    assert odds.run is not None and odds.run.run_id == 17
+    assert odds.rows[0].p_in_cfp == 0.82 and odds.rows[0].move == "UP"
+    assert odds.move_threshold == 0.007
+    assert odds.whatif.available and odds.whatif.run_id == 17
+
+
 def test_point_filtered_statements_render_without_live_sources() -> None:
     for name in ("team_results", "slate_games", "road_warriors", "conference_strength"):
         rendered = sqlcatalog.render(

@@ -16,6 +16,7 @@ from typing import Any
 import uvicorn
 
 from app.backend.main import create_app
+from app.backend.reconcile import startup as reconcile_startup
 from app.backend.settings import DEFAULT_STATIC_DIR, Settings, SettingsError
 from vs.host import appenv, target
 
@@ -41,7 +42,12 @@ def serve(
     settings = Settings.from_env(values)
     if static_dir is not None:
         settings = replace(settings, static_dir=built)
-    runner(create_app(settings), host=settings.host, port=settings.port, workers=1)
+    runner(
+        create_app(settings, reconcile=reconcile_startup),
+        host=settings.host,
+        port=settings.port,
+        workers=1,
+    )
 
 
 def check_vite_args(args: Sequence[str]) -> list[str]:

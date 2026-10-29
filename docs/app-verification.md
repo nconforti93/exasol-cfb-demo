@@ -188,3 +188,42 @@ Exasol Personal local 2026.2.0-nano.3, `PROBE_APP_*` namespace, 0 calls).
 | `app/backend/sqlcatalog.py`, `explain.py` | fixed page statements with lints; `EXPLAIN VIRTUAL` rows to manifests |
 | `app/backend/console_catalog.py` | the four console statements and their pinned expected plans |
 | `app/backend/models.py` | pydantic models of the HTTP contract; every frontend fixture parses with its model |
+
+## Refresh button (task 4.2, 2026-10-27)
+
+The local database was in `REPLAY`. Under the shared integration lock, a direct owner-path run of 2025 regular week 7 finished as `LOAD_RUN` 39 at zero calls. A separate FastAPI `TestClient` pass planned the same week at zero calls, returned an action id from `POST /api/refresh/run`, then polled `GET /api/actions/{id}` to `DONE` at run 40. Both left the point at 2026 after week 7. The HTTP test supplied a startup-check override only inside the test process because the local `CFB_APP_WEB` still inherits unrelated `PREPROC_RT` grants from `PUBLIC`; normal AWS startup uses the strict check and passes.
+
+AWS `POST /api/refresh/plan` for 2026 regular week 8 found four due slices, 302 stored games (285 complete), no running refresh, quota usage 246/400 and 11 of 12 Phase 6 ledger calls free. Four slices can use up to 16 calls with four attempts each, so the live plan refused under decision [45]. `POST /api/refresh/run` refused both an unconfirmed zero-call request and a four-call confirmation with HTTP 409. `/info` usage stayed 246 and no refresh script was sent. The app server uses `APP_LEDGER_PLAN=add-cfb-app` for this verification.
+
+Synthetic checks cover one replay script, a charged live failure, a refusal before the script when retry room is insufficient, worst-case charging of an unsettled run, and a ledger-write failure that blocks subsequent live actions. A subsequent owner-authorized cap change allowed AWS refresh run 18 (below). The process-death behavior in Q16 remains to be measured in an isolated integration test.
+
+## Conditional rooting guide (task 3.2, 2026-10-27)
+
+`POST /api/whatif/guide` now counts playoff outcomes for each unset coming-week game among the current run's simulated seasons matching the selected what-if results. It uses `CFB_API.WHATIF_OUTCOMES`, `WHATIF_PLAYOFF` and `WHATIF_GAMES` only, and spends zero CFBD calls. It returns a conditional, ranked coming-week guide, with null probabilities for an empty branch and a low-sample flag using `MIN_BRANCH_SAMPLE`.
+
+On AWS run 2 (1,000,000 seasons), an Auburn request with one game set returned HTTP 200 in 6.5 s with 55 remaining games and no row for the set game. An unknown game returned HTTP 400. A local `TestClient` pass under the integration lock read run 1 and returned the conditional 55-game guide with the selected game excluded. The test process disabled the operator path and supplied a startup-check override because local `CFB_APP_WEB` inherits unrelated `PREPROC_RT` PUBLIC privileges. Seven focused route unit tests passed, including the two-run game cache and unknown-column run-change behavior. This is slower than the Phase 5 guide latency target; allow for a pause when showing a conditional guide in the demo. Quota remains 246/400 and the Phase 6 ledger remains 1/12.
+
+## Preview ledger failure guard (task 2.4, 2026-10-27)
+
+If a preview ledger append fails after a paid statement was sent, the current app process now marks reconciliation pending and refuses further paid preview and refresh actions. A synthetic test forced an `OSError` on ledger append: the first statement was sent once and the next attempt was refused before a second paid query. Five live guard tests passed. Durable recovery after a process death during an unrecorded preview still needs a separate design.
+
+## Live week-8 refresh (2026-10-27)
+
+The owner lifted the app-specific plan cap on 2026-10-27 because its 12-call verification allocation blocked an overdue refresh. The app was restarted with `add-cfb-app: 1400`; the October monthly cap stayed 400 and `REFRESH_SPENDABLE` was 154 before the run. A fresh `POST /api/refresh/plan` estimated four due slices and returned `can_run=true`, with a 16-call worst-case retry bound. `make dns-check TARGET=aws` passed without an HTTP request.
+
+`POST /api/refresh/run` with `max_calls=4` returned action `7b77863fbf3e4a4c70410f9f` and database run 18. All eight steps finished `DONE`: CHECK, four fetches, MODEL, PREDICT and SIMULATE. Each fetch spent one call; the app charged a `REFRESH_WEEK#18` ledger entry of four calls. Fresh `/info` moved 246→250 out of the October cap of 400, with `REFRESH_SPENDABLE` moving 154→150. The current point moved from 2026 after week 7 to after week 8; publication and what-if run 4 are current, odds HTTP 200 serves 138 teams, and 56 week-9 picks are frozen before the first listed kickoff at 23:00 UTC on October 27. The next refresh target is week 9; it is not yet complete.
+
+## Curated console (task 4.3, 2026-10-27)
+
+`GET /api/console`, `POST /api/console/{id}/explain` and `POST /api/console/{id}/run` are mounted (`app/backend/routes/console.py`). `EXPLAIN VIRTUAL` and the statement run on a session of the console user `CFB_CONSOLE_WEB` (role `CFB_READER`), so the plan is what any reader of `CFBD_VS` gets. The owner path only reads the quota and writes the fetch log through its existing allowlist. A run reuses `LiveExecutor.run_statement`, the same gate, busy check, ledger lock, retry-headroom guard and charge-before-fetch-log order as the preview, with context `APP_CONSOLE#<action>`. One console run per browser session; a plan-time adapter refusal is HTTP 409 `max_calls_exceeded` with the adapter's `BudgetError` text.
+
+AWS, port-8000 app as `CFB_CONSOLE_WEB`:
+
+| Query | Plan (0 calls) | Run |
+|---|---|---|
+| fan-out | `GAMES_TEAMS`, 3 slices 2022–2024, budget 10, 3 planned live | `max_calls=0` → 409 before sending; `max_calls=3` → HTTP 200 in 5.1 s, 84 rows, three parallel requests (200, one attempt each), 3 ledger entries `APP_CONSOLE#bbca9629958cb30ca143f7bf`, fetch log written |
+| contradiction | no request, no budget | HTTP 200, 0 rows, 0 calls |
+| stored | `GAMES`, 157 stored slices 1869–2025, 0 live | HTTP 200 in 2.8 s, 156 slices with rows, 0 calls, fetch log written |
+| over-budget | refused: `BudgetError: … 15 requests are planned but MAX_CALLS_PER_QUERY is 10` | 409 `max_calls_exceeded`, nothing sent |
+
+The ledger moved by exactly the fan-out's three calls (app plan room 1395 → 1392, October room 149 → 146). Route units (listing, disabled 403, unknown 404, reader explain, plan-time refusal, body validation, reconciliation) and an executor test that keeps the statement off the owner connection pass; 602 app units, Ruff and strict mypy pass. The first stored run returned HTTP 500 because `REQ_AT` arrives as text; fixed and covered by a unit test.

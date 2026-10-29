@@ -11,9 +11,15 @@ from typing import Any, cast
 from fastapi import APIRouter, HTTPException, Request
 
 from app.backend import models, sqlcatalog
+from app.backend.readcache import ReadCache, cache_key
 from app.backend.routes.logos import has_logo
 from app.backend.sessions import Session, SessionStore
 from app.backend.settings import Settings
+
+# Statements that read live or fast-moving state and are never served from the read cache.
+UNCACHED_STATEMENTS = frozenset(
+    {"quota", "health", "timeline_latest_run", "timeline_run", "fetches_for_run"}
+)
 
 POWER_CONFERENCES = ("SEC", "Big Ten", "Big 12", "ACC")
 INDEPENDENTS = "FBS Independents"
@@ -54,6 +60,8 @@ def _conference_order(names: set[str]) -> list[str]:
 
 
 def _interest(game: Row) -> tuple[int, float, str]:
+    if game["stakes"] is not None:
+        return -1, -float(game["stakes"]), game["start_at"] or ""
     ranks = game["home_rank"], game["away_rank"]
     if all(rank is not None for rank in ranks):
         return 0, float(ranks[0] + ranks[1]), game["start_at"] or ""
@@ -64,14 +72,24 @@ def _interest(game: Row) -> tuple[int, float, str]:
 
 
 class ReadService:
-    """One request's fixed statements and response shaping."""
+    """One request's fixed statements and response shaping.
 
-    def __init__(self, request: Request, settings: Settings, store: SessionStore) -> None:
+    With `cached` (the default), stored-model reads go through the app's `ReadCache` and a hit is
+    logged for this browser as a cached entry. Callers whose decisions need the database's current
+    state (refresh planning, the timeline, the quota) pass `cached=False`."""
+
+    def __init__(
+        self, request: Request, settings: Settings, store: SessionStore, *, cached: bool = True
+    ) -> None:
+        self.request = request
         self.pool = request.app.state.database.pool
         self.settings = settings
         self.session: Session = store.session(request.state.session_id)
         self.ids: dict[str, str] = {}
         self._context = f"read-{id(self)}"
+        self._cache: ReadCache | None = (
+            getattr(request.app.state, "read_cache", None) if cached else None
+        )
 
     def fetch(self, name: str, **values: Any) -> list[Row]:
         statement = sqlcatalog.CATALOG[name]
@@ -81,6 +99,24 @@ class ReadService:
             api_live_schema=self.settings.api_live_schema,
             **values,
         )
+        cache = None if name in UNCACHED_STATEMENTS else self._cache
+        key = cache_key(name, params)
+        if cache is not None:
+            hit = cache.get(key)
+            if hit is not None:
+                entry = self.session.log.record(
+                    sql=hit.sql,
+                    principal=hit.principal,
+                    user=hit.user,
+                    ms=hit.ms,
+                    rows=len(hit.rows),
+                    page=name,
+                    context=f"{self._context}:{name}",
+                    cached=True,
+                )
+                self.ids[name] = str(entry.id)
+                return list(hit.rows)
+        generation = cache.generation if cache is not None else 0
         result = self.pool.run(
             statement.sql,
             params,
@@ -92,7 +128,24 @@ class ReadService:
             if entry.context == f"{self._context}:{name}":
                 self.ids[name] = str(entry.id)
                 break
-        return cast(list[Row], result.dicts())
+        rows = cast(list[Row], result.dicts())
+        if cache is not None:
+            cache.put(
+                key,
+                generation=generation,
+                sql=result.sql,
+                rows=rows,
+                principal=result.principal,
+                user=result.user,
+                ms=result.ms,
+            )
+        return rows
+
+    def forget_cached(self) -> None:
+        """Drop every cached read, for a caller that has just seen the stored model change."""
+        cache = getattr(self, "_cache", None)
+        if cache is not None:
+            cache.clear()
 
     def point(self, season: int | None, week: int | None) -> tuple[Row, Row, Row | None]:
         current_rows = self.fetch("current_point")
@@ -411,7 +464,12 @@ class ReadService:
             away_id = int(row["AWAY_TEAM_ID"])
             home_rank = _number(row["HOME_AP_RANK"])
             away_rank = _number(row["AWAY_AP_RANK"])
-            probability = _number(row["HOME_PREGAME_WIN_PROB"])
+            model_probability = _number(row.get("MODEL_HOME_WIN_PROB"))
+            probability = (
+                model_probability
+                if model_probability is not None
+                else _number(row["HOME_PREGAME_WIN_PROB"])
+            )
             alert = None
             if probability is not None:
                 candidates = []
@@ -432,8 +490,14 @@ class ReadService:
                     "away_rank": away_rank,
                     "spread": _number(row["PREGAME_SPREAD"]),
                     "home_win_prob": probability,
-                    "win_prob_source": "CFBD" if probability is not None else None,
-                    "stakes": None,
+                    "win_prob_source": (
+                        "OURS"
+                        if model_probability is not None
+                        else "CFBD"
+                        if probability is not None
+                        else None
+                    ),
+                    "stakes": _number(row.get("STAKES")),
                     "game_of_week": False,
                     "upset_alert_team_id": alert,
                 }
@@ -445,9 +509,208 @@ class ReadService:
             "point": self.resolved(point, current),
             "notice": notice,
             "week_seq": next_week,
-            "run_id": None,
+            "run_id": _number(point.get("RUN_ID")),
             "games": games,
             "queries": {"games": self.ids["slate_games"]},
+        }
+
+    def team_outlook(self, team_id: int, season: int | None, week: int | None) -> Row:
+        point, current, _ = self.point(season, week)
+        point_season, point_week = int(point["AS_OF_SEASON"]), int(point["AS_OF_WEEK_SEQ"])
+        assets = self._assets()
+        if team_id not in assets or not assets[team_id]["IS_FBS"]:
+            raise HTTPException(404, f"no FBS team {team_id}")
+        odds_rows = self.fetch(
+            "team_odds_history", season=point_season, week_seq=point_week, team_id=team_id
+        )
+        run_id = _number(point.get("RUN_ID"))
+        current_odds = next(
+            (row for row in odds_rows if int(row["AS_OF_WEEK_SEQ"]) == point_week), None
+        )
+        trajectory = [
+            {
+                "season": int(row["AS_OF_SEASON"]),
+                "week_seq": int(row["AS_OF_WEEK_SEQ"]),
+                "label": row["AS_OF_LABEL"],
+                "p_in_cfp": _number(row["P_IN_CFP"]),
+                "p_bye": _number(row["P_BYE"]),
+                "p_champion": _number(row["P_CHAMPION"]),
+            }
+            for row in odds_rows
+        ]
+        slate = (
+            self.fetch("slate_games", season=point_season, week_seq=point_week)
+            if point.get("NEXT_WEEK_SEQ") is not None
+            else []
+        )
+        frozen = next(
+            (
+                row
+                for row in slate
+                if row.get("PREDICTION_KIND") == "FROZEN"
+                and team_id in (int(row["HOME_TEAM_ID"]), int(row["AWAY_TEAM_ID"]))
+            ),
+            None,
+        )
+        game = None
+        if frozen is not None:
+            home = team_id == int(frozen["HOME_TEAM_ID"])
+            opponent_id = int(frozen["AWAY_TEAM_ID"] if home else frozen["HOME_TEAM_ID"])
+            opponent_rank = frozen["AWAY_AP_RANK"] if home else frozen["HOME_AP_RANK"]
+            home_prob = _number(frozen["MODEL_HOME_WIN_PROB"])
+            assert home_prob is not None
+            game = {
+                "game_id": int(frozen["GAME_ID"]),
+                "week_seq": int(frozen["WEEK_SEQ"]),
+                "start_at": _iso(frozen["START_AT"]),
+                "site": "NEUTRAL" if frozen["IS_NEUTRAL_SITE"] else "HOME" if home else "AWAY",
+                "opponent": self._team(opponent_id, assets),
+                "opponent_rank": _number(opponent_rank),
+                "team_win_prob": home_prob if home else 1 - float(home_prob),
+                "pred_team_points": _number(
+                    frozen["HOME_POINTS_PRED"] if home else frozen["AWAY_POINTS_PRED"]
+                ),
+                "pred_opponent_points": _number(
+                    frozen["AWAY_POINTS_PRED"] if home else frozen["HOME_POINTS_PRED"]
+                ),
+                "spread": _number(frozen["PREGAME_SPREAD"])
+                if home
+                else -float(frozen["PREGAME_SPREAD"])
+                if frozen["PREGAME_SPREAD"] is not None
+                else None,
+                "prediction_kind": "FROZEN",
+            }
+        guide_top = (
+            self.fetch("rooting_guide_top", run_id=run_id, team_id=team_id)
+            if run_id is not None
+            else []
+        )
+        guide_coming = (
+            self.fetch("rooting_guide_coming", run_id=run_id, team_id=team_id)
+            if run_id is not None
+            else []
+        )
+
+        def guide_row(row: Row) -> Row:
+            return {
+                key.lower(): _number(value) if isinstance(value, Decimal) else value
+                for key, value in row.items()
+                if key != "TEAM_ID" and key != "RUN_ID"
+            }
+
+        rivalries = self.fetch("team_rivalries", team_id=team_id)
+        odds_reason = None if current_odds else f"No published run at {point['AS_OF_LABEL']}."
+        return {
+            "point": self.resolved(point, current),
+            "run_id": run_id,
+            "team_id": team_id,
+            "odds": {
+                "available": current_odds is not None,
+                "reason": odds_reason,
+                "move": current_odds["MOVE"] if current_odds else None,
+                "delta_p_in_cfp": _number(current_odds["DELTA_P_IN_CFP"]) if current_odds else None,
+                "current": trajectory[-1] if current_odds else None,
+                "trajectory": trajectory,
+            },
+            "this_week": {
+                "available": game is not None,
+                "reason": None if game else "No frozen prediction for this team's next game.",
+                "game": game,
+            },
+            "watch": {
+                "available": bool(guide_top),
+                "reason": None if guide_top else "No rooting guide for this team at this point.",
+                "guide": {
+                    "run_id": run_id,
+                    "team_id": team_id,
+                    "conditional": False,
+                    "message": None,
+                    "top": [guide_row(row) for row in guide_top],
+                    "coming_week": [guide_row(row) for row in guide_coming],
+                }
+                if guide_top
+                else None,
+            },
+            "rivalries": {
+                "available": bool(rivalries),
+                "reason": None if rivalries else "No completed series for this team.",
+                "series": [
+                    {
+                        key.lower(): _number(value) if isinstance(value, Decimal) else value
+                        for key, value in row.items()
+                    }
+                    for row in rivalries
+                ],
+            },
+            "queries": {
+                "odds": self.ids["team_odds_history"],
+                **({"this_week": self.ids["slate_games"]} if slate else {}),
+                **({"watch": self.ids["rooting_guide_top"]} if guide_top else {}),
+                "rivalries": self.ids["team_rivalries"],
+            },
+        }
+
+    def odds(self, season: int | None, week: int | None) -> Row:
+        point, current, notice = self.point(season, week)
+        point_season, point_week = int(point["AS_OF_SEASON"]), int(point["AS_OF_WEEK_SEQ"])
+        args = {"season": point_season, "week_seq": point_week}
+        odds = self.fetch("odds_rows", **args)
+        runs = self.fetch("published_run", **args)
+        settings = self.fetch("analysis_settings")
+        whatif_runs = self.fetch("whatif_run")
+        threshold = next(
+            (row["SETTING_NUMBER"] for row in settings if row["SETTING_NAME"] == "MOVE_THRESHOLD"),
+            None,
+        )
+        if threshold is None:
+            raise HTTPException(503, "the odds movement threshold is unavailable")
+        run = runs[0] if runs else None
+        selected_run = int(run["RUN_ID"]) if run else None
+        whatif = whatif_runs[0] if whatif_runs else None
+        whatif_run = int(whatif["RUN_ID"]) if whatif else None
+        available = selected_run is not None and selected_run == whatif_run
+        if available:
+            reason, message = None, None
+        elif selected_run is None:
+            reason, message = "no_run", "No simulation run is published at this point."
+        elif whatif is None:
+            reason, message = "regenerating", "The current what-if run is unavailable."
+        else:
+            reason, message = "run_at_other_point", "What-if is available at the current run."
+        fields = models.OddsRow.model_fields
+        return {
+            "point": self.resolved(point, current),
+            "notice": notice,
+            "rows": [
+                {
+                    name: _number(row[name.upper()])
+                    if isinstance(row[name.upper()], Decimal)
+                    else row[name.upper()]
+                    for name in fields
+                }
+                for row in odds
+            ],
+            "run": {
+                "run_id": selected_run,
+                "publication_id": selected_run,
+                "run_origin": run["RUN_ORIGIN"],
+                "n_sims": _number(run["N_SIMS"]),
+                "seconds_total": _number(run["SECONDS_TOTAL"]),
+                "sims_per_second": _number(run["SIMS_PER_SECOND"]),
+                "nodes": _number(run["NODES"]),
+                "instances": _number(run["INSTANCES"]),
+                "published_at": _iso(run["ENDED_AT"]),
+            }
+            if run
+            else None,
+            "move_threshold": _number(threshold),
+            "whatif": {
+                "available": available,
+                "reason": reason,
+                "message": message,
+                "run_id": whatif_run,
+                "run_label": whatif["AS_OF_LABEL"] if whatif else None,
+            },
         }
 
     def league_stats(self, season: int | None, week: int | None) -> Row:
@@ -553,9 +816,19 @@ def make_router(settings: Settings, store: SessionStore) -> APIRouter:
     ) -> Row:
         return service(request).team_page(team_id, season, week)
 
+    @router.get("/api/team/{team_id}/outlook", response_model=models.TeamOutlookResponse)
+    def team_outlook(
+        request: Request, team_id: int, season: int | None = None, week: int | None = None
+    ) -> Row:
+        return service(request).team_outlook(team_id, season, week)
+
     @router.get("/api/league/week", response_model=models.LeagueWeekResponse)
     def league_week(request: Request, season: int | None = None, week: int | None = None) -> Row:
         return service(request).league_week(season, week)
+
+    @router.get("/api/odds", response_model=models.OddsResponse)
+    def odds(request: Request, season: int | None = None, week: int | None = None) -> Row:
+        return service(request).odds(season, week)
 
     @router.get("/api/league/stats", response_model=models.LeagueStatsResponse)
     def league_stats(request: Request, season: int | None = None, week: int | None = None) -> Row:

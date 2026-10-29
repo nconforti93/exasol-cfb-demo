@@ -13,16 +13,28 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pyexasol import ExaCommunicationError, ExaQueryError
+from starlette.middleware import Middleware
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import Response
 
-from app.backend import db, security
+from app.backend import db, security, sqlcatalog
 from app.backend.operator import OperatorPath
+from app.backend.readcache import DISPLAY_TTL_SECONDS, Memo, ReadCache
+from app.backend.routes.console import make_router as console_router
 from app.backend.routes.inspector import make_router as inspector_router
 from app.backend.routes.logos import make_router as logo_router
+from app.backend.routes.matchup import make_router as matchup_router
+from app.backend.routes.predictions import make_router as predictions_router
+from app.backend.routes.preview import make_router as preview_router
+from app.backend.routes.quota import make_router as quota_router
 from app.backend.routes.read import make_router as read_router
+from app.backend.routes.refresh import make_router as refresh_router
 from app.backend.routes.timeline import make_router as timeline_router
-from app.backend.sessions import SessionStore
+from app.backend.routes.upsets import make_router as upsets_router
+from app.backend.routes.whatif import make_router as whatif_router
+from app.backend.sessions import LiveGate, SessionStore
 from app.backend.settings import Settings
+from loader.guard import ReconcilePending
 from vs.host import ledger as ledger_module
 
 VERSION = "0.1.0"
@@ -108,8 +120,12 @@ def create_app(
         app.state.ledger = _ledger_state(settings, calls)
         app.state.reconciled = False
         if reconcile is not None:
-            reconcile(settings, operator, calls)
-            app.state.reconciled = True
+            try:
+                reconcile(settings, operator, calls)
+                app.state.reconciled = True
+            except ReconcilePending:
+                # Read pages remain useful, but no live action can pass its gate.
+                app.state.reconciled = False
         try:
             yield
         finally:
@@ -118,23 +134,79 @@ def create_app(
     browser = security.SecurityConfig(
         settings.allowed_hosts, settings.origins, settings.cors_origins
     )
-    app = FastAPI(lifespan=lifespan, middleware=security.middleware(browser))
+    app = FastAPI(
+        lifespan=lifespan,
+        middleware=[
+            *security.middleware(browser),
+            # Innermost: the 500 KB bundle and the larger read responses compress about 5x.
+            Middleware(GZipMiddleware, minimum_size=1024),
+        ],
+    )
     app.state.settings = settings
     sessions = SessionStore()
     app.state.sessions = sessions
+    app.state.live_gate = LiveGate()
+    app.state.read_cache = ReadCache()
+    app.state.memo = Memo()
     app.include_router(logo_router(settings.logo_dir, enabled=settings.logos_enabled))
     app.include_router(read_router(settings, sessions))
-    app.include_router(timeline_router(settings, sessions))
+    app.include_router(whatif_router(settings, sessions))
+    app.include_router(predictions_router(settings, sessions))
+    app.include_router(upsets_router(settings, sessions))
+    app.include_router(matchup_router(settings, sessions))
+    app.include_router(preview_router(settings, sessions, calls))
+    app.include_router(quota_router(settings, sessions))
+    app.include_router(refresh_router(settings, sessions, calls))
+    app.include_router(timeline_router(settings, sessions, calls))
     app.include_router(inspector_router(sessions))
+    app.include_router(console_router(settings, sessions, calls))
 
     @app.get("/api/health")
     def health(request: Request) -> dict[str, bool]:
         request.app.state.database.pool.run("SELECT 1")
         return {"ok": True}
 
+    def _fetch_mode(state: Any) -> str | None:
+        try:
+            return state.operator.fetch_mode(settings.namespace) if state.operator.enabled else None
+        except Exception:
+            return None
+
+    def _refresh_target(state: Any) -> dict[str, Any] | None:
+        if not state.operator.enabled:
+            return None
+        try:
+            statement = sqlcatalog.CATALOG["current_point"]
+            rows = state.database.pool.run(
+                statement.sql,
+                sqlcatalog.parameters(
+                    statement,
+                    api_schema=settings.api_schema,
+                    api_live_schema=settings.api_live_schema,
+                ),
+            ).dicts()
+            if not rows:
+                return None
+            point = rows[0]
+            next_week = state.operator.refresh_target(
+                settings.namespace,
+                int(point["AS_OF_SEASON"]),
+                int(point["AS_OF_WEEK_SEQ"]),
+            )
+        except Exception:
+            return None
+        if next_week is None:
+            return None
+        return {"season": next_week[0], "week": next_week[1], "season_type": next_week[2]}
+
     @app.get("/api/config")
     def config(request: Request) -> dict[str, Any]:
         state = request.app.state
+        state.ledger = _ledger_state(settings, calls)
+        # Display only: the refresh and preview routes read the mode again before any spend.
+        fetch_mode, refresh_target = state.memo.get(
+            "config", DISPLAY_TTL_SECONDS, lambda: (_fetch_mode(state), _refresh_target(state))
+        )
         reasons = []
         if settings.dev:
             reasons.append("development mode")
@@ -142,14 +214,19 @@ def create_app(
             reasons.append(state.operator.reason)
         if not state.reconciled:
             reasons.append("startup reconciliation is unavailable")
-        if state.ledger["plan_cap"] is None or state.ledger["month_cap"] is None:
+        if not settings.ledger_enabled:
+            reasons.append("ledger off")
+        elif state.ledger["plan_cap"] is None or state.ledger["month_cap"] is None:
             reasons.append("the ledger has no cap for this plan or month")
+        if fetch_mode is None:
+            reasons.append("the virtual schema mode is unavailable")
         console = state.console.availability
         return {
             "version": VERSION,
             "target": settings.target,
             "dev": settings.dev,
-            "fetch_mode": None,
+            "fetch_mode": fetch_mode,
+            "refresh_target": refresh_target,
             "operator": {
                 "enabled": state.operator.enabled,
                 "reason": None if state.operator.enabled else state.operator.reason,

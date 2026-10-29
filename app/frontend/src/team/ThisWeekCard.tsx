@@ -40,7 +40,9 @@ export function ThisWeekCard({ teamId, school, panel, sqlEntry }: ThisWeekCardPr
         <div>
           <dt>Predicted score</dt>
           <dd className="num">
-            {game.pred_team_points.toFixed(1)}–{game.pred_opponent_points.toFixed(1)}
+            {game.pred_team_points === null || game.pred_opponent_points === null
+              ? 'unavailable'
+              : `${game.pred_team_points.toFixed(1)}–${game.pred_opponent_points.toFixed(1)}`}
           </dd>
         </div>
         <div>

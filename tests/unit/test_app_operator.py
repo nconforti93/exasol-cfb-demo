@@ -11,6 +11,7 @@ import pytest
 
 from app.backend import db, operator, security
 from app.backend.settings import Settings
+from loader import guard
 from tests.unit.db_fakes import FakeConnector, Reply
 from vs.host import fetchlog
 from vs.host.namespace import Namespace
@@ -140,6 +141,13 @@ IMPERSONATION = security.IMPERSONATION_QUERY
 
 def allowed_samples(namespace: Namespace) -> dict[str, str]:
     meta = namespace.meta_schema
+    estimate_sql: list[str] = []
+
+    def collect_estimate(sql: str) -> list[tuple[Any, ...]]:
+        estimate_sql.append(sql)
+        return []
+
+    guard.plan_refresh(collect_estimate, namespace, 2026)
     return {
         "refresh_run": operator.refresh_statement(namespace, 2026, 10, "regular"),
         "refresh_run_post": operator.refresh_statement(namespace, 2025, 3, "postseason"),
@@ -148,6 +156,36 @@ def allowed_samples(namespace: Namespace) -> dict[str, str]:
         "load_run_row": f'SELECT * FROM "{meta}"."LOAD_RUN" WHERE "RUN_ID" = 42',
         "load_run_running": (
             f'SELECT "RUN_ID", "RUN_KIND" FROM "{meta}"."LOAD_RUN" WHERE "RUN_STATUS" = \'RUNNING\''
+        ),
+        "reconcile_runs": (
+            'SELECT "RUN_ID", "RUN_KIND", "SESSION_ID", "RUN_STATUS", "CALLS", '
+            f'"REMAINING_BEFORE", "REMAINING_AFTER" FROM "{meta}"."LOAD_RUN" '
+            "WHERE \"RUN_KIND\" IN ('BACKFILL', 'REFRESH_WEEK') "
+            'AND "REMAINING_BEFORE" IS NOT NULL '
+            "AND \"STARTED_AT\" >= TIMESTAMP '2026-10-01 00:00:00' "
+            'AND "STARTED_AT" < TIMESTAMP \'2026-11-01 00:00:00\' ORDER BY "RUN_ID"'
+        ),
+        "reconcile_session": (
+            'SELECT "SESSION_ID" FROM "SYS"."EXA_ALL_SESSIONS" WHERE "SESSION_ID" = 77'
+        ),
+        "reconcile_steps": (
+            f'SELECT "STEP_NAME", "STEP_STATUS", "CALLS", "SLICES" FROM '
+            f'"{meta}"."REFRESH_LOG" WHERE "RUN_ID" = 42'
+        ),
+        "fetch_mode": (
+            'SELECT "PROPERTY_VALUE" FROM "SYS"."EXA_ALL_VIRTUAL_SCHEMA_PROPERTIES" '
+            f"WHERE \"SCHEMA_NAME\" = '{namespace.vs_name}' AND \"PROPERTY_NAME\" = 'FETCH_MODE'"
+        ),
+        "refresh_target": (
+            f'SELECT "SEASON", "WEEK", "SEASON_TYPE" FROM "{namespace.model_schema}"."SEASON_WEEK" '
+            'WHERE "SEASON" > 2026 OR ("SEASON" = 2026 AND "WEEK_SEQ" > 7) '
+            'ORDER BY "SEASON", "WEEK_SEQ" LIMIT 1'
+        ),
+        "refresh_estimate": estimate_sql[0],
+        "refresh_blocked": estimate_sql[1],
+        "refresh_calendar_week": (
+            f'SELECT "IS_DONE" FROM "{namespace.model_schema}"."SEASON_WEEK" '
+            'WHERE "SEASON" = 2026 AND "WEEK" = 8 AND "SEASON_TYPE" = \'regular\''
         ),
         "impersonation": IMPERSONATION,
     }
@@ -177,6 +215,23 @@ def refused_samples(namespace: Namespace) -> dict[str, str]:
         "insert_stacked": (f'INSERT INTO "{meta}".FETCH_LOG ("LOGGED_AT") VALUES (1); DROP USER X'),
         "insert_columns": f'INSERT INTO {meta}.FETCH_LOG ("LOGGED_AT") VALUES (1)',
         "key_read": 'SELECT * FROM "SYS"."EXA_DBA_CONNECTIONS"',
+        "mode_other_schema": (
+            'SELECT "PROPERTY_VALUE" FROM "SYS"."EXA_ALL_VIRTUAL_SCHEMA_PROPERTIES" '
+            "WHERE \"SCHEMA_NAME\" = 'OTHER_VS' AND \"PROPERTY_NAME\" = 'FETCH_MODE'"
+        ),
+        "refresh_target_other_schema": (
+            'SELECT "SEASON", "WEEK", "SEASON_TYPE" FROM "OTHER_MODEL"."SEASON_WEEK" '
+            'WHERE "SEASON" > 2026 OR ("SEASON" = 2026 AND "WEEK_SEQ" > 7) '
+            'ORDER BY "SEASON", "WEEK_SEQ" LIMIT 1'
+        ),
+        "reconcile_other_month": (
+            'SELECT "RUN_ID", "RUN_KIND", "SESSION_ID", "RUN_STATUS", "CALLS", '
+            f'"REMAINING_BEFORE", "REMAINING_AFTER" FROM "{meta}"."LOAD_RUN" '
+            "WHERE \"RUN_KIND\" IN ('BACKFILL', 'REFRESH_WEEK') "
+            'AND "REMAINING_BEFORE" IS NOT NULL '
+            "AND \"STARTED_AT\" >= TIMESTAMP '2026-10-20 00:00:00' "
+            'AND "STARTED_AT" < TIMESTAMP \'2026-11-01 00:00:00\' ORDER BY "RUN_ID"'
+        ),
         "empty": "",
     }
 
@@ -230,6 +285,21 @@ def test_the_run_id_statement_takes_only_an_integer_session_id() -> None:
     )
     with pytest.raises(ValueError):
         operator.run_id_statement(REAL, "77 OR 1=1")  # type: ignore[arg-type]
+
+
+def test_refresh_target_reads_the_next_calendar_week_across_a_season_boundary() -> None:
+    connector = FakeConnector(
+        lambda _: Reply(("SEASON", "WEEK", "SEASON_TYPE"), ((2027, 1, "regular"),))
+    )
+    path = operator.OperatorPath(make_settings(), connector)
+    assert path.refresh_target(REAL, 2026, 115) == (2027, 1, "regular")
+    assert connector.statements()[0] == (
+        'SELECT "SEASON", "WEEK", "SEASON_TYPE" FROM "CFB_MODEL"."SEASON_WEEK" '
+        'WHERE "SEASON" > 2026 OR ("SEASON" = 2026 AND "WEEK_SEQ" > 115) '
+        'ORDER BY "SEASON", "WEEK_SEQ" LIMIT 1'
+    )
+    with pytest.raises(ValueError):
+        path.refresh_target(REAL, 2026, "115 OR 1=1")  # type: ignore[arg-type]
 
 
 # ---- the wrapper: records, refuses before sending --------------------------------------------

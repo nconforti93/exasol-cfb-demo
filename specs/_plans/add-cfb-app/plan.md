@@ -6,6 +6,8 @@ Roadmap Phase 6 ("App"): a FastAPI backend and a React frontend over `CFB_API` a
 
 Pages read as a read-only app user, and the console reads the virtual schema as an ordinary reader. A small operator path runs as the namespace owner, only on a loopback bind, for the refresh, the fetch log and the ledger's reconciliation. Every request must name the app's own host, and every action must come from the app's own origin. Every live CFBD call is planned at 0 calls, shown and confirmed before it is sent, never sent twice by the app, and recorded afterwards whatever its outcome. Everything is tested at zero CFBD calls on the synthetic sim league. Live verification on AWS spends at most 12 ledgered calls (8 planned) under the plan `add-cfb-app`, in November, which the owner authorized for 1000 calls.
 
+**Owner revision 2026-10-27 ([46]):** the 12-call Phase 6 verification allocation and 60-call runtime allocation below are superseded. Both app ledger plans now have a 1400-call cap, the sum of the currently authorized October and November monthly caps. October remains capped at 400 and November at 1000. The app completed the overdue week-8 AWS refresh as run 18, spending four calls; `/info` usage rose from 246 to 250.
+
 Frontend work starts now, against validated fixtures, while Phases 2–5 are still being implemented. A demo-minimum cut line names what the mid-November demo needs and what may slip to Phase 8.
 
 Revised on 2026-10-22/23 after the independent review (`review.md`, § Review resolution): 73 scenarios (64 + 9), 38 tasks (3 `[expert]`), 12 parallel groups.

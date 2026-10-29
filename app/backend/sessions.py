@@ -57,6 +57,7 @@ class QueryLogEntry:
     slices: tuple[SliceCall, ...]
     calls: int
     context: str | None
+    cached: bool = False
 
 
 class QueryLog:
@@ -83,6 +84,7 @@ class QueryLog:
         calls: int = 0,
         context: str | None = None,
         started_at: float | None = None,
+        cached: bool = False,
     ) -> QueryLogEntry:
         """Append an entry and return it with its id."""
         if principal not in PRINCIPALS:
@@ -101,6 +103,7 @@ class QueryLog:
                 tuple(slices),
                 calls,
                 context,
+                cached,
             )
             self._entries[entry.id] = entry
             self._next += 1

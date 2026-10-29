@@ -56,8 +56,8 @@ export function NextMeeting({ next, team, opponent, asOfLabel }: NextMeetingProp
           <dd>{`${formatKickoffDate(next.start_at)}, ${formatSite(next.site, team.school, opponent.school)}`}</dd>
         </div>
         <div>
-          <dt>{`Our prediction (${PREDICTION_WORD[next.prediction_kind]})`}</dt>
-          <dd className="num">{`${team.school} ${formatPercent(next.team_win_prob)}, ${formatPredictedScore(next)}`}</dd>
+          <dt>{next.prediction_kind === null ? 'Our prediction' : `Our prediction (${PREDICTION_WORD[next.prediction_kind]})`}</dt>
+          <dd className="num">{next.team_win_prob === null ? 'unavailable' : `${team.school} ${formatPercent(next.team_win_prob)}, ${formatPredictedScore(next)}`}</dd>
         </div>
       </dl>
       {hasStakes ? (

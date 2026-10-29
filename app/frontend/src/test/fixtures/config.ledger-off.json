@@ -3,6 +3,7 @@
   "target": "aws",
   "dev": false,
   "fetch_mode": "LIVE",
+  "refresh_target": {"season": 2026, "week": 10, "season_type": "regular"},
   "operator": {
     "enabled": false,
     "reason": "the server is not bound to loopback only"

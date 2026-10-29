@@ -106,6 +106,7 @@ class ConfigResponse(BaseModel):
     target: str
     dev: bool
     fetch_mode: FetchMode | None
+    refresh_target: RefreshTarget | None
     operator: Capability
     console: Capability
     ledger: LedgerConfig
@@ -338,11 +339,11 @@ class GuideRow(BaseModel):
     home_school: str
     away_team_id: Number
     away_school: str
-    root_for_team_id: Number
-    root_for_school: str
-    p_if_home_win: Number
-    p_if_away_win: Number
-    leverage: Number
+    root_for_team_id: Number | None
+    root_for_school: str | None
+    p_if_home_win: Number | None
+    p_if_away_win: Number | None
+    leverage: Number | None
     low_sample: bool
 
 
@@ -532,10 +533,10 @@ class MatchupNext(BaseModel):
     week_seq: Number
     start_at: str | None
     site: SiteKind
-    prediction_kind: Literal["FROZEN", "CURRENT"]
-    team_win_prob: Number
-    pred_team_points: Number
-    pred_opponent_points: Number
+    prediction_kind: Literal["FROZEN", "CURRENT"] | None
+    team_win_prob: Number | None
+    pred_team_points: Number | None
+    pred_opponent_points: Number | None
     stakes_run_id: Number | None
     team_p_in_cfp_if_win: Number | None
     team_p_in_cfp_if_lose: Number | None
@@ -831,6 +832,7 @@ class QueryLogEntry(BaseModel):
     error: str | None
     requests: list[RequestLine]
     calls_spent: Number
+    cached: bool = False
 
 
 class InspectorResponse(BaseModel):
@@ -1042,8 +1044,8 @@ class OutlookGame(BaseModel):
     opponent: Team
     opponent_rank: Number | None
     team_win_prob: Number
-    pred_team_points: Number
-    pred_opponent_points: Number
+    pred_team_points: Number | None
+    pred_opponent_points: Number | None
     spread: Number | None
     prediction_kind: PredictionKind
 

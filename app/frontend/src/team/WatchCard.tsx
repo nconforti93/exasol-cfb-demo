@@ -31,15 +31,15 @@ function GuideList({ title, rows, maxLeverage, teams }: { title: string; rows: G
                   <span className="game-meta"> · week {row.week_seq}</span>
                 </p>
                 <p className="watch-root">
-                  <CheckIcon /> Root for <strong>{row.root_for_school}</strong>
+                  {row.root_for_school === null ? 'Even outcome' : <><CheckIcon /> Root for <strong>{row.root_for_school}</strong></>}
                 </p>
               </div>
             </div>
             <div className="watch-effect">
-              <InlineBar value={row.leverage} max={maxLeverage} label={`Leverage ${leverageText(row.leverage)}`} width={96} />
-              <span className="num watch-leverage">{leverageText(row.leverage)}</span>
+              <InlineBar value={row.leverage ?? 0} max={maxLeverage} label={`Leverage ${row.leverage === null ? 'unavailable' : leverageText(row.leverage)}`} width={96} />
+              <span className="num watch-leverage">{row.leverage === null ? '–' : leverageText(row.leverage)}</span>
               <span className="game-meta num">
-                {formatPercent(row.p_if_home_win)} if {row.home_school} wins · {formatPercent(row.p_if_away_win)} if {row.away_school} wins
+                {row.p_if_home_win === null ? '–' : formatPercent(row.p_if_home_win)} if {row.home_school} wins · {row.p_if_away_win === null ? '–' : formatPercent(row.p_if_away_win)} if {row.away_school} wins
               </span>
               {row.low_sample && (
                 <span className="flag-low">
@@ -71,7 +71,7 @@ export function WatchCard({ panel, conditional, teams, sqlEntry, span }: WatchCa
   const showingConditional = conditional.status !== 'idle'
   const guide = conditional.status === 'ready' && conditional.data !== null ? conditional.data : panel.guide
   const rows = [...guide.coming_week, ...guide.top]
-  const maxLeverage = Math.max(0.01, ...rows.map((row) => row.leverage))
+  const maxLeverage = Math.max(0.01, ...rows.map((row) => row.leverage ?? 0))
   const empty = guide.top.length === 0 && guide.coming_week.length === 0
   return (
     <Card title="Games to watch" eyebrow="Outlook" span={span} sqlEntry={sqlEntry}>

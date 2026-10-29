@@ -53,5 +53,6 @@ export function formatMargin(margin: number | null, season: number | null): stri
 }
 
 export function formatPredictedScore(next: MatchupNext): string {
+  if (next.pred_team_points === null || next.pred_opponent_points === null) return 'score unavailable'
   return `${next.pred_team_points.toFixed(1)}–${next.pred_opponent_points.toFixed(1)}`
 }

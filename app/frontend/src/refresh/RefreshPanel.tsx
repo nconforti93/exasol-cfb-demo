@@ -4,7 +4,6 @@ import { isAbortError, isApiError, type ApiError } from '../api/client.ts'
 import { useApi } from '../api/context.tsx'
 import type {
   ActionResponse,
-  CurrentPoint,
   RefreshPlanResponse,
   RefreshTarget,
   SeasonType,
@@ -33,12 +32,12 @@ interface TargetFields {
   seasonType: SeasonType
 }
 
-function proposedTarget(current: CurrentPoint | null): TargetFields | null {
-  if (current === null) return null
+function proposedTarget(target: RefreshTarget | null): TargetFields | null {
+  if (target === null) return null
   return {
-    season: String(current.as_of_season),
-    week: String((current.as_of_week ?? 0) + 1),
-    seasonType: current.as_of_season_type,
+    season: String(target.season),
+    week: String(target.week),
+    seasonType: target.season_type,
   }
 }
 
@@ -122,7 +121,6 @@ export function RefreshPanel() {
   const outage = useOutage()
   const report = outage.report
   const config = useAppState((state) => state.config)
-  const current = useAppState((state) => state.current)
   const { timeline, pollNow } = useTimeline()
   const shell = useShellData()
 
@@ -149,7 +147,7 @@ export function RefreshPanel() {
     setToggled(null)
   }
 
-  const proposed = proposedTarget(current)
+  const proposed = proposedTarget(config?.refresh_target ?? null)
   const fields: TargetFields | null = proposed === null ? null : { ...proposed, ...edited }
   const target = parseTarget(fields)
 

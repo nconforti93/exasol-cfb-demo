@@ -6,28 +6,14 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.backend import models
+from app.backend import models, sqlcatalog
 from app.backend.explain import NO_VIRTUAL_TABLE_TEXT
 from app.backend.sessions import QueryLogEntry, SessionStore
 
-STORED_PAGES = frozenset(
-    {
-        "current_point",
-        "as_of_seasons",
-        "as_of_points",
-        "teams",
-        "fbs_team_seasons",
-        "team_results",
-        "team_schedule",
-        "point_rankings",
-        "team_sp",
-        "slate_games",
-        "road_warriors",
-        "sp_movers",
-        "conference_strength",
-        "win_streaks",
-    }
-)
+STORED_PAGES = frozenset(sqlcatalog.CATALOG) - {"health", "quota"} | {
+    "whatif_odds",
+    "whatif_guide",
+}
 
 
 def _browser_log(request: Request, store: SessionStore) -> list[QueryLogEntry]:
@@ -53,6 +39,7 @@ def make_router(store: SessionStore) -> APIRouter:
                 "error": entry.error,
                 "requests": [],
                 "calls_spent": entry.calls,
+                "cached": entry.cached,
             }
             for entry in _browser_log(request, store)
         ]

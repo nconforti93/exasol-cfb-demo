@@ -48,13 +48,13 @@ function GuideTable({ title, rows, rankOf }: { title: string; rows: GuideRow[]; 
                 </td>
                 <td>
                   <span className="guide-root">
-                    <CheckIcon /> <strong>{row.root_for_school}</strong>
+                    {row.root_for_school === null ? 'Even' : <><CheckIcon /> <strong>{row.root_for_school}</strong></>}
                   </span>
                 </td>
-                <td className="num">{formatPercent(row.p_if_home_win)}</td>
-                <td className="num">{formatPercent(row.p_if_away_win)}</td>
+                <td className="num">{row.p_if_home_win === null ? '–' : formatPercent(row.p_if_home_win)}</td>
+                <td className="num">{row.p_if_away_win === null ? '–' : formatPercent(row.p_if_away_win)}</td>
                 <td className="num">
-                  {leverage(row.leverage)}
+                  {row.leverage === null ? '–' : leverage(row.leverage)}
                   {row.low_sample ? (
                     <span className="flag-low">
                       {' '}

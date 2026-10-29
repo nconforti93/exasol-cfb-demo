@@ -56,6 +56,12 @@ A college football analytics platform on Exasol: an OpenAPI-generated Virtual Sc
 - **`MODEL_CHECKS`:** ERROR checks stop the refresh chain in step 100; warnings are logged to `CFB_META.MODEL_CHECK_LOG` (for 2026 on the stored data: `CONF_CHAMPIONSHIP_MISSING`, `WEEK_ORDER_MISMATCH`, `ELO` coverage `PARTIAL`; see `docs/model-verification.md`).
 - **Model tests:** `tests/it/test_model_*_it.py` on the synthetic league (`tests/synthetic/league.py`, scaled variant for performance), in the `TEST_` namespace; the model deploy itself takes the `DEPLOY` lock.
 
+## Demo hard rules (Phase 8, `add-cfb-demo-hardening` L1)
+
+- **Demo freeze:** while `demo/freeze.yaml` is in force (planned 2026-11-01 to 2026-11-21), `vs/catalog/`, `sql/core/`, `sql/meta/load_log.sql`, `sql/meta/fetch_log.sql` and `loader/load-plan.yaml` must keep their pinned content digests: the rehearsal kits' snapshots cannot be retaken. `make lint` runs `scripts/release_check.py --fast` last and fails on any change, committed or not. The only way out is an owner-approved migration that re-fingerprints the snapshots, then `make demo-freeze FROM= UNTIL= FORCE=yes`. Pins are taken from the tree deployed on AWS.
+- **Demo week (Nov 16–20):** no `make deploy` on the real local namespace except through `make rehearse`.
+- **Never run `exakit` runtime commands or plain `exakit mcp-doctor` on this machine:** `deployments/default` is the AWS instance. Only `exakit mcp-doctor --json` is safe. The local DB is driven only with `exasol start/stop -d local`.
+
 ## Environment
 
 - The repo path contains spaces (OneDrive). Quote paths, and pass `CURDIR` explicitly to make if a target breaks (adbc-vs-rs lesson).

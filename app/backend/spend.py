@@ -110,7 +110,7 @@ def plan_from_manifests(manifests: Sequence[Manifest]) -> SpendPlan:
 def live_disabled_reasons(state: LedgerState) -> list[str]:
     """Why the ledger configuration alone makes live actions impossible; empty when it does not."""
     if not state.enabled:
-        return []
+        return ["ledger off"]
     reasons = []
     if state.plan_cap is None:
         reasons.append(f"no ledger cap for plan {state.plan}")

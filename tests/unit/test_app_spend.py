@@ -139,10 +139,11 @@ def test_a_missing_cap_disables_live_actions_by_name(
     assert reason in refusal.message
 
 
-def test_the_ledger_being_off_skips_the_ledger_rules() -> None:
+def test_the_ledger_being_off_refuses_a_paid_action() -> None:
     state = ledger_state(enabled=False, plan_cap=None, month_cap=None, plan_total=999)
-    assert spend.live_disabled_reasons(state) == []
-    assert decide(state=state) is None
+    assert spend.live_disabled_reasons(state) == ["ledger off"]
+    refusal = decide(state=state)
+    assert refusal is not None and refusal.code == "live_disabled"
 
 
 def test_the_retry_headroom_counts_against_the_plan_cap() -> None:

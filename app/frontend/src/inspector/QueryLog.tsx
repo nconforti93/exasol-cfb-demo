@@ -13,7 +13,8 @@ import { useExplain } from './useExplain.ts'
 import { RequestWaterfall } from './Waterfall.tsx'
 
 function metrics(entry: QueryLogEntry): string {
-  const parts = [`${formatInteger(entry.ms)} ms`]
+  const time = `${formatInteger(entry.ms)} ms`
+  const parts = [entry.cached === true ? `cached (database run took ${time})` : time]
   if (entry.row_count !== null) parts.push(rowsLabel(entry.row_count))
   parts.push(formatCalls(entry.calls_spent))
   return parts.join(' · ')

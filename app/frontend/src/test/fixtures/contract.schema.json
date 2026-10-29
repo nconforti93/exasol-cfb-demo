@@ -325,6 +325,16 @@
             }
           ]
         },
+        "refresh_target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RefreshTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "operator": {
           "$ref": "#/$defs/Capability"
         },
@@ -349,6 +359,7 @@
         "target",
         "dev",
         "fetch_mode",
+        "refresh_target",
         "operator",
         "console",
         "ledger",
@@ -1293,19 +1304,54 @@
           "type": "string"
         },
         "root_for_team_id": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "root_for_school": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "p_if_home_win": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "p_if_away_win": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "leverage": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "low_sample": {
           "type": "boolean"
@@ -2177,19 +2223,47 @@
           "$ref": "#/$defs/SiteKind"
         },
         "prediction_kind": {
-          "enum": [
-            "FROZEN",
-            "CURRENT"
+          "anyOf": [
+            {
+              "const": "FROZEN"
+            },
+            {
+              "const": "CURRENT"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "team_win_prob": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "pred_team_points": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "pred_opponent_points": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "stakes_run_id": {
           "anyOf": [
@@ -3573,6 +3647,9 @@
         },
         "calls_spent": {
           "type": "number"
+        },
+        "cached": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -4527,10 +4604,24 @@
           "type": "number"
         },
         "pred_team_points": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "pred_opponent_points": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "spread": {
           "anyOf": [
