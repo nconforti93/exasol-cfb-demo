@@ -147,7 +147,7 @@ def test_reader_role_steps_reject_unsafe_identifiers(bad: str) -> None:
 def test_real_first_run_creates_the_reader_role_and_defers_the_select_grant_until_deploy() -> None:
     db = FakeDatabase()
     report = grants.apply(db, REAL, "CFBD_API")
-    assert db.statements == ["CREATE ROLE CFB_READER"]
+    assert db.statements == ["CREATE ROLE CFB_READER", "CREATE ROLE CFB_APP", "CREATE ROLE CFB_MCP"]
     assert report.script_grant == "not needed"
     assert report.reader_grant == "pending"
     assert report.exit_code == grants.EXIT_OK
@@ -157,13 +157,19 @@ def test_real_first_run_creates_the_reader_role_and_defers_the_select_grant_unti
 def test_real_deployed_virtual_schema_gets_select_for_the_role() -> None:
     db = FakeDatabase(roles={"CFB_READER"}, schemas={"CFBD_VS"})
     report = grants.apply(db, REAL, "CFBD_API")
-    assert db.statements == ["GRANT SELECT ON CFBD_VS TO CFB_READER"]
+    assert db.statements == [
+        "GRANT SELECT ON CFBD_VS TO CFB_READER",
+        "CREATE ROLE CFB_APP",
+        "CREATE ROLE CFB_MCP",
+    ]
     assert report.reader_grant == "granted"
 
 
 def test_real_rerun_is_idempotent() -> None:
     db = FakeDatabase(
-        roles={"CFB_READER"}, schemas={"CFBD_VS"}, select_grants={("CFBD_VS", "CFB_READER")}
+        roles={"CFB_READER", "CFB_APP", "CFB_MCP"},
+        schemas={"CFBD_VS"},
+        select_grants={("CFBD_VS", "CFB_READER")},
     )
     report = grants.apply(db, REAL, "CFBD_API")
     assert db.executed == []
@@ -199,6 +205,20 @@ def test_real_run_never_grants_access_any_connection() -> None:
         assert "ANY CONNECTION" not in "\n".join(db.statements).upper()
 
 
+def test_serving_roles_separate_live_access_from_chat() -> None:
+    db = FakeDatabase(
+        roles={"CFB_READER", "CFB_APP", "CFB_MCP"},
+        schemas={"CFBD_VS", "CFB_API", "CFB_API_LIVE"},
+        select_grants={("CFBD_VS", "CFB_READER")},
+    )
+    grants.apply(db, REAL, "CFBD_API")
+    assert db.statements == [
+        "GRANT SELECT ON SCHEMA CFB_API TO CFB_APP",
+        "GRANT SELECT ON SCHEMA CFB_API TO CFB_MCP",
+        "GRANT SELECT ON SCHEMA CFB_API_LIVE TO CFB_APP",
+    ]
+
+
 # --- orchestration against a fake database: the TEST_ namespace keeps its owner model ---
 
 
@@ -209,6 +229,8 @@ def test_test_first_run_creates_the_owner_and_defers_the_script_grant_until_depl
         "CREATE USER CFB_TEST_OWNER IDENTIFIED BY {password!q}",
         "GRANT CREATE SESSION, CREATE SCHEMA, CREATE TABLE, CREATE VIEW, CREATE SCRIPT, "
         "CREATE FUNCTION, CREATE VIRTUAL SCHEMA TO CFB_TEST_OWNER",
+        "CREATE ROLE TEST_CFB_APP",
+        "CREATE ROLE TEST_CFB_MCP",
     ]
     assert db.executed[0][1] == {"password": PASSWORD}
     assert report.script_grant == "pending"
@@ -223,10 +245,10 @@ def test_test_deployed_script_gets_the_script_bound_grant() -> None:
         connections={"CFBD_API_MOCK"},
     )
     report = grants.apply(db, TEST, "CFBD_API_MOCK")
-    assert db.statements[-1] == (
+    assert (
         "GRANT ACCESS ON CONNECTION CFBD_API_MOCK FOR SCRIPT TEST_CFB_INFRA.CFBD_FETCH "
         "TO CFB_TEST_OWNER"
-    )
+    ) in db.statements
     assert report.script_grant == "granted"
     assert report.exit_code == grants.EXIT_OK
 

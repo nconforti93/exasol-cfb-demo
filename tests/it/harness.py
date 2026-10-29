@@ -48,6 +48,7 @@ from typing import Any, NoReturn
 
 import pyexasol
 
+from analyses import deploy as api_deploy
 from engine import deploy as sim_deploy
 from loader import deploy as loader_deploy
 from loader.runlock import HeldLock, run_lock
@@ -65,6 +66,8 @@ from vs.host.namespace import MOCK_CONNECTION, Namespace
 
 PREFIX = "TEST_"
 READER_USER = "CFB_TEST_READER"
+APP_USER = "CFB_TEST_APP_WEB"
+MCP_USER = "CFB_TEST_MCP_WEB"
 HARNESS_SCHEMA = "TEST_CFB_HARNESS"
 PROVIDER = "tests.synthetic.fake:response_for"
 LOADED_BY = "IT_HARNESS"
@@ -132,7 +135,11 @@ def drop_namespace(connection: Any, namespace: Namespace) -> list[str]:
         *(f"DROP SCHEMA IF EXISTS {schema} CASCADE" for schema in _all_schemas(namespace)),
         f"DROP CONNECTION IF EXISTS {MOCK_CONNECTION}",
         f"DROP USER IF EXISTS {READER_USER} CASCADE",
+        f"DROP USER IF EXISTS {APP_USER} CASCADE",
+        f"DROP USER IF EXISTS {MCP_USER} CASCADE",
         f"DROP USER IF EXISTS {namespace.owner_user} CASCADE",
+        f"DROP ROLE IF EXISTS {namespace.app_role} CASCADE",
+        f"DROP ROLE IF EXISTS {namespace.mcp_role} CASCADE",
     ]
     failures = []
     for name in _stale_connections(connection):
@@ -169,7 +176,15 @@ def leftovers(connection: Any, namespace: Namespace) -> list[str]:
         f"user {row[0]}"
         for row in connection.execute(
             "SELECT USER_NAME FROM EXA_DBA_USERS "
-            f"WHERE USER_NAME IN ('{namespace.owner_user}', '{READER_USER}')"
+            f"WHERE USER_NAME IN ('{namespace.owner_user}', '{READER_USER}', "
+            f"'{APP_USER}', '{MCP_USER}')"
+        ).fetchall()
+    ]
+    found += [
+        f"role {row[0]}"
+        for row in connection.execute(
+            "SELECT ROLE_NAME FROM EXA_DBA_ROLES "
+            f"WHERE ROLE_NAME IN ('{namespace.app_role}', '{namespace.mcp_role}')"
         ).fetchall()
     ]
     found += [f"connection {name}" for name in _stale_connections(connection)]
@@ -184,6 +199,8 @@ def _namespace_schemas(namespace: Namespace) -> tuple[str, ...]:
         namespace.stage_schema,
         namespace.restore_schema,
         namespace.model_schema,
+        namespace.api_schema,
+        namespace.api_live_schema,
         namespace.sim_schema,
         HARNESS_SCHEMA,
     )
@@ -346,6 +363,30 @@ class Harness:
         if self._reader is None:
             self._reader = self._target.connect(READER_USER, self._reader_password)
         return self._reader
+
+    @contextmanager
+    def role_session(self, role: str) -> Iterator[Any]:
+        """Connect as a disposable app or chat test user with only its serving role."""
+        users = {self.namespace.app_role: APP_USER, self.namespace.mcp_role: MCP_USER}
+        if role not in users:
+            raise HarnessError(f"role {role!r} is not a test serving role")
+        user = users[role]
+        password = support.new_secret()
+        connection = None
+        try:
+            self.sys.execute(
+                f"CREATE USER {user} IDENTIFIED BY {{password!q}}", {"password": password}
+            )
+            self.sys.execute(f"GRANT CREATE SESSION TO {user}")
+            self.sys.execute(f"GRANT {role} TO {user}")
+            connection = self._target.connect(user, password)
+            yield connection
+        except Exception as error:
+            reraise_without_secrets(error, [password])
+        finally:
+            if connection is not None:
+                connection.close()
+            self.sys.execute(f"DROP USER IF EXISTS {user} CASCADE")
 
     def connection_of(self, user: str) -> Any:
         if user == OWNER:
@@ -607,6 +648,11 @@ class Harness:
         )
         if self._sim_digest != wanted:
             self.deploy_sim()
+
+    def deploy_api(self) -> api_deploy.ApiReport:
+        """Install serving views after the simulation schema, even in Slice A tests."""
+        self.ensure_sim()
+        return api_deploy.deploy_api(self.owner, self.namespace)
 
     @contextmanager
     def set_sim_params(self, **values: int | float | str | Decimal) -> Iterator[None]:

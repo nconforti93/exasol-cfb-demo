@@ -93,6 +93,8 @@ def placeholder_values(namespace: Namespace) -> dict[str, str]:
         "{INFRA_SCHEMA}": namespace.infra_schema,
         "{MODEL_SCHEMA}": namespace.model_schema,
         "{SIM_SCHEMA}": namespace.sim_schema,
+        "{API_SCHEMA}": namespace.api_schema,
+        "{API_LIVE_SCHEMA}": namespace.api_live_schema,
         "{VS_NAME}": namespace.vs_name,
     }
 

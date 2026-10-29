@@ -6,6 +6,7 @@ from typing import Any, Never
 
 import pytest
 
+from analyses import deploy as api_deploy
 from engine import deploy as sim_deploy
 from loader import target_config
 from loader.runlock import HeldLock, RunLockRefused
@@ -131,6 +132,16 @@ def model_calls(monkeypatch: pytest.MonkeyPatch) -> ModelCalls:
 
 
 @pytest.fixture(autouse=True)
+def stub_api_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
+    def install(
+        connection: Any, namespace: Namespace, *, lock: HeldLock | None = None
+    ) -> api_deploy.ApiReport:
+        return api_deploy.ApiReport(None, None, 42, ("api line",))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(api_deploy, "deploy_api", install)
+
+
+@pytest.fixture(autouse=True)
 def sim_calls(monkeypatch: pytest.MonkeyPatch) -> SimCalls:
     calls = SimCalls()
     monkeypatch.setattr(sim_deploy, "deploy_sim", calls)
@@ -212,6 +223,23 @@ def test_the_model_and_sim_are_deployed_in_order_on_the_same_connection(
         < out.index("sim line")
     )
     assert db.closed
+
+
+def test_serving_views_are_deployed_after_the_model_on_the_same_connection(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[tuple[object, str]] = []
+
+    def install(connection: Any, namespace: Namespace, *, lock: HeldLock | None = None) -> Any:
+        calls.append((connection, namespace.api_schema))
+        return api_deploy.ApiReport(None, None, 42, ("api line",))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(api_deploy, "deploy_api", install)
+    db = ClosableDatabase()
+    assert deploy_main(db) == deploy_cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert calls == [(db, "PROBE_CFB_API")]
+    assert out.index(MODEL_LINE) < out.index("sim line") < out.index("api line")
 
 
 def test_a_refused_model_deploy_is_an_error_after_the_earlier_steps_printed(

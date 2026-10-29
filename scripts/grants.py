@@ -100,6 +100,15 @@ def select_grant_step(schema: str, grantee: str) -> Step:
     return Step(f"grant SELECT on {schema} to {grantee}", f"GRANT SELECT ON {schema} TO {grantee}")
 
 
+def schema_grant_step(schema: str, grantee: str) -> Step:
+    _require_identifier(schema)
+    _require_identifier(grantee)
+    return Step(
+        f"grant SELECT on schema {schema} to {grantee}",
+        f"GRANT SELECT ON SCHEMA {schema} TO {grantee}",
+    )
+
+
 def create_user_step(owner: str, password: str) -> Step:
     _require_identifier(owner)
     return Step(
@@ -156,6 +165,7 @@ def _apply_real(db: Database, namespace: Namespace) -> Report:
         db.execute(step.sql, step.params)
         lines.append(f"done: {step.description}")
     reader_grant, grant_lines = _grant_reader(db, namespace)
+    lines.extend(_grant_api_roles(db, namespace))
     lines.append(f"fetch UDF {namespace.fetch_script}: owned by {namespace.owner_user}, no grant")
     return Report(tuple(lines + grant_lines), "not needed", EXIT_OK, reader_grant)
 
@@ -194,7 +204,37 @@ def _apply_owned(
         db.execute(step.sql, step.params)
         lines.append(f"done: {step.description}")
     script_grant, script_lines, exit_code = _bind_connection(db, namespace, connection)
-    return Report(tuple(lines + script_lines), script_grant, exit_code)
+    return Report(
+        tuple(lines + script_lines + _grant_api_roles(db, namespace)), script_grant, exit_code
+    )
+
+
+def _grant_api_roles(db: Database, namespace: Namespace) -> list[str]:
+    lines: list[str] = []
+    for role in (namespace.app_role, namespace.mcp_role):
+        if db.role_exists(role):
+            lines.append(f"role {role}: exists")
+        else:
+            step = create_role_step(role)
+            db.execute(step.sql, step.params)
+            lines.append(f"done: {step.description}")
+    for schema, roles in (
+        (namespace.api_schema, (namespace.app_role, namespace.mcp_role)),
+        (namespace.api_live_schema, (namespace.app_role,)),
+    ):
+        if not db.schema_exists(schema):
+            lines.append(
+                f"schema {schema}: not deployed yet; run `make api`, then `make grants` again"
+            )
+            continue
+        for role in roles:
+            if db.select_grant_exists(schema, role):
+                lines.append(f"grant SELECT on schema {schema} to {role}: already in place")
+            else:
+                step = schema_grant_step(schema, role)
+                db.execute(step.sql, step.params)
+                lines.append(f"done: {step.description}")
+    return lines
 
 
 def owner_password(environ: Mapping[str, str], dotenv: Path = target.DOTENV_PATH) -> str | None:
@@ -256,6 +296,8 @@ class PyexasolDatabase:
             self._count(
                 "SELECT COUNT(*) FROM EXA_DBA_VIRTUAL_SCHEMAS WHERE SCHEMA_NAME = {n}", n=name
             )
+            > 0
+            or self._count("SELECT COUNT(*) FROM EXA_DBA_SCHEMAS WHERE SCHEMA_NAME = {n}", n=name)
             > 0
         )
 
