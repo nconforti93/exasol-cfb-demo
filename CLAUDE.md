@@ -68,6 +68,12 @@ A college football analytics platform on Exasol: an OpenAPI-generated Virtual Sc
 - The 33 stored views include `PLAYOFF_ODDS`, run and what-if sources, the precomputed `ROOTING_GUIDE`, frozen `PREDICTIONS` and scorecards, `MATCHUP_NEXT` with FROZEN/CURRENT prediction kinds, and `UPSETS` from stored lines or fitted Elo ranked all-time since 1978. `analyses/whatif.py` validates at most 16 distinct game outcomes, maps `GAME_ID` to the current run's `PATH_POS`, and reuses the engine's what-if SQL against serving views. `GAME_WIN_PROB` picks a stored line where available, else fitted Elo; it is stored-data SQL and makes no CFBD request.
 - `CFB_API_LIVE.QUOTA` reads the free `/info` endpoint only when selected. Do not add a `GAME_PREVIEW` view: a local mock query proved Exasol does not push its required `P_GAME_ID` through a view. The Phase 6 operator sends a guarded direct query with a validated literal game ID. See `docs/api-verification.md` for the zero-call deployments and stored-query timings.
 
+## Demo hard rules (Phase 8, `add-cfb-demo-hardening` L1)
+
+- **Demo freeze:** while `demo/freeze.yaml` is in force (planned 2026-11-01 to 2026-11-21), `vs/catalog/`, `sql/core/`, `sql/meta/load_log.sql`, `sql/meta/fetch_log.sql` and `loader/load-plan.yaml` must keep their pinned content digests: the rehearsal kits' snapshots cannot be retaken. `make lint` runs `scripts/release_check.py --fast` last and fails on any change, committed or not. The only way out is an owner-approved migration that re-fingerprints the snapshots, then `make demo-freeze FROM= UNTIL= FORCE=yes`. Pins are taken from the tree deployed on AWS.
+- **Demo week (Nov 16–20):** no `make deploy` on the real local namespace except through `make rehearse`.
+- **Never run `exakit` runtime commands or plain `exakit mcp-doctor` on this machine:** `deployments/default` is the AWS instance. Only `exakit mcp-doctor --json` is safe. The local DB is driven only with `exasol start/stop -d local`.
+
 ## Environment
 
 - The repo path contains spaces (OneDrive). Quote paths, and pass `CURDIR` explicitly to make if a target breaks (adbc-vs-rs lesson).
