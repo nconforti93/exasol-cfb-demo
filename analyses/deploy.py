@@ -76,6 +76,19 @@ def deploy_api(
 ) -> ApiReport:
     """Install the two serving schemas without reading CFBD virtual tables."""
     api, live = prepare(namespace)
+    needs_sim = any(
+        namespace.sim_schema in statement for item in api for statement in item.statements
+    )
+    if needs_sim:
+        present = connection.execute(
+            'SELECT COUNT(*) FROM "EXA_ALL_SCHEMAS" '
+            f"WHERE \"SCHEMA_NAME\" = '{namespace.sim_schema}'"
+        ).fetchone()
+        if present is None or int(present[0]) == 0:
+            raise ApiLintError(
+                f"{namespace.sim_schema} is required by the serving views; "
+                "run make sim before make api; nothing was sent"
+            )
 
     def install(held: HeldLock) -> ApiReport:
         api_report = sqlobjects.deploy(connection, namespace.api_schema, api, lock=held)

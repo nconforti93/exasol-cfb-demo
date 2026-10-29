@@ -15,16 +15,16 @@ Light, demo-first replan of 2026-10-23 (decision-log [41]). Details, files, test
 - [x] 1.4 `CFB_API_LIVE.QUOTA`, `REFRESH_TIMELINE`, `FETCHES`; chat refused on the live schema. `GAME_PREVIEW` view blocked by N1 and transferred to Phase 6's operator path (see decision log).
 
 ### Group A-3
-- [ ] 1.5 Slice A on AWS and local (0 calls), timings, `make api-docs`, user guide and `CLAUDE.md` bullets → Phase 6's 9.7 gate
+- [x] 1.5 Slice A on AWS and local (0 calls), 20 AWS stored-query medians below 1 s, `make api-docs`, user guide and `CLAUDE.md` bullets; focused dictionary tests 12/12, Ruff/format/mypy clean → Phase 6's 9.7 gate
 
 ## Slice B: the engine's numbers (gate: Phase 4 1.4, 2.1 and 2.2 merged into this branch)
 
 ### Group B-1
-- [ ] 2.1 `PLAYOFF_ODDS`, `PUBLISHED_RUNS`, `WHATIF_RUN`, `WHATIF_GAMES`, `WHATIF_OUTCOMES`, `WHATIF_PLAYOFF`, `WHATIF_TEAMS`, `ROOTING_GUIDE`, `ANALYSIS_SETTINGS`; run columns of `CURRENT_POINT`/`AS_OF_POINTS`; `analyses/whatif.py` adapter
-- [ ] 2.2 `PREDICTIONS`, `SCORECARD_WEEKS`, `SCORECARD_SEASONS`, `SCORECARD_CALIBRATION`; engine columns of `WEEK_GAMES` and `MATCHUP_NEXT`; `UPSETS` and `MATCHUP_GAMES` from `GAME_WIN_PROB` (since 1978)
+- [x] 2.1 `PLAYOFF_ODDS`, `PUBLISHED_RUNS`, `WHATIF_RUN`, `WHATIF_GAMES`, `WHATIF_OUTCOMES`, `WHATIF_PLAYOFF`, `WHATIF_TEAMS`, `ROOTING_GUIDE`, `ANALYSIS_SETTINGS`; run columns of `CURRENT_POINT`/`AS_OF_POINTS`; `analyses/whatif.py` adapter. Local API deploy run 38, adapter equality with the engine, focused IT and unit checks passed; zero CFBD calls.
+- [x] 2.2 `PREDICTIONS`, `SCORECARD_WEEKS`, `SCORECARD_SEASONS`, `SCORECARD_CALIBRATION`; engine columns of `WEEK_GAMES` and `MATCHUP_NEXT`; `UPSETS` and `MATCHUP_GAMES` from `GAME_WIN_PROB` (since 1978). Local view compile and focused synthetic IT passed; AWS deploy run 17 compiled all 33 stored views; zero CFBD calls.
 
 ### Group B-2
-- [ ] 2.3 Slice B on AWS (gate: Phase 4 2.3), hand-off column check, timings, Q8 look at the all-time top 20, docs (user guide, architecture, roadmap, `CLAUDE.md`) → Phase 6's 9.8 gate, Phase 7 contract
+- [x] 2.3 Slice B on AWS (Phase 4 2.3 gate met): 33-column-list readback passed; seven query medians 393–506 ms with cache off; app role queried one- and three-condition what-ifs; Q8 source skew and tied ranks documented in decision [57]; dictionary, verification, user guide, architecture, roadmap and `CLAUDE.md` updated. `make lint`, nine focused unit tests, three local IT and plan validation passed. Quota stayed 245/400; zero CFBD calls. Phase 6's 9.8 gate is met. ADR numbers are assigned when this plan is recorded.
 
 ## Heavy plan tasks (commit c1be7e1), status under the light plan
 

@@ -75,7 +75,7 @@ ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
 .PHONY: backfill refresh quota snapshot restore snapshots model model-check model-refresh model-docs
-.PHONY: model-perf api sim sim-fit simulate what-if predict
+.PHONY: model-perf api api-docs sim sim-fit simulate what-if predict
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -153,6 +153,9 @@ model: db-check
 
 api: db-check
 	$(PY) -m scripts.api $(ARGS)
+
+api-docs:
+	$(PY) -m scripts.api docs
 
 model-check: db-check
 	$(PY) -m scripts.model check --season "$(SEASON)" --week "$(WEEK)" $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(ARGS)

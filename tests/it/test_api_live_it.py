@@ -5,7 +5,6 @@ from __future__ import annotations
 import pyexasol
 import pytest
 
-from analyses import deploy as api_deploy
 from scripts import grants
 from tests.it.harness import Harness, Mock
 from tests.synthetic.league import League
@@ -17,7 +16,7 @@ PLAN_VARIANT = "model"
 def test_live_quota_is_app_only_and_costs_no_cfbd_calls(
     harness: Harness, league: League, mock: Mock
 ) -> None:
-    report = api_deploy.deploy_api(harness.owner, harness.namespace)
+    report = harness.deploy_api()
     assert report.live.views == 1
     assert harness.mock_hits() == 0
     result = grants.apply(
@@ -40,7 +39,7 @@ def test_live_quota_is_app_only_and_costs_no_cfbd_calls(
 
 
 def test_refresh_and_fetch_views_read_stored_metadata(harness: Harness, league: League) -> None:
-    api_deploy.deploy_api(harness.owner, harness.namespace)
+    harness.deploy_api()
     api = harness.namespace.api_schema
     direct = harness.query(f'SELECT COUNT(*) FROM {harness.meta}."FETCH_LOG"')
     served = harness.query(f'SELECT COUNT(*) FROM {api}."FETCHES"')

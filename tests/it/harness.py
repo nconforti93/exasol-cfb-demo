@@ -48,6 +48,7 @@ from typing import Any, NoReturn
 
 import pyexasol
 
+from analyses import deploy as api_deploy
 from engine import deploy as sim_deploy
 from loader import deploy as loader_deploy
 from loader.runlock import HeldLock, run_lock
@@ -647,6 +648,11 @@ class Harness:
         )
         if self._sim_digest != wanted:
             self.deploy_sim()
+
+    def deploy_api(self) -> api_deploy.ApiReport:
+        """Install serving views after the simulation schema, even in Slice A tests."""
+        self.ensure_sim()
+        return api_deploy.deploy_api(self.owner, self.namespace)
 
     @contextmanager
     def set_sim_params(self, **values: int | float | str | Decimal) -> Iterator[None]:

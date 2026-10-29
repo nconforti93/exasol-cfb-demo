@@ -28,13 +28,13 @@ CREATE OR REPLACE FORCE VIEW {API_SCHEMA}.WEEK_GAMES (
   IS_COMPLETED COMMENT IS 'TRUE when the game is completed as stored now',
   HOME_POINTS COMMENT IS 'Home score as stored now',
   AWAY_POINTS COMMENT IS 'Away score as stored now',
-  RUN_ID COMMENT IS 'Simulation run shown for this point; NULL before the engine',
-  PREDICTION_KIND COMMENT IS 'Prediction kind; NULL before the engine',
-  MODEL_HOME_WIN_PROB COMMENT IS 'Model home win probability; NULL before the engine',
-  PICK_TEAM_ID COMMENT IS 'Model pick team id; NULL before the engine',
-  HOME_POINTS_PRED COMMENT IS 'Predicted home score; NULL before the engine',
-  AWAY_POINTS_PRED COMMENT IS 'Predicted away score; NULL before the engine',
-  STAKES COMMENT IS 'Playoff stakes; NULL before the engine'
+  RUN_ID COMMENT IS 'Simulation run shown for this point; NULL when none exists',
+  PREDICTION_KIND COMMENT IS 'FROZEN when the game has a prediction from this point; otherwise NULL',
+  MODEL_HOME_WIN_PROB COMMENT IS 'Frozen model probability of a home win; NULL without a prediction',
+  PICK_TEAM_ID COMMENT IS 'Frozen model pick team id; NULL without a prediction',
+  HOME_POINTS_PRED COMMENT IS 'Frozen predicted home score; NULL without a prediction',
+  AWAY_POINTS_PRED COMMENT IS 'Frozen predicted away score; NULL without a prediction',
+  STAKES COMMENT IS 'Largest playoff leverage of the game across teams in the shown run; NULL without one'
 ) AS
 WITH ap AS (
   SELECT p."AS_OF_SEASON", p."AS_OF_WEEK_SEQ", r."TEAM_ID", r."POLL_RANK",
@@ -47,6 +47,10 @@ WITH ap AS (
      AND r."VISIBLE_AT_WEEK_SEQ" <= p."AS_OF_WEEK_SEQ"
 ), latest_ap AS (
   SELECT "AS_OF_SEASON", "AS_OF_WEEK_SEQ", "TEAM_ID", "POLL_RANK" FROM ap WHERE "RN" = 1
+), stakes AS (
+  SELECT "RUN_ID", "GAME_ID", MAX("LEVERAGE") AS "MAX_LEVERAGE"
+    FROM {SIM_SCHEMA}."ROOTING_GUIDE"
+   GROUP BY "RUN_ID", "GAME_ID"
 )
 SELECT p."AS_OF_SEASON", p."AS_OF_WEEK_SEQ", p."AS_OF_LABEL",
        g."GAME_ID", g."SEASON_TYPE", g."WEEK", g."WEEK_SEQ", g."START_AT",
@@ -56,10 +60,9 @@ SELECT p."AS_OF_SEASON", p."AS_OF_WEEK_SEQ", p."AS_OF_LABEL",
        g."AWAY_TEAM_ID", g."AWAY_TEAM", g."AWAY_CONFERENCE",
        h."POLL_RANK", a."POLL_RANK", g."PREGAME_SPREAD", g."HOME_PREGAME_WIN_PROB",
        g."IS_COMPLETED", g."HOME_POINTS", g."AWAY_POINTS",
-       CAST(NULL AS DECIMAL(18,0)), CAST(NULL AS VARCHAR(16) ASCII),
-       CAST(NULL AS DECIMAL(5,4)), CAST(NULL AS DECIMAL(18,0)),
-       CAST(NULL AS DECIMAL(9,1)), CAST(NULL AS DECIMAL(9,1)),
-       CAST(NULL AS DOUBLE)
+       r."RUN_ID", CASE WHEN f."GAME_ID" IS NOT NULL THEN 'FROZEN' END,
+       f."HOME_WIN_PROB", f."PICK_TEAM_ID", f."HOME_POINTS_PRED", f."AWAY_POINTS_PRED",
+       s."MAX_LEVERAGE"
   FROM {MODEL_SCHEMA}."AS_OF_POINT" p
   JOIN {MODEL_SCHEMA}."GAME" g
     ON g."SEASON" = p."AS_OF_SEASON" AND g."WEEK_SEQ" = p."NEXT_WEEK_SEQ"
@@ -68,4 +71,10 @@ SELECT p."AS_OF_SEASON", p."AS_OF_WEEK_SEQ", p."AS_OF_LABEL",
     AND h."AS_OF_WEEK_SEQ" = p."AS_OF_WEEK_SEQ" AND h."TEAM_ID" = g."HOME_TEAM_ID"
   LEFT JOIN latest_ap a ON a."AS_OF_SEASON" = p."AS_OF_SEASON"
     AND a."AS_OF_WEEK_SEQ" = p."AS_OF_WEEK_SEQ" AND a."TEAM_ID" = g."AWAY_TEAM_ID"
-COMMENT IS 'One row per as-of point and next-week game with known teams and an FBS participant. Lines and results are stored values as of now; model predictions are NULL until the engine slice.';
+  LEFT JOIN {SIM_SCHEMA}."POINT_RUN" r
+    ON r."AS_OF_SEASON" = p."AS_OF_SEASON" AND r."AS_OF_WEEK_SEQ" = p."AS_OF_WEEK_SEQ"
+  LEFT JOIN {SIM_SCHEMA}."PREDICTION" f
+    ON f."GAME_ID" = g."GAME_ID" AND f."FREEZE_SEASON" = p."AS_OF_SEASON"
+   AND f."FREEZE_WEEK_SEQ" = p."AS_OF_WEEK_SEQ"
+  LEFT JOIN stakes s ON s."RUN_ID" = r."RUN_ID" AND s."GAME_ID" = g."GAME_ID"
+COMMENT IS 'One row per as-of point and next-week game with known teams and an FBS participant. Lines and results are stored now; the model columns are frozen at that point.';

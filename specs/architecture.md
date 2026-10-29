@@ -10,15 +10,15 @@
   SELECT … FROM CFBD_VS.<ENDPOINT> WHERE … ──▶ CFBD_ADAPTER (Python adapter script)
                                                  (predicates → P_ params, required filters, range/IN fan-out, call budget, manifest)
         │                                        │
-        │ ingestion (backfill once, REFRESH_WEEK)│ on-demand (previews, matchups, box scores, player lookups, quota)
+        │ ingestion (backfill once, REFRESH_WEEK)│ guarded game preview, free quota
         ▼                                        │
   CFB_CORE  (persisted mirrors, all history)     │
         ▼                                        │
   CFB_MODEL (era-aware analytical model, as-of)  │
         ▼                                        │
-  CFB_SIM · CFB_PRED  (sims, what-if, predictions, scorecard, upsets)
+  CFB_SIM  (sims, what-if, frozen predictions, scorecard, game win probabilities)
         ▼                                        ▼
-  CFB_API  (serving layer: curated, commented views + functions; the ONLY thing apps and the MCP user see)
+  CFB_API  (stored serving views for the app and MCP user)    CFB_API_LIVE.QUOTA (app only)
         │
         ├──▶ FastAPI backend ◀── React app (odds · predictions · upsets · head-to-head · SQL↔HTTP inspector · refresh timeline)
         └──▶ Exasol MCP server (read-only user) ◀── Claude (chat loop in backend)
@@ -28,21 +28,21 @@
 
 | Schema | Contents | Reads from | Read by |
 |--------|----------|-----------|---------|
-| `CFB_INFRA` | Adapter, fetch UDF, loader scripts (`BACKFILL`, `REFRESH_WEEK`, `RUN_LOCK`), registered refresh-step scripts (`REFRESH_MODEL`; later phases add more) | — | `sys` (owner) |
-| `CFBD_VS` | Virtual schema, one table per endpoint | CFBD API | Loader, `CFB_API` on-demand views, presenter |
+| `CFB_INFRA` | Adapter, fetch UDF, loader scripts (`BACKFILL`, `REFRESH_WEEK`, `RUN_LOCK`) and registered MODEL/PREDICT/SIMULATE steps | — | `sys` (owner) |
+| `CFBD_VS` | Virtual schema, one table per endpoint | CFBD API | Loader, guarded preview operator, `CFB_API_LIVE.QUOTA` indirectly through `CFB_META.QUOTA` |
 | `CFB_META` | Tables: `LOAD_LOG`, `FETCH_LOG`, the compiled load plan (`LOAD_PLAN`, `LOAD_PLAN_GAPS`, `LOADER_CONFIG`, `SEASON_NUMBERS`, `REFRESH_STEPS`), the run records (`LOAD_RUN`, `REFRESH_LOG`, `LOAD_FAILURES`). Views: `LOADER_SETTINGS`, `LOAD_SLICES`, `LOAD_ORPHANS`, `BACKFILL_QUEUE`, `LOAD_STATUS`, `QUOTA` | `CFBD_VS` (`INFO`, for `QUOTA`) | `sys` (owner), the virtual schema (`LOAD_LOG`), `CFB_API` (inspector, timeline) |
 | `CFB_STAGE` | One empty mirror per planned table: where a loader batch lands before the swap into `CFB_CORE` | `CFBD_VS` | The loader only |
 | `CFB_RESTORE` | Landing schema that exists only while a restore runs (dropped afterwards, also on failure) | snapshot files | The restore only |
 | `CFB_CORE` | Persisted mirrors of stored endpoints, all history | `CFB_STAGE` (loader), snapshot files (restore) | `CFB_MODEL` only (current-season rule below) |
 | `CFB_MODEL` | Era-aware dims and facts (stored data only), as-of views, seeded reference tables, `GREAT_CIRCLE_KM`; every object commented | `CFB_CORE`, `CFB_META.{LOAD_PLAN, LOAD_PLAN_GAPS, LOAD_SLICES}`, itself | Analyses |
-| `CFB_SIM` | Season model, run registry, `SIM_PATH`, `SIM_TEAM`, what-if | `CFB_MODEL` | `CFB_API` |
-| `CFB_PRED` | Weekly predictions (frozen at refresh), scorecard, upset rankings | `CFB_MODEL`, `CFB_SIM` | `CFB_API` |
-| `CFB_API` | Serving layer | `CFB_MODEL`, `CFB_SIM`, `CFB_PRED`, on-demand `CFBD_VS` tables | App user, MCP user |
+| `CFB_SIM` | Score model, run registry, `SIM_PATH`, `SIM_TEAM`, frozen predictions, scorecard and `GAME_WIN_PROB` | `CFB_MODEL` | `CFB_API` |
+| `CFB_API` | 33 stored serving views, including odds, what-if, predictions and upsets; no own data tables | `CFB_MODEL`, `CFB_SIM`, stored `CFB_META` logs | `CFB_APP`, `CFB_MCP` |
+| `CFB_API_LIVE` | Free quota view, separate from stored serving data | `CFB_META.QUOTA` | `CFB_APP` only |
 
 Rules:
-- Analyses read only `CFB_MODEL` and their own schemas.
-- Apps and the MCP user read only `CFB_API`.
-- On-demand endpoints reach apps only through `CFB_API` views, which always carry the required filters, so a click never fans out.
+- The score engine reads `CFB_MODEL`; the serving layer reads `CFB_MODEL`, `CFB_SIM` and stored loader metadata.
+- The app read user and the MCP user read stored data through `CFB_API`. Only the app role can read `CFB_API_LIVE.QUOTA`.
+- Phase 6's guarded operator path is designed to query `CFBD_VS.GAMES_PREVIEW` directly with one validated literal game id after quota, ledger and pushdown checks. Exasol does not pass the required filter through a serving view.
 - Each endpoint is `stored`, `federated` or `unavailable` (D15). Stored data is scanned broadly; federated data is only ever queried selectively (required filters + call budget); the API is never used for broad scans.
 - **Current-season reads come from `CFB_CORE`, never through `CFBD_VS` (D36).** Current-season slices are never final, so a `CFBD_VS` query on them always fetches live and costs calls. Pages, the chat and analyses read the mirror; only the loader reads the current season through the virtual schema.
 
@@ -100,8 +100,8 @@ Rules:
 ### Analyses
 - **Score model** (`sql/sim/model/`): per remaining game, a predicted margin (rating difference + home field; ratings computed in SQL from games, with SP+ as a prior) and a predicted total (offense/defense parts of SP+, or a fallback). σ is calibrated on 2014–2025 from residuals, and calibration and Brier scores are reported. Upset probability for older seasons comes from pre-game Elo.
 - **Engine** (`engine/`): one Python SET UDF on the contract below (D16), numpy-vectorized across the sims of a batch; batches run in parallel across cores and nodes.
-- **CFB_PRED:**
-  - `REFRESH_WEEK` freezes the predictions for the upcoming week before its games are played. Grading always compares against predictions made in advance.
+- **Predictions in `CFB_SIM`:**
+  - `REFRESH_WEEK` freezes the predictions for the upcoming week before its games are played. The scorecard separates in-advance predictions from reconstructed grades.
   - The scorecard: record, margin MAE, Brier score, calibration buckets.
   - The upset ranking: this week's upsets with their all-time rank.
 - **Backend / Frontend / Bench:**
@@ -279,7 +279,7 @@ Deploy and restore refuse a column difference, and orphans block re-fetching, bu
 |-----------|-------|---------|
 | `sys` (DBA) | The `CFBD_API` CONNECTION; owns all CFB schemas, the adapter, the fetch UDF and `CFBD_VS` ([20]) | Creates and rotates the key; deploys, backfills, refreshes. No `CFB_OWNER` user, no owner password |
 | `CFB_READER` (role) | `SELECT` on `CFBD_VS` (created by `make grants`) | Anyone who queries the virtual schema |
-| `CFB_APP` | `SELECT` on `CFB_API` (+ execute on its functions) | Backend |
+| `CFB_APP` | `SELECT` on `CFB_API` and `CFB_API_LIVE` | Backend read and free quota view |
 | `CFB_MCP` | `SELECT` on `CFB_API` | MCP server |
 
 Verified:
@@ -288,6 +288,7 @@ Verified:
 - **The key doesn't appear in pushdown SQL or `EXPLAIN VIRTUAL`.** VS properties hold only `CONNECTION_NAME`. Responses and error messages are redacted ([23]): the key's raw, JSON-escaped and percent-encoded forms in bodies, plus any `Bearer <token>` in error text.
 - **`CREATE OR REPLACE` of the fetch UDF drops a script-bound grant, even for identical text** (probe 1.4o). Deploy therefore compares the stored body with the generated one and replaces only when they differ. This matters for the `TEST_` owner (re-run `make grants ARGS="--prefix TEST_"` after a replace); the real deployment is owned by `sys`, which needs no grant.
 - **UDF egress and DNS:** UDFs have no name resolution on Personal nano 2026.2, so the fetch UDF uses the resolver seam with the DoH fallback (D21, above).
+- **Paid preview:** the read user has no direct virtual-schema grant. The planned loopback-only operator path uses the owner's session with an exact allowlist for a single `GAMES_PREVIEW.P_GAME_ID`, after quota, ledger and `EXPLAIN VIRTUAL` checks. The MCP role cannot use that path.
 
 Rules:
 - The DBA creates the CONNECTION with plain SQL in a SQL client (D18; documented in `docs/user-guide.md`). There is no key tool; never pass the key on a shell command line.

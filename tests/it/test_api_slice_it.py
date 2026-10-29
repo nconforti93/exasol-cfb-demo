@@ -5,7 +5,6 @@ from __future__ import annotations
 import pyexasol
 import pytest
 
-from analyses import deploy as api_deploy
 from scripts import grants
 from tests.it.harness import Harness
 from tests.synthetic.league import League
@@ -17,8 +16,8 @@ PLAN_VARIANT = "model"
 def test_serving_views_follow_the_model_and_keep_the_point_without_a_run(
     harness: Harness, league: League
 ) -> None:
-    first = api_deploy.deploy_api(harness.owner, harness.namespace)
-    second = api_deploy.deploy_api(harness.owner, harness.namespace)
+    first = harness.deploy_api()
+    second = harness.deploy_api()
     assert first.run_id > 0 and second.run_id > first.run_id
 
     point = harness.query(
@@ -47,7 +46,7 @@ def test_serving_views_follow_the_model_and_keep_the_point_without_a_run(
 def test_app_and_chat_roles_get_only_their_serving_schemas(
     harness: Harness, league: League
 ) -> None:
-    api_deploy.deploy_api(harness.owner, harness.namespace)
+    harness.deploy_api()
     report = grants.apply(
         grants.PyexasolDatabase(harness.sys),
         harness.namespace,

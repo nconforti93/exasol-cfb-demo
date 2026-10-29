@@ -11,19 +11,18 @@ CREATE OR REPLACE FORCE VIEW {API_SCHEMA}.MATCHUP_GAMES (
   TEAM_POINTS COMMENT IS 'Points scored by the named team',
   OPPONENT_POINTS COMMENT IS 'Points scored by the opponent',
   GAME_RESULT COMMENT IS 'W, L or T for the named team',
-  PROB_SOURCE COMMENT IS 'LINE when a stored pregame line exists, else NULL before the engine',
-  TEAM_PREGAME_WIN_PROB COMMENT IS 'Stored pregame win probability from the named team''s side',
+  PROB_SOURCE COMMENT IS 'LINE for a stored pregame line, ELO for a fitted Elo probability, else NULL',
+  TEAM_PREGAME_WIN_PROB COMMENT IS 'Pregame win probability from the named team''s side, line or Elo',
   UPSET_MAGNITUDE COMMENT IS 'One minus the winner''s pregame probability, when that probability is below 0.5'
 ) AS
 SELECT tg."TEAM_ID", tg."OPPONENT_ID", tg."GAME_ID", tg."SEASON",
        tg."SEASON_TYPE", tg."WEEK", tg."WEEK_SEQ", tg."START_AT", tg."SITE",
        tg."POINTS_FOR", tg."POINTS_AGAINST", tg."GAME_RESULT",
-       CASE WHEN tg."HAS_PREGAME_WP" THEN 'LINE' END,
-       tg."TEAM_PREGAME_WIN_PROB",
-       CASE WHEN tg."GAME_RESULT" = 'W' AND tg."TEAM_PREGAME_WIN_PROB" < 0.5
-              THEN 1 - tg."TEAM_PREGAME_WIN_PROB"
-            WHEN tg."GAME_RESULT" = 'L' AND tg."TEAM_PREGAME_WIN_PROB" > 0.5
-              THEN tg."TEAM_PREGAME_WIN_PROB" END
+       p."PROB_SOURCE",
+       CASE WHEN tg."TEAM_ID" = p."HOME_TEAM_ID" THEN p."HOME_PREGAME_WIN_PROB"
+            WHEN p."GAME_ID" IS NOT NULL THEN 1.0 - p."HOME_PREGAME_WIN_PROB" END,
+       CASE WHEN p."WINNER_PREGAME_WIN_PROB" < 0.5 THEN p."UPSET_MAGNITUDE" END
   FROM {MODEL_SCHEMA}."TEAM_GAME" tg
+  LEFT JOIN {SIM_SCHEMA}."GAME_WIN_PROB" p ON p."GAME_ID" = tg."GAME_ID"
  WHERE tg."HAS_RESULT" AND tg."OPPONENT_ID" IS NOT NULL
-COMMENT IS 'One row per completed meeting and ordered pair of teams, from the first team''s side. Probabilities use stored lines until the engine slice.';
+COMMENT IS 'One row per completed meeting and ordered pair of teams, from the first team''s side. Pregame probabilities use a stored line or fitted Elo.';

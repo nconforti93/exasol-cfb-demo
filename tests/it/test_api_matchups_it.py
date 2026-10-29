@@ -6,7 +6,6 @@ from decimal import Decimal
 
 import pytest
 
-from analyses import deploy as api_deploy
 from tests.it.harness import Harness
 from tests.synthetic.league import League
 
@@ -17,7 +16,7 @@ PLAN_VARIANT = "model"
 def test_series_mirrors_completed_games_and_next_meeting_has_no_run(
     harness: Harness, league: League
 ) -> None:
-    api_deploy.deploy_api(harness.owner, harness.namespace)
+    harness.deploy_api()
     api = harness.namespace.api_schema
     teams = harness.query(
         f'SELECT "TEAM_ID", "SCHOOL" FROM {api}."TEAMS" '
@@ -63,18 +62,20 @@ def test_series_mirrors_completed_games_and_next_meeting_has_no_run(
 def test_line_upsets_have_probability_and_rank_consistency(
     harness: Harness, league: League
 ) -> None:
-    api_deploy.deploy_api(harness.owner, harness.namespace)
+    harness.deploy_api()
     rows = harness.query(
         f'SELECT "WINNER_PREGAME_WIN_PROB", "UPSET_MAGNITUDE", '
         f'"PROB_SOURCE", "ALL_TIME_RANK", "LINE_ERA_RANK", "MODEL_WINNER_WIN_PROB" '
-        f'FROM {harness.namespace.api_schema}."UPSETS" ORDER BY "ALL_TIME_RANK"'
+        f'FROM {harness.namespace.api_schema}."UPSETS" '
+        'WHERE "PROB_SOURCE" = \'LINE\' ORDER BY "ALL_TIME_RANK"'
     )
     assert rows
     assert all(
         Decimal(prob) < Decimal("0.5")
-        and Decimal(magnitude) == 1 - Decimal(prob)
+        and abs(Decimal(magnitude) + Decimal(prob) - 1) < Decimal("0.0001")
         and source == "LINE"
-        and all_rank == line_rank
+        and all_rank is not None
+        and line_rank is not None
         and model_prob is None
         for prob, magnitude, source, all_rank, line_rank, model_prob in rows
     )

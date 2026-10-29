@@ -6,7 +6,6 @@ from decimal import Decimal
 
 import pytest
 
-from analyses import deploy as api_deploy
 from tests.it.harness import Harness
 from tests.synthetic.league import League
 
@@ -15,7 +14,7 @@ PLAN_VARIANT = "model"
 
 
 def test_travel_and_next_week_use_stored_game_facts(harness: Harness, league: League) -> None:
-    api_deploy.deploy_api(harness.owner, harness.namespace)
+    harness.deploy_api()
     api = harness.namespace.api_schema
     rows = harness.query(
         f'SELECT "SITE", "KM_FROM_HOME" FROM {api}."TEAM_TRAVEL" '
@@ -39,7 +38,7 @@ def test_travel_and_next_week_use_stored_game_facts(harness: Harness, league: Le
 def test_stats_cards_have_point_grain_and_consistent_totals(
     harness: Harness, league: League
 ) -> None:
-    api_deploy.deploy_api(harness.owner, harness.namespace)
+    harness.deploy_api()
     api = harness.namespace.api_schema
     movers = harness.query(
         f'SELECT "SP_RATING", "SP_PRIOR_RATING", "SP_DELTA", "RISE_RANK" '

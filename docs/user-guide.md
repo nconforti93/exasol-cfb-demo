@@ -708,3 +708,42 @@ SELECT SCHOOL, WINS, LOSSES, CONF_WINS, ELO_AS_OF, AP_RANK
 
 - **Known late visibility:** CFBD labels the committee's selection ranking of 2024 (released 8 December, after the title games of week 15) as regular week 16, and the label rule makes it visible from point 16, one week after the selection; at point 15 `RANKING_AS_OF` still shows the week-15 ranking (the 2025 ranking behaves the same, and so does every committee ranking of a past season: its label lead is 0). A ranking fetched before the cutoff is visible at once, so the live demo is not affected. Phase 4 is not affected because it reads final rankings as labels only.
 - Real data shows CFBD labels the 2025 lower-division playoff as postseason weeks 13 and 14, so `WEEK_SEQ` is not chronological there; the `WEEK_ORDER_MISMATCH` warning lists it. See `docs/model-verification.md` for the checks and warnings seen on the stored data.
+
+## 11. Serving API
+
+`CFB_API` contains 33 read-only views for the app and chat. They serve teams, games, the weekly schedule, league statistics, head-to-head history, odds, what-if results, predictions, scorecards, upsets and the refresh timeline from stored `CFB_MODEL` and `CFB_SIM` data. They make zero CFBD calls. `CFB_API_LIVE.QUOTA` is separate: selecting it reads the free CFBD `/info` endpoint, while deploying it makes no request. The view and column descriptions are in `docs/api-dictionary.md`, generated from the SQL comments.
+
+```bash
+make api TARGET=local          # lint and deploy serving views; also part of make deploy
+make grants TARGET=local       # grant CFB_APP, CFB_MCP and CFB_READER access
+make api-docs                  # regenerate docs/api-dictionary.md without a database
+```
+
+Use `TARGET=aws` for the AWS deployment. `make api` creates views under `CFB_API` and `CFB_API_LIVE` without replacing stored data. `make grants` gives `CFB_APP` SELECT on both schemas, and `CFB_MCP` SELECT only on `CFB_API`. The chat cannot query the live quota view or the virtual schema through its role. An administrator can create app and chat users in an interactive SQL client, typing each password there rather than placing it in a command line or repository file:
+
+```sql
+CREATE USER CFB_APP_WEB IDENTIFIED BY "<type an app password here>";
+GRANT CREATE SESSION TO CFB_APP_WEB;
+GRANT CFB_APP TO CFB_APP_WEB;
+
+CREATE USER CFB_CHAT IDENTIFIED BY "<type a chat password here>";
+GRANT CREATE SESSION TO CFB_CHAT;
+GRANT CFB_MCP TO CFB_CHAT;
+```
+
+The app's `make app-user` command manages its users from `~/.cfb-demo/app.env` when that app is installed; it never prints the passwords. Run `make grants` after a fresh deployment before connecting either user.
+
+Read `CFB_API.CURRENT_POINT` first, then put its season and week sequence into point-grain queries as literals. A literal keeps the database from evaluating every point. For example:
+
+```sql
+SELECT "AS_OF_SEASON", "AS_OF_WEEK_SEQ" FROM "CFB_API"."CURRENT_POINT";
+SELECT "GAME_ID", "HOME_TEAM", "AWAY_TEAM"
+  FROM "CFB_API"."WEEK_GAMES"
+ WHERE "AS_OF_SEASON" = 2026 AND "AS_OF_WEEK_SEQ" = 7;
+```
+
+For a published simulation, `PLAYOFF_ODDS` shows each team's playoff chance and movement, and `PUBLISHED_RUNS` identifies the run at each point. `WHATIF_RUN` identifies the current run used by `WHATIF_GAMES`, `WHATIF_OUTCOMES`, `WHATIF_PLAYOFF` and `WHATIF_TEAMS`. The app's adapter in `analyses/whatif.py` converts up to 16 selected `WHATIF_GAMES.GAME_ID` values to the run's outcome positions and returns conditional odds. `ROOTING_GUIDE` shows which side of each remaining game helps a team most and the difference in its playoff chances. A game with too few simulated seasons in either branch has `LOW_SAMPLE = TRUE`.
+
+`PREDICTIONS` contains frozen model forecasts and later grades with the home, away and pick schools. `SCORECARD_WEEKS`, `SCORECARD_SEASONS` and `SCORECARD_CALIBRATION` split weekly record, season-to-date record and probability buckets. `WEEK_GAMES` joins each point's next-week schedule to its frozen predictions and maximum playoff stakes. `MATCHUP_NEXT` shows a frozen prediction when one exists, otherwise the current run's win probability, with conditional playoff stakes for both teams when the guide has rows. `UPSETS` combines stored lines with fitted Elo probabilities, ranks all-time from 1978, and marks ties. Its frozen `MODEL_WINNER_WIN_PROB` is available only for a game with a prediction.
+
+`GAME_PREVIEW` is not a serving view. Exasol did not push the required `P_GAME_ID` filter through a view in the local mock test, so the app's guarded operator path sends a direct virtual-table query with a validated literal game ID. Its quota and ledger checks run before a paid preview. See `docs/api-verification.md` for deployments, query timings and the top-upset plausibility check.

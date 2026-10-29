@@ -11,7 +11,7 @@ CREATE OR REPLACE FORCE VIEW {API_SCHEMA}.AS_OF_POINTS (
   IS_SEASON_COMPLETE COMMENT IS 'Point metadata: TRUE at the season''s last point when every week of the season is done (SEASON_WEEK.IS_DONE). It describes the point, not the world at the point, and changes when later games complete, so the three as-of views do not carry it',
   IS_CURRENT COMMENT IS 'Point metadata: TRUE for exactly one point, the default of pages and the chat (CURRENT_AS_OF): in the newest season with stored games, the latest week that is done while every earlier week of the season is done too; the preseason point before that. A week whose Thursday game is played while its Saturday games are not stays open',
   IS_AFTER_CURRENT COMMENT IS 'TRUE when the point is later than the current point',
-  RUN_ID COMMENT IS 'Run shown at this point; NULL before the engine',
+  RUN_ID COMMENT IS 'Latest DONE run shown at this point; NULL when none exists',
   HAS_PUBLICATION COMMENT IS 'TRUE when a shown run exists at this point',
   HAS_PREDICTIONS COMMENT IS 'TRUE when frozen predictions exist for the next week',
   HAS_GRADES COMMENT IS 'TRUE when this point has graded predictions'
@@ -29,7 +29,19 @@ SELECT p."AS_OF_SEASON",
        p."IS_CURRENT",
        p."AS_OF_SEASON" > c."AS_OF_SEASON" OR
          (p."AS_OF_SEASON" = c."AS_OF_SEASON" AND p."AS_OF_WEEK_SEQ" > c."AS_OF_WEEK_SEQ"),
-       CAST(NULL AS DECIMAL(18,0)), FALSE, FALSE, FALSE
+       r."RUN_ID", r."RUN_ID" IS NOT NULL,
+       f."FREEZE_SEASON" IS NOT NULL, g."FREEZE_SEASON" IS NOT NULL
   FROM {MODEL_SCHEMA}."AS_OF_POINT" p
  CROSS JOIN {MODEL_SCHEMA}."CURRENT_AS_OF" c
-COMMENT IS 'One row per season and as-of point: point metadata with empty simulation fields until the engine serving slice.';
+  LEFT JOIN {SIM_SCHEMA}."POINT_RUN" r
+    ON r."AS_OF_SEASON" = p."AS_OF_SEASON" AND r."AS_OF_WEEK_SEQ" = p."AS_OF_WEEK_SEQ"
+  LEFT JOIN (
+    SELECT DISTINCT "FREEZE_SEASON", "FREEZE_WEEK_SEQ" FROM {SIM_SCHEMA}."PREDICTION"
+  ) f ON f."FREEZE_SEASON" = p."AS_OF_SEASON"
+     AND f."FREEZE_WEEK_SEQ" = p."AS_OF_WEEK_SEQ"
+  LEFT JOIN (
+    SELECT DISTINCT "FREEZE_SEASON", "FREEZE_WEEK_SEQ" FROM {SIM_SCHEMA}."PREDICTION_GRADED"
+     WHERE "GRADE" IS NOT NULL
+  ) g ON g."FREEZE_SEASON" = p."AS_OF_SEASON"
+     AND g."FREEZE_WEEK_SEQ" = p."AS_OF_WEEK_SEQ"
+COMMENT IS 'One row per season and as-of point: point metadata with shown run and frozen prediction availability.';

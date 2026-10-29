@@ -637,6 +637,14 @@ The owner changed the process; the orchestrator relayed the brief and the planne
 - **Rationale:** slice A must not wait for the engine; identical hunks merge cleanly, and the API lines are small, adjacent additions.
 - **Promotes to ADR:** no
 
+### [57] Keep the 1978 upset window and show the line-era comparison
+
+- **Decision:** Keep `ALL_TIME_FROM_SEASON = 1978` and the line-first, Elo-fallback probability rule. The page must show `PROB_SOURCE`, tied ranks and the separate `LINE_ERA_RANK`. Treat the source skew of the top ranks as a documented limitation, not as evidence that the Elo era had fewer surprises.
+- **Evidence:** AWS top through `ALL_TIME_RANK` 20 contains 24 rows: 21 LINE, three ELO (1985, 1991, 1993), with 11 rows at tied magnitudes. The separate line-era top 20 spans 2013–2026 and has 21 rows after ties. No pre-1978 game gets an all-time rank; all 8,695 such upsets retain their season ranks. The known Kansas–Texas 2021, Northern Illinois–Notre Dame 2024 and Jacksonville State–Florida State 2021 results appear. All-time and line-era queries had medians below 0.5 s with cache off.
+- **Alternatives:** move the window to 1985, which leaves the line/Elo imbalance; start before 1978, whose retroactive FBS labels make the all-time name misleading; mix model and line probabilities within the same game, which breaks the stated source rule.
+- **Rationale:** the line era dominates extreme probabilities because its stored lines can be near one even for rare upsets. Moving the start year cannot cure that mismatch. Showing both source and line-era rank makes the comparison honest while preserving the first Division I-A season as the all-time boundary.
+- **Promotes to ADR:** no
+
 ### Status of [1]–[40] under the light plan
 
 | Decision | Status |
@@ -710,7 +718,7 @@ The owner changed the process; the orchestrator relayed the brief and the planne
 | Q5, Q12, Q14, Q17 | moot: nothing is generated, published or dropped |
 | Q6, Q15 | moved to Phase 6's live verification ([54]) |
 | Q7 | moot: the guide is precomputed for every game |
-| Q8 | task 2.3 looks at the all-time top 20 on AWS (not dominated by one era or by ties); the window stays 1978 unless it fails, logged |
+| Q8 | Checked on AWS in task 2.3. LINE supplies 21 of 24 top-ranked rows and 11 rows are tied; no Elo artifact dominates. Decision [57] retains 1978 and requires source, tie and line-era labels instead of treating the mixed ranking as era-neutral |
 | Q9 | confirmed by `docs/model-dictionary.md` (`TEAM_GAME.OPPONENT_ID`, `GAME_RESULT`, `POINTS_FOR`, `MARGIN`) |
 | Q10 | moot |
 | Q11 | Phase 4's types apply |

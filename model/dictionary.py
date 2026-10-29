@@ -10,7 +10,7 @@ reads back (`vs/host/sqlobjects.py`), rendered for the real namespace.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from model.deploy import MODEL_DIR, ROOT, prepare
@@ -48,11 +48,19 @@ def render_dictionary(directory: Path = MODEL_DIR) -> str:
     return generate(prepare(Namespace(""), directory))
 
 
-def generate(objects: Iterable[SqlObject]) -> str:
-    """The dictionary text of rendered `objects`, in the given (file) order."""
+def generate(
+    objects: Iterable[SqlObject],
+    *,
+    title: str = "CFB_MODEL",
+    intro: str | None = None,
+    source_path: Callable[[SqlObject], str] | None = None,
+) -> str:
+    """The dictionary text of rendered objects, in file order, with a caller's heading and paths."""
     items = list(objects)
-    parts = [_HEADER, _overview(items)]
-    parts.extend(_section(item) for item in items)
+    header = _HEADER if intro is None else f"# {title} data dictionary\n\n{intro.strip()}\n"
+    path = source_path or (lambda item: f"{SQL_DIRECTORY}/{item.file}")
+    parts = [header, _overview(items)]
+    parts.extend(_section(item, path(item)) for item in items)
     return "\n".join(parts).rstrip("\n") + "\n"
 
 
@@ -82,11 +90,11 @@ def _overview(items: list[SqlObject]) -> str:
     )
 
 
-def _section(item: SqlObject) -> str:
+def _section(item: SqlObject, source_path: str) -> str:
     lines = [
         f"## {item.name}",
         "",
-        f"*{_kind(item).capitalize()}, `{SQL_DIRECTORY}/{item.file}`.*",
+        f"*{_kind(item).capitalize()}, `{source_path}`.*",
         "",
         (item.comment or "").strip(),
         "",
