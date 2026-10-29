@@ -1,0 +1,241 @@
+{
+  "point": {
+    "season": 2026,
+    "week_seq": 9,
+    "next_week_seq": 10,
+    "label": "2026, after week 9",
+    "is_current": true
+  },
+  "notice": null,
+  "week_seq": 10,
+  "run_id": null,
+  "games": [
+    {
+      "game_id": 9005,
+      "week_seq": 10,
+      "start_at": "2026-11-07T20:00:00Z",
+      "venue": "Summit Field",
+      "home": {
+        "team_id": 120,
+        "school": "Pinecrest",
+        "conference": "Pacific",
+        "abbreviation": "PIN",
+        "color": "#cc0000",
+        "alternate_color": "#ffffff",
+        "has_logo": true
+      },
+      "away": {
+        "team_id": 119,
+        "school": "Oakridge",
+        "conference": "Pacific",
+        "abbreviation": "OAK",
+        "color": "#990000",
+        "alternate_color": "#ffc72c",
+        "has_logo": false
+      },
+      "home_rank": 3,
+      "away_rank": 9,
+      "spread": -4.5,
+      "home_win_prob": 0.62,
+      "win_prob_source": "CFBD",
+      "stakes": null,
+      "game_of_week": true,
+      "upset_alert_team_id": 120
+    },
+    {
+      "game_id": 9007,
+      "week_seq": 10,
+      "start_at": "2026-11-07T19:00:00Z",
+      "venue": "Prairie Field",
+      "home": {
+        "team_id": 127,
+        "school": "Westbrook",
+        "conference": "Heartland",
+        "abbreviation": "WBK",
+        "color": "#0051ba",
+        "alternate_color": "#e8000d",
+        "has_logo": false
+      },
+      "away": {
+        "team_id": 129,
+        "school": "Zephyr",
+        "conference": "Heartland",
+        "abbreviation": "ZPH",
+        "color": "#841617",
+        "alternate_color": "#fdf9d8",
+        "has_logo": true
+      },
+      "home_rank": 4,
+      "away_rank": 7,
+      "spread": -1.5,
+      "home_win_prob": 0.52,
+      "win_prob_source": "CFBD",
+      "stakes": null,
+      "game_of_week": false,
+      "upset_alert_team_id": null
+    },
+    {
+      "game_id": 9004,
+      "week_seq": 10,
+      "start_at": "2026-11-07T17:00:00Z",
+      "venue": "Heron Park",
+      "home": {
+        "team_id": 102,
+        "school": "Brookvale",
+        "conference": "Atlantic",
+        "abbreviation": "BRK",
+        "color": "#0b3d91",
+        "alternate_color": "#f2a900",
+        "has_logo": true
+      },
+      "away": {
+        "team_id": 111,
+        "school": "Glenmoor",
+        "conference": "Atlantic",
+        "abbreviation": "GLN",
+        "color": "#5e2d79",
+        "alternate_color": "#fdb827",
+        "has_logo": true
+      },
+      "home_rank": 6,
+      "away_rank": 11,
+      "spread": -6.5,
+      "home_win_prob": 0.68,
+      "win_prob_source": "CFBD",
+      "stakes": null,
+      "game_of_week": false,
+      "upset_alert_team_id": null
+    },
+    {
+      "game_id": 9001,
+      "week_seq": 10,
+      "start_at": "2026-11-07T17:00:00Z",
+      "venue": "Lakeshore Stadium",
+      "home": {
+        "team_id": 103,
+        "school": "Carlton",
+        "conference": "Lakes",
+        "abbreviation": null,
+        "color": "#1b5e20",
+        "alternate_color": "#d9d9d9",
+        "has_logo": false
+      },
+      "away": {
+        "team_id": 104,
+        "school": "Dunmore",
+        "conference": "Lakes",
+        "abbreviation": "DUN",
+        "color": "#f5e663",
+        "alternate_color": "#1b1b1b",
+        "has_logo": false
+      },
+      "home_rank": null,
+      "away_rank": null,
+      "spread": -3.0,
+      "home_win_prob": 0.55,
+      "win_prob_source": "CFBD",
+      "stakes": null,
+      "game_of_week": false,
+      "upset_alert_team_id": null
+    },
+    {
+      "game_id": 9002,
+      "week_seq": 10,
+      "start_at": "2026-11-07T23:30:00Z",
+      "venue": "Harbor Dome",
+      "home": {
+        "team_id": 105,
+        "school": "Eastgate",
+        "conference": "Pacific",
+        "abbreviation": "EAST",
+        "color": "00573F",
+        "alternate_color": "ffffff",
+        "has_logo": true
+      },
+      "away": {
+        "team_id": 106,
+        "school": "Fairhaven",
+        "conference": "Pacific",
+        "abbreviation": "FAIR",
+        "color": "#c8102e",
+        "alternate_color": "#13294b",
+        "has_logo": false
+      },
+      "home_rank": null,
+      "away_rank": null,
+      "spread": -9.5,
+      "home_win_prob": 0.78,
+      "win_prob_source": "CFBD",
+      "stakes": null,
+      "game_of_week": false,
+      "upset_alert_team_id": null
+    },
+    {
+      "game_id": 9008,
+      "week_seq": 10,
+      "start_at": "2026-11-07T18:00:00Z",
+      "venue": null,
+      "home": {
+        "team_id": 135,
+        "school": "Fenwick",
+        "conference": "Gulf",
+        "abbreviation": "FEN",
+        "color": "#00539b",
+        "alternate_color": "#ffffff",
+        "has_logo": true
+      },
+      "away": {
+        "team_id": 136,
+        "school": "Garland Hill",
+        "conference": "Gulf",
+        "abbreviation": "GAR",
+        "color": "#ff8200",
+        "alternate_color": "#58595b",
+        "has_logo": false
+      },
+      "home_rank": 16,
+      "away_rank": null,
+      "spread": -7.0,
+      "home_win_prob": 0.74,
+      "win_prob_source": "CFBD",
+      "stakes": null,
+      "game_of_week": false,
+      "upset_alert_team_id": null
+    },
+    {
+      "game_id": 9006,
+      "week_seq": 10,
+      "start_at": "2026-11-07T16:00:00Z",
+      "venue": "The Pit",
+      "home": {
+        "team_id": 113,
+        "school": "Irwin",
+        "conference": "Lakes",
+        "abbreviation": "IRW",
+        "color": "#00274c",
+        "alternate_color": "#ffcb05",
+        "has_logo": false
+      },
+      "away": {
+        "team_id": 118,
+        "school": "Norwick",
+        "conference": "Lakes",
+        "abbreviation": "NOR",
+        "color": "#13294b",
+        "alternate_color": "#ffffff",
+        "has_logo": false
+      },
+      "home_rank": 1,
+      "away_rank": 24,
+      "spread": -21.0,
+      "home_win_prob": 0.93,
+      "win_prob_source": "CFBD",
+      "stakes": null,
+      "game_of_week": false,
+      "upset_alert_team_id": null
+    }
+  ],
+  "queries": {
+    "games": "q-0001"
+  }
+}

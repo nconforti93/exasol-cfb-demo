@@ -19,6 +19,9 @@ Every page shows the world as of one point: a season and a week, after that week
   | Predictions | the predictions of P's next week; the grades of P's week; the season to date at P; the calibration of P's season |
   | Upsets | the upsets of P's week; the all-time lists as stored now |
   | Head-to-head | the series and meetings as stored now; the next meeting as of the current point, labeled so when P is another point |
+  | Map | the FBS teams and conferences of P's season; records at P; locations as stored now (`app/map`) |
+  | Team | record, schedule results and ranks at P; games after P as upcoming; the outlook of P's latest publication (`app/team`) |
+  | League: this week, stats | the games of P's next week; the season to date at P (`app/league`) |
 
 - **Follow mode.**
   - Without an explicit choice, the app follows the current point. The timeline poll (`app/refresh`) also returns the **follow key**: `AS_OF_SEASON`, `AS_OF_WEEK_SEQ`, `PUBLICATION_ID`, `WHATIF_RUN_ID` and `WHATIF_VIEWS_CURRENT` of `CURRENT_POINT`. When any of them changes, every page reloads.

@@ -1,0 +1,4 @@
+{
+  "error": "live_busy",
+  "message": "another process holds the ledger lock"
+}

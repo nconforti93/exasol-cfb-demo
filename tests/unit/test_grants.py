@@ -324,12 +324,17 @@ def test_report_never_contains_the_password() -> None:
 # --- environment and credentials ---
 
 
-def test_owner_password_prefers_the_process_environment_over_dotenv(tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("CFB_TEST_OWNER_PASSWORD=from-file\n")
-    assert grants.owner_password({"CFB_TEST_OWNER_PASSWORD": "from-env"}, env_file) == "from-env"
-    assert grants.owner_password({}, env_file) == "from-file"
-    assert grants.owner_password({}, tmp_path / "none") is None
+def test_owner_password_prefers_the_process_environment_over_the_secrets_file(
+    tmp_path: Path,
+) -> None:
+    secrets_file = tmp_path / "app.env"
+    secrets_file.write_text("CFB_TEST_OWNER_PASSWORD=from-file\n")
+    secrets_file.chmod(0o600)
+    no_dotenv = tmp_path / "no.env"
+    environ = {"CFB_TEST_OWNER_PASSWORD": "from-env"}
+    assert grants.owner_password(environ, no_dotenv, secrets_file) == "from-env"
+    assert grants.owner_password({}, no_dotenv, secrets_file) == "from-file"
+    assert grants.owner_password({}, no_dotenv, tmp_path / "none") is None
 
 
 # --- the SQL behind the reader-role checks (verified against Personal 2026.2) ---

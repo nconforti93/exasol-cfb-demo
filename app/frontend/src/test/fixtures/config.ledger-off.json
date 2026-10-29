@@ -1,0 +1,38 @@
+{
+  "version": "0.1.0",
+  "target": "aws",
+  "dev": false,
+  "fetch_mode": "LIVE",
+  "refresh_target": {"season": 2026, "week": 10, "season_type": "regular"},
+  "operator": {
+    "enabled": false,
+    "reason": "the server is not bound to loopback only"
+  },
+  "console": {
+    "enabled": false,
+    "reason": "the operator path is off"
+  },
+  "ledger": {
+    "on": false,
+    "plan": null,
+    "plan_cap": null,
+    "plan_room": null,
+    "month": null,
+    "month_cap": null,
+    "month_room": null
+  },
+  "live": {
+    "enabled": false,
+    "reasons": [
+      "ledger off",
+      "live actions need the operator path"
+    ]
+  },
+  "read_check_skipped": true,
+  "chat": {
+    "available": false,
+    "enabled": false,
+    "reason": "chat arrives with Phase 7",
+    "model": null
+  }
+}

@@ -1,0 +1,321 @@
+/* League "This week" and "Stats". Tokens only; team colors are not used on these pages. */
+
+.card.gotw {
+  gap: var(--space-4);
+}
+
+.gotw-teams {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.gotw-at,
+.week-card-at {
+  margin: 0;
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.gotw-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+
+.gotw-foot p {
+  margin: 0;
+}
+
+.gotw-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* One team of a matchup */
+
+.matchup-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.matchup-side-96 {
+  flex-direction: column;
+  text-align: center;
+}
+
+.matchup-side p {
+  margin: 0;
+}
+
+.matchup-side-text {
+  min-width: 0;
+}
+
+.matchup-side-48 .matchup-side-text {
+  flex: 1;
+}
+
+.matchup-side-name {
+  font: var(--text-title);
+  overflow-wrap: anywhere;
+}
+
+.matchup-side-prob {
+  font: var(--text-title);
+}
+
+.matchup-side-96 .matchup-side-prob {
+  font: var(--text-kpi);
+  letter-spacing: -0.02em;
+}
+
+.matchup-side-prob-alert {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: var(--space-1);
+}
+
+/* One bar for both teams */
+
+.split-bar {
+  display: flex;
+  width: 100%;
+  height: var(--space-3);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--seq-track);
+}
+
+.split-away {
+  flex: var(--away-share) 1 0;
+  background: var(--seq-track);
+}
+
+.split-home {
+  flex: calc(1 - var(--away-share)) 1 0;
+  background: var(--seq-track);
+}
+
+.split-home-favored .split-home,
+.split-away-favored .split-away {
+  background: var(--seq-bar);
+}
+
+.split-home-favored .split-away,
+.split-away-favored .split-home {
+  background: var(--axis);
+}
+
+.split-away {
+  margin-right: 2px;
+}
+
+/* Upset alerts */
+
+.upset-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--status-warning);
+  border-radius: var(--radius-pill);
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-primary);
+  white-space: nowrap;
+}
+
+.upset-tag .icon {
+  color: var(--status-warning);
+}
+
+.upset-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upset-list li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.upset-list p {
+  margin: 0;
+}
+
+/* Matchup cards */
+
+.card.week-card {
+  gap: var(--space-3);
+}
+
+.week-card .card-eyebrow {
+  margin: 0;
+}
+
+.week-card .game-meta {
+  margin: 0;
+}
+
+.week-card-at {
+  padding-left: var(--space-2);
+}
+
+/* Stats */
+
+.grid.stats-grid {
+  align-items: stretch;
+}
+
+.stats-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: var(--space-5) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.stats-row p {
+  margin: 0;
+}
+
+.stats-place {
+  font: var(--text-label);
+  color: var(--ink-muted);
+}
+
+.stats-name {
+  font: var(--text-body);
+  font-weight: 600;
+}
+
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.stats-value {
+  font: var(--text-title);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+}
+
+.movers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+
+.movers-title {
+  margin: 0 0 var(--space-1);
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.movers .stats-row {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.mover-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.conf-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.conf-table th {
+  padding: var(--space-1) var(--space-3);
+  text-align: left;
+  font: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.conf-table td {
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.conf-table th:first-child,
+.conf-table td:first-child {
+  padding-left: 0;
+}
+
+.conf-name {
+  font: var(--text-body);
+  font-weight: 600;
+}
+
+.diverging {
+  display: block;
+  width: calc(var(--space-8) * 1.5);
+  height: var(--space-3);
+}
+
+.diverging .diverging-axis {
+  stroke: var(--axis);
+}
+
+.diverging .diverging-bar {
+  fill: var(--seq-bar);
+}
+
+.diverging .diverging-bar-negative {
+  fill: var(--move-down);
+}
+
+@media (max-width: 1100px) {
+  .gotw-teams {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .movers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "entries": [
+    {
+      "entry_id": "q-0002",
+      "principal": "reader",
+      "user": "CFB_CONSOLE_WEB",
+      "page": null,
+      "sql": "SELECT * FROM \"CFBD_VS\".\"GAMES_TEAMS\" WHERE \"P_YEAR\" BETWEEN 2022 AND 2024 AND \"P_TEAM\" = 'Michigan'",
+      "started_at": "2026-10-23T09:20:00Z",
+      "ms": 900,
+      "row_count": 60,
+      "error": null,
+      "calls_spent": 3,
+      "requests": [
+        {
+          "slice": "/games/teams?seasonType=both&team=Michigan&year=2022",
+          "source": "LIVE",
+          "status": 200,
+          "attempts": 1,
+          "ms": 400,
+          "rows": 20,
+          "requested_at": "2026-10-23T09:20:00.0Z"
+        },
+        {
+          "slice": "/games/teams?seasonType=both&team=Michigan&year=2023",
+          "source": "LIVE",
+          "status": 200,
+          "attempts": 1,
+          "ms": 410,
+          "rows": 20,
+          "requested_at": "2026-10-23T09:20:00.1Z"
+        },
+        {
+          "slice": "/games/teams?seasonType=both&team=Michigan&year=2024",
+          "source": "LIVE",
+          "status": 200,
+          "attempts": 1,
+          "ms": 420,
+          "rows": 20,
+          "requested_at": "2026-10-23T09:20:00.1Z"
+        }
+      ]
+    },
+    {
+      "entry_id": "q-0001",
+      "principal": "app",
+      "user": "CFB_APP_WEB",
+      "page": "odds",
+      "sql": "SELECT * FROM \"CFB_API\".\"PLAYOFF_ODDS\" WHERE \"AS_OF_SEASON\" = 2026 AND \"AS_OF_WEEK_SEQ\" = 9 ORDER BY \"ODDS_RANK\"",
+      "started_at": "2026-10-23T09:19:00Z",
+      "ms": 38,
+      "row_count": 4,
+      "error": null,
+      "calls_spent": 0,
+      "requests": []
+    }
+  ]
+}

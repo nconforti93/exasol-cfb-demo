@@ -13,6 +13,8 @@
 #   record             live CFBD calls through the fetch UDF, capped by the ledger cache/live-calls.jsonl
 #                      (scripts/record.py). Without CONFIRM=yes it only prints the plan. ARGS="--ledger"
 #                      prints the totals, ARGS="--info" logs one free /info reading.
+#   logos              fills the private team-logo cache (~/.cfb-demo/logos) from CFB_CORE.TEAMS: an external
+#                      fetch to the logo host, 0 CFBD calls. FORCE=1 fetches existing files again, ALL=1 adds FCS.
 #   backfill           PROFILE=demo|full [FROM=year] [MAX_CALLS=n] [CONFIRM=yes]: prints the estimate and
 #                      the quota, then (live mode, CONFIRM=yes, ledger check) runs CFB_INFRA.BACKFILL.
 #   refresh            SEASON=y WEEK=w [SEASON_TYPE=postseason] [CONFIRM=yes]: the same for REFRESH_WEEK.
@@ -72,7 +74,14 @@ CONFIRM  ?=
 FORCE    ?=
 NAME     ?=
 ARGS     ?=
+ALL      ?=
+REAL     ?=
+SEASON   ?=
+FIXTURES_DIR := $(if $(filter 1 yes,$(REAL)),$(HOME)/.cfb-demo/fixtures/latest,$(REAL))
 
+.PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record logos db-check \
+        app-deps app-build app-test app-lint \
+        app app-serve app-env app-user app-e2e app-perf app-preview app-fixtures
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
 .PHONY: backfill refresh quota snapshot restore snapshots model model-check model-refresh model-docs
 .PHONY: model-perf api api-docs sim sim-fit simulate what-if predict
@@ -90,9 +99,10 @@ bundle:
 
 test:
 	$(RUN) pytest tests/unit tests/cli
+	@$(MAKE) --no-print-directory app-test
 
 test-it: db-check
-	$(RUN) pytest tests/it -m "it and not network"
+	$(RUN) pytest tests/it -m "it and not network and not e2e"
 
 test-network: db-check
 	$(RUN) pytest tests/it -m network
@@ -101,12 +111,14 @@ lint:
 	$(RUN) ruff check .
 	$(RUN) ruff format --check .
 	$(RUN) mypy
+	@$(MAKE) --no-print-directory app-lint
 
 # Unit + CLI tests only. Each of the three runtime packages (vs/cfbd_vs, vs/gen, loader) must reach 90 % (fail_under in pyproject.toml).
 coverage:
 	$(RUN) pytest --cov --cov-report= tests/unit tests/cli
 	$(RUN) coverage report --include="vs/cfbd_vs/*"
 	$(RUN) coverage report --include="vs/gen/*"
+	$(RUN) coverage report --include="$(APP_PURE_MODULES)"
 	$(RUN) coverage report --include="loader/*"
 
 # Loader settings: loader/load-plan.yaml, then the target's entry in vs/live/loader-config.yaml
@@ -130,6 +142,65 @@ dns-check: db-check
 record: db-check
 	$(PY) -m scripts.record --patterns "$(PATTERNS)" --confirm "$(CONFIRM)" $(ARGS)
 
+logos: db-check
+	$(PY) -m scripts.logos $(if $(filter 1 yes,$(FORCE)),--force) $(if $(filter 1 yes,$(ALL)),--all)
+
+# Frontend (app/frontend: Node >= 22.12, exact pins, package-lock.json is the source of truth).
+# app-deps runs `npm ci` only when package.json or the lockfile changed; on a Windows drive it installs
+# into a native directory and links node_modules (see app/frontend/scripts/deps.sh).
+FRONTEND := $(ROOT)/app/frontend
+
+app-deps:
+	@"$(FRONTEND)/scripts/deps.sh"
+
+app-build: app-deps
+	cd "$(FRONTEND)" && npm run build
+
+app-test: app-deps
+	cd "$(FRONTEND)" && npm test
+
+app-lint: app-deps
+	cd "$(FRONTEND)" && npm run lint && npm run typecheck
+
+# Backend (app/backend). `ROTATE=yes` sets a new password on existing app users (make app-user).
+# make app          dev: uvicorn --reload on 127.0.0.1:8000 plus Vite on 127.0.0.1:5173 (no live refresh)
+# make app-serve    one process serving the API and app/frontend/dist (TARGET=aws works)
+# make app-env      creates ~/.cfb-demo/app.env (0600) with random CFB_APP_PASSWORD and CFB_CONSOLE_PASSWORD;
+#                   never overwrites a key, prints no value. Secrets live there, never in the repo or OneDrive.
+# make app-e2e      browser smoke against the TEST_ stack; run it under the IT lock (flock <lock> make app-e2e)
+# make app-perf     times the fixed catalog of read endpoints, never a live endpoint
+ROTATE ?=
+APP_PURE_MODULES := app/backend/settings.py,app/backend/security.py,app/backend/spend.py,app/backend/sessions.py,app/backend/sqlcatalog.py,app/backend/explain.py,app/backend/console_catalog.py
+
+app: db-check app-deps
+	$(PY) -m scripts.app dev
+
+app-serve: db-check
+	$(PY) -m scripts.app serve
+
+# make app-preview  the frontend on http://127.0.0.1:5173 with /api/* served from the test fixtures (sample data;
+#                   REAL=1 serves the snapshot of `make app-fixtures` (REAL=<dir> another one) ahead of them;
+#                   no database, no CFBD, no AWS). PORT is fixed by vite.config.ts; stop it with Ctrl-C.
+app-preview: app-deps
+	cd "$(FRONTEND)" && CHOKIDAR_USEPOLLING=1 CFB_PREVIEW=1 VITE_CFB_PREVIEW=1 $(if $(REAL),CFB_FIXTURES_DIR="$(FIXTURES_DIR)") npx vite
+
+# make app-fixtures  reads the stored model as the owner (TARGET=aws works; SEASON=2026 optional) and writes a
+#                    real-data snapshot of the map, team, this-week and stats responses to ~/.cfb-demo/fixtures/
+#                    (outside the repository, never committed). 0 CFBD calls.
+app-fixtures: db-check
+	$(PY) -m scripts.app_fixtures $(if $(SEASON),--season $(SEASON))
+
+app-env:
+	$(PY) -m scripts.app_env init $(ARGS)
+
+app-user: db-check
+	$(PY) -m scripts.app user $(if $(filter yes,$(ROTATE)),--rotate) $(ARGS)
+
+app-e2e: db-check app-build
+	$(RUN) pytest tests/it -m e2e
+
+app-perf: db-check
+	$(PY) -m scripts.app perf
 backfill: db-check
 	$(PY) -m scripts.loader_cli --confirm "$(CONFIRM)" backfill --profile "$(or $(PROFILE),demo)" $(if $(FROM),--from-season "$(FROM)") $(if $(MAX_CALLS),--max-calls "$(MAX_CALLS)")
 

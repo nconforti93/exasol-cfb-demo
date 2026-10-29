@@ -1,0 +1,25 @@
+{
+  "team": {
+    "team_id": 105,
+    "school": "Eastgate",
+    "conference": "Pacific",
+    "abbreviation": "EAST",
+    "color": "00573F",
+    "alternate_color": "ffffff",
+    "has_logo": true
+  },
+  "opponent": {
+    "team_id": 103,
+    "school": "Carlton",
+    "conference": "Lakes",
+    "abbreviation": null,
+    "color": "#1b5e20",
+    "alternate_color": "#d9d9d9",
+    "has_logo": false
+  },
+  "never_met": true,
+  "series": null,
+  "games": [],
+  "next": null,
+  "next_as_of_label": "2026, after week 9"
+}

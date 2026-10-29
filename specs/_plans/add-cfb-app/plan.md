@@ -6,9 +6,169 @@ Roadmap Phase 6 ("App"): a FastAPI backend and a React frontend over `CFB_API` a
 
 Pages read as a read-only app user, and the console reads the virtual schema as an ordinary reader. A small operator path runs as the namespace owner, only on a loopback bind, for the refresh, the fetch log and the ledger's reconciliation. Every request must name the app's own host, and every action must come from the app's own origin. Every live CFBD call is planned at 0 calls, shown and confirmed before it is sent, never sent twice by the app, and recorded afterwards whatever its outcome. Everything is tested at zero CFBD calls on the synthetic sim league. Live verification on AWS spends at most 12 ledgered calls (8 planned) under the plan `add-cfb-app`, in November, which the owner authorized for 1000 calls.
 
+**Owner revision 2026-10-27 ([46]):** the 12-call Phase 6 verification allocation and 60-call runtime allocation below are superseded. Both app ledger plans now have a 1400-call cap, the sum of the currently authorized October and November monthly caps. October remains capped at 400 and November at 1000. The app completed the overdue week-8 AWS refresh as run 18, spending four calls; `/info` usage rose from 246 to 250.
+
 Frontend work starts now, against validated fixtures, while Phases 2–5 are still being implemented. A demo-minimum cut line names what the mid-November demo needs and what may slip to Phase 8.
 
 Revised on 2026-10-22/23 after the independent review (`review.md`, § Review resolution): 73 scenarios (64 + 9), 38 tasks (3 `[expert]`), 12 parallel groups.
+
+Revised again on 2026-10-23 for the owner's new UI (§ UI revision below): the app opens on a US map of the teams, each team has its own page, and the built pages become league tabs. +3 features, +13 scenarios (86), +9 tasks (9.0–9.8, none `[expert]`), 4 more groups. Light process from now on (owner, 2026-10-23).
+
+## UI revision (2026-10-23)
+
+**This section supersedes the rest of the plan where they conflict:** the "four pages" of the Summary and Goals, the page tabs in the Architecture diagram, the shell's client routes and layout, the "four page tabs" of the demo-minimum cut line, and task 6.2's smoke path. Everything else stands: the three principals, browser safety, the spending guard, the refresh, the inspector, as-of and follow mode, and the behavior of the four built pages. Decisions [34]–[42] in `decision-log.md`.
+
+**Why.** The owner looked at the UI on sample data (2026-10-23): "it isn't that 'pretty' of a UI … I would really like where the opening screen has a map of the US and then each team has their logo geographically where they are (with filter by conference probably). Then when you click the team, it opens a page dedicated to them about record, odds, predictions, etc. Then a different tab(s) has the universal CFB predictions, matchups of the week, and those kinds of cool stats/info." He also asked for a lighter process: a demo, not a product. So this revision has a few scenarios per feature, no separate review, and a thin real-data slice first.
+
+### Information architecture
+
+| Route | Page | Contents | Reuses | Data from |
+|---|---|---|---|---|
+| `/` | **Map** (home, `app/map`) | US map, FBS logos at their home stadiums; conference chips that zoom to fit; zoom buttons; hover card (record, rank); list view; "Not on the map" | as-of picker (season) | Phases 2–3 |
+| `/team/<id>` | **Team** (`app/team`) | Hero (logo, colors, record, rank); schedule and results; SP+ and polls | `InlineBar`, `MoveBadge`, `ChartFrame`, `format.ts` | Phases 2–3 |
+| | | Outlook: playoff odds with movement and trajectory; this week's prediction; games to watch and what-if for this team; rivalries leading to head-to-head | `RootingGuide`, `WhatIfPanel` (focus team = this team), `PredictionList` rows | Phases 4–5 |
+| `/league/week` | **This week** (`app/league`) | Matchups of the week, ordered by interest; game of the week; upset alerts; stakes | prediction formatting | 2–3 (line, CFBD pregame probability); 4–5 (our pick, stakes) |
+| `/league/odds`, `/league/predictions`, `/league/upsets` | Odds board, predictions with scorecard, upsets | As built (5.2–5.4), now tabs, with team marks in their rows | `OddsPage`, `PredictionsPage`, `UpsetsPage` | Phases 4–5 |
+| `/league/stats` | **Stats** | Road warriors (`GREAT_CIRCLE_KM`), biggest SP+ movers, conference strength, hottest streaks; each card shows its SQL | `InlineBar`, `ChartFrame` table views | Phases 2–3 (+ P6-UI-c to serve) |
+| `/head-to-head` | Head-to-head | As built (5.5); reached from team schedule rows, rivalries and matchup cards | `HeadToHeadPage` | Phase 5 |
+| Header | — | Map · League · Head-to-head; team search; as-of picker; quota and ledger badges; refresh; theme; inspector | `Header`, `AsOfPicker`, `QuotaBadge`, `LedgerBadge`, `RefreshPanel`, `ThemeSwitch` | — |
+| Drawer | Inspector | As built (5.6); each card's "SQL" button opens it at that card's query-log entry. The console, the refresh timeline and the spend gates are unchanged | `Inspector` | — |
+
+- **Old paths** `/odds`, `/predictions` and `/upsets` render their tab and replace the URL with the `/league/` path, keeping the query.
+- **Store.** `PageId` gains `home`, `team`, `week` and `stats`; the old ids stay, so Phase 7's app-state tools keep working. `focusTeam` doubles as the team page's team, so "focus a team" in the odds board, the chat and the team page is one state. New field: `mapConference` (`?conf=`). The default page is `home`.
+- **Routing stays hand-rolled** (decision [14] holds): nine paths and one path parameter in `url.ts`.
+
+### Map tech
+
+| Package | Version | Released | License | Role |
+|---|---|---|---|---|
+| `d3-geo` | 3.1.1 | 2024-03-12 | ISC | `geoAlbersUsa` for team points; `geoPath` (null projection) for the pre-projected states. Pulls `d3-array` 3.2.4 and `internmap` |
+| `topojson-client` | 3.1.0 | 2019-11-06 | ISC | `feature` and `mesh` to turn the TopoJSON into state shapes and interior borders |
+| `us-atlas` | 3.0.1 | 2023-04-19 | ISC (Census cartographic boundaries, public domain) | `states-albers-10m.json` (82 kB, ≈ 30 kB gzipped): states and nation, already projected with `geoAlbersUsa().scale(1300).translate([487.5, 305])` for a 975 × 610 view box (package README). Hawaii and Alaska are insets |
+| `@types/d3-geo` (dev) | 3.1.1 | 2026-07-31 | MIT | types |
+| `@types/topojson-client` (dev) | 3.1.5 | 2024-09-16 | MIT | types (pulls `@types/topojson-specification` 1.0.5 and `@types/geojson`) |
+
+Checked against the npm registry on 2026-10-23; all are older than the 7-day rule. They are pinned exactly, like the rest of `package.json`. The JSON is imported by the map module and bundled by Vite into `dist/`, so the map needs no network at the demo. No tile server, no Leaflet or MapLibre, no `d3-zoom` and no `d3-force`.
+
+- **Points** are projected with the same `geoAlbersUsa` parameters as the atlas, so they land on the drawn states. A point the projection rejects (`null`) goes to "Not on the map".
+- **Overlap.** `src/map/layout.ts` is a pure function. Markers have a constant size on screen (36 px at the national zoom, 44 px zoomed in), so at view scale `k` their radius in map units is `px / (2k)`. Starting from the projected anchors, sorted by team id, it runs at most 80 passes. Each pass pushes overlapping pairs apart along the line between their centers, pulls each marker back toward its anchor by 10 %, and clamps it to the view box. A marker that ends up more than half its size from its anchor draws a 1 px leader line to a 4 px dot at its true location. The layout is recomputed (memoized) when the filter or the zoom changes. Texas, Florida and the Southeast spread out at the national zoom, and a conference chip zooms them apart for real.
+- **Zoom.** It changes the SVG `viewBox`, animated for 200 ms. A conference chip fits the box to the anchors of the conference's teams, with 60 units of padding and a minimum box of 240 × 150. The "+", "−" and "Reset" buttons zoom in steps of 1.5 around the center. There is no wheel or drag pan: it keeps keyboard use and tests simple.
+- **Clustering was rejected.** Clusters hide the logos, which are the point of the page.
+
+### Logos
+
+- **`make logos`** runs `scripts/logos.py` (`TARGET=local|aws`, `FORCE=1`, `ALL=1` adds FCS):
+  - It reads the logo URLs of the stored team list as the owner (`vs/host/target.py`): `CFB_CORE.TEAMS`, newest fetch per id, FBS by default. It reads stored data only, never `CFBD_VS`, so it costs 0 CFBD calls.
+  - It downloads `LOGOS[0]` to `<id>.png` and, when present, `LOGOS[1]` (ESPN's "500-dark") to `<id>-dark.png`, in `CFB_LOGO_DIR` (default `~/.cfb-demo/logos/`, outside the repository and outside OneDrive).
+  - **Fetch rules:** `http` is upgraded to `https`; only hosts under `espncdn.com` are fetched, others are skipped and reported; 10 s timeout; 4 in parallel; at most 1 MB; `Content-Type: image/png` and the PNG signature are checked; an existing file is skipped unless `FORCE=1`.
+  - It writes `manifest.json` (team id → files, host, bytes, fetched at) and prints "N teams, M files, K skipped, 0 CFBD calls, M external fetches to a.espncdn.com".
+- **External fetch.** This is not a CFBD call and touches no quota or ledger, but it does reach outside the machine. It runs only by hand, once, and never from the app or during the demo. The user guide says so (task 7.1).
+- **Serving.** `GET /api/logos/{team_id}.png[?variant=dark]` (`routes/logos.py`, read path, no database):
+  - The id must be an integer, else 400 before any file access. The file is served from `APP_LOGO_DIR` (default `~/.cfb-demo/logos`), and a missing dark file falls back to the light one. A missing logo answers 404 with JSON.
+  - It sends `Cache-Control: public, max-age=86400`. The CSP is unchanged (`img-src 'self' data:`), so a hotlink to ESPN could not load even by mistake.
+  - Team responses carry `has_logo`, a check that the file exists, so the browser never asks for a logo that is missing. `make app-preview` serves the same path from the same directory.
+- **Fallback badge.** A disc in `COLOR`, with `ABBREVIATION` (else the first four letters of the school) in white or near-black, whichever reaches 4.5:1 on that color, ringed in `ALTERNATE_COLOR`. It is used when `has_logo` is false, when the image fails, and for every team under `APP_LOGOS=off` (recordings that leave private media, owner action U8).
+- **Never committed.** The repository holds no team marks (checklist row "No team marks in git").
+
+### Visual design (binding for 9.0–9.4)
+
+The look is a clean sports dashboard: a neutral page, near-white or near-black cards, big tabular numbers, logos as the main imagery, and team colors as accents only. No gradients behind text and no textures. All values are tokens in `src/theme/tokens.ts`, emitted to `theme.css` by `npm run theme:css`. Component CSS uses the tokens and holds no raw sizes or colors.
+
+- **Spacing** `--space-1` to `--space-8`: 4, 8, 12, 16, 24, 32, 48, 64 px.
+- **Type scale** (system font stack; every number `tabular-nums`):
+
+  | Token | Size / weight / line height | Use |
+  |---|---|---|
+  | `--text-label` | 16 px / 600 / 1.3, uppercase, 0.04 em tracking | chips, eyebrow labels, axis ticks |
+  | `--text-small` | 16 px / 400 / 1.4 | meta lines, table captions |
+  | `--text-body` | 18 px / 400 / 1.45 | body, table cells (unchanged floor) |
+  | `--text-title` | 22 px / 700 / 1.25 | card titles |
+  | `--text-page` | 30 px / 700 / 1.15 | page titles |
+  | `--text-hero` | 40 px / 800 / 1.1 | the team's name |
+  | `--text-kpi` | 48 px / 700 / 1 | KPI numbers (P(CFP), record) |
+
+- **Shape and depth:**
+  - radii: `--radius-card` 14 px, `--radius-control` 10 px, `--radius-pill` 999 px;
+  - `--shadow-card`: in light, `0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 6%)`; in dark, `none`, and the border carries the edge;
+  - `--shadow-raised`: for a hovered marker;
+  - new colors `--surface-raised` (light `#ffffff`, dark `#222220`) and `--border-subtle` (the grid color). Both are added to the contrast pairs of `tokens.test.ts`.
+- **Layout.**
+  - Content is at most 1320 px wide and centered, with 24 px of page padding (32 px from 1440 px).
+  - A 12-column grid with 24 px gaps; cards span 4, 6, 8 or 12 columns, and everything stacks at 1100 px or less.
+  - Design for a 1280 × 720 projector first and a 1920 × 1080 laptop second.
+- **Cards** (`src/ui/Card.tsx`):
+  - a `--surface` background, a 1 px `--border-subtle` border, `--radius-card` and `--shadow-card`, with 20 px of padding (24 px from 1200 px);
+  - the header holds an optional eyebrow label and the title on the left, and the actions on the right: an "SQL" ghost button with a code icon (`SqlButton`), then info;
+  - the body has a 12 px gap;
+  - the footer is a meta line in `--text-small` muted, for example "0 calls · 38 ms · CFB_API.TEAM_TRAVEL".
+- **Team colors** (`src/theme/teamColor.ts`, pure, unit-tested):
+  - **Choosing the accent.** `teamAccent(team, theme)` returns `COLOR` if it reaches 3:1 against `--surface` in that theme, else `ALTERNATE_COLOR` if that does, else `--accent`.
+  - **Where it appears:** the 6 px top stripe of the team hero and of team-scoped cards, the marker ring, the team's mark in charts and the focus highlight.
+  - **Never for text, never as a fill behind text,** except the badge, whose text color is computed as above.
+  - **Validation.** A value that is not `#RRGGBB` (CFBD sends it with or without the `#`) counts as missing.
+  - **Applying it.** Through SVG presentation attributes or a CSS custom property set by React's `style` (CSSOM, which the CSP allows), never through a `style` attribute in `index.html`.
+- **Shared components** (`src/ui/`): `Card`, `Chip`, `TeamMark` (sizes 24, 32, 48, 96 and 112; logo or badge; the dark variant in the dark theme), `RankTag` ("#6"), `RecordLine` ("7–1 · 4–1 Big Ten"), `StatTile` (a label, a KPI number and a `MoveBadge` delta) and `SqlButton`.
+- **Map style:**
+  - states in `--surface` with `--axis` 1 px borders (`vector-effect: non-scaling-stroke`) and the nation outline in `--border`;
+  - each marker is a `--surface-raised` disc with a 2.5 px ring in the team accent and the logo inset by 4 px;
+  - hover and focus scale the marker to 1.2 and add `--shadow-raised`;
+  - leader lines are `--ink-muted`.
+- **Motion.** 200 ms ease-out for zoom and hover, and none under `prefers-reduced-motion`.
+- **The existing rules hold:** contrast floors in both themes, states shown as an icon plus a word, and a table view for every chart.
+
+### API additions
+
+All are on the read path, with fixed SQL in `sqlcatalog.py` over `CFB_API` only (the existing lint applies), and are validated like every point route. Each response carries `queries: Record<string, string>`, which maps a panel to this session's query-log entry; it feeds the cards' "SQL" buttons.
+
+| Method and path | Reads | Needs |
+|---|---|---|
+| `GET /api/teams/map?season=&week=` | `TEAMS` (+ P6-UI-b columns), `TEAM_SEASONS` (FBS of the season, conference, record), `RANKINGS` (AP at P); `has_logo` | Phases 2–3 + P6-UI-b, d |
+| `GET /api/team/{id}?season=&week=` | `TEAMS`, `TEAM_SEASONS`, `GAMES` (schedule, results, `PREGAME_SPREAD`, `HOME_PREGAME_WIN_PROB`), `RANKINGS`, `SP_RATINGS` (P's season and the one before) | same |
+| `GET /api/team/{id}/outlook?season=&week=` | `PLAYOFF_ODDS` (the team at every published point of the season), `PUBLISHED_RUNS`, `PREDICTIONS` (the team's next game), `ROOTING_GUIDE` (the team), `MATCHUP_SERIES` (the team's 5 most-played series), `CURRENT_POINT`; each panel `{available, reason}` | Phases 4–5 |
+| `GET /api/league/week?season=&week=` | `GAMES` (P's next week, FBS), `RANKINGS`; with a run, `PREDICTIONS` and `ROOTING_GUIDE` (max `LEVERAGE` per game) | Phases 2–3; 4–5 enrich |
+| `GET /api/league/stats?season=&week=` | `TEAM_TRAVEL` (P6-UI-c), `SP_RATINGS`, `TEAM_SEASONS`, `GAMES` | Phases 2–3 + P6-UI-c, d |
+| `GET /api/logos/{team_id}.png?variant=dark` | a file in `APP_LOGO_DIR`; no database | — |
+
+New settings: `APP_LOGO_DIR` (default `~/.cfb-demo/logos`) and `APP_LOGOS` (`on` by default, or `off`). The existing `/api/teams` feeds the header search. The routes of the built pages are unchanged (3.1–3.5).
+
+### A real-data snapshot for the preview
+
+Component tests keep the synthetic, committed fixtures; they are the contract. To look at real data before the backend serves it, `make app-fixtures [TARGET=aws] [SEASON=2026]` runs `scripts/app_fixtures.py`:
+- **What it reads.** As the owner, it reads the stored model and team list: `CFB_MODEL` `TEAM`, `VENUE`, `GAME`, `TEAM_GAME`, `RANKING`, `RATING_SP`, `SEASON_WEEK` and `GREAT_CIRCLE_KM`, plus `CFB_CORE.TEAMS` for colors until P6-UI-a lands. A unit test asserts that no statement names `CFBD_VS`, so it costs 0 calls.
+- **What it writes.** The response shapes of the thin slice (`points`, `teams`, `teams-map`, one `team.<id>` per FBS team, `league-week`, `league-stats`), each validated by `app/backend/models.py` before it is written. They go to `~/.cfb-demo/fixtures/<target>-<season>/`, outside the repository (CFBD terms: no raw data in git). The current point is the season's last week whose `SEASON_WEEK.IS_DONE` is TRUE; `publication_id` is null.
+- **How it is served.** `make app-preview REAL=1` (or `REAL=<dir>`) serves that directory first and the synthetic fixtures for everything else, such as the odds. The banner reads "PREVIEW · real data snapshot of <target>, <exported at>; read-only". This SQL is a throwaway twin of 9.7's: once `make app-serve` serves the same pages, the snapshot is only a fallback for offline design work.
+
+### Sequencing: what is usable when
+
+| Slice | What works | Needs | Tasks |
+|---|---|---|---|
+| **S0, today** | The whole new UI on synthetic fixtures (`make app-preview`) | nothing | 9.0–9.4, 9.5 |
+| **S1, today or tomorrow** | Map, team page (hero, schedule and results, SP+, polls), this week (line, CFBD pregame probability) and stats on **real data** through the preview, with real logos | The AWS backfill done (`CFB_CORE`); Phase 3's views deployed on that target (deploy only); `make logos` and `make app-fixtures` run once | 9.5, 9.6 |
+| **S2** | The same pages served by `make app-serve` from the real database | Phase 2 merged; P6-UI-b, c, d deployed; 2.2 (its gate moves up to this) | 2.2, 9.7 |
+| **S3** | Team outlook (odds, trajectory, this week, games to watch, what-if, rivalries), the odds, predictions and upsets tabs, our picks and stakes in this week, head-to-head | Phase 4 publishing runs; Phase 5 merged | 3.1–3.5, 9.8 |
+| **S4** | Refresh with its timeline, the inspector console, the live preview | Unchanged: Phase 2 merged, then 1.9, 2.4, 4.1–4.3 | unchanged |
+
+Blocked on Phase 4 and 5: every number from a simulation (odds, movement, trajectory, what-if, rooting guide, stakes), our predictions and the scorecard, and upsets (Phase 4's Elo-based magnitude). Blocked on Phase 5 alone: rivalries and head-to-head (`MATCHUP_*`), and serving the thin slice (P6-UI-b, c, d). Blocked on nothing but data: the map, the team's record, schedule, SP+ and polls, this week's slate with lines, and the stats.
+
+### Hand-offs
+
+- **P6-UI-a (Phase 3):** `CFB_MODEL.TEAM` adds `COLOR` and `ALTERNATE_COLOR` from the stored team list (`CFB_CORE.TEAMS`, newest fetch, as CFBD reports them; NULL for a team not in the list). Coordinates need nothing new: `TEAM.HOME_VENUE_ID` → `VENUE.LATITUDE`, `LONGITUDE`. The logo URLs stay out of the model; only the owner's `make logos` reads them.
+- **P6-UI-b (Phase 5):** `CFB_API.TEAMS` adds `MASCOT`, `ABBREVIATION`, `COLOR`, `ALTERNATE_COLOR`, `HOME_VENUE_NAME`, `HOME_CITY`, `HOME_STATE`, `LATITUDE` and `LONGITUDE`, from `TEAM` and from `VENUE` on `HOME_VENUE_ID`.
+- **P6-UI-c (Phase 5):** a new view, `CFB_API.TEAM_TRAVEL`, with one row per stored team game: `TEAM_ID`, `SEASON`, `WEEK_SEQ`, `GAME_ID`, `SITE`, `VENUE_ID` and `KM_FROM_HOME`.
+  - `KM_FROM_HOME` is `GREAT_CIRCLE_KM` from the team's current home venue to the game's venue: 0 at home, NULL when a venue lacks coordinates.
+  - As a view it runs the function with the owner's rights, so `CFB_APP` needs no `EXECUTE`.
+  - `CFB_API` grows from 26 to 27 views. The chat's `CFB_MCP` sees it too, at 0 calls.
+- **P6-UI-d (Phase 5, order):** deploy the thin-slice views first, before Phase 4 has published anything: `TEAMS` (b), `GAMES`, `TEAM_SEASONS`, `RANKINGS`, `SP_RATINGS`, `TEAM_TRAVEL` (c), `CURRENT_POINT` and `AS_OF_POINTS`. They must answer then, with the publication and what-if columns NULL and `HAS_PUBLICATION` FALSE.
+- **Phase 4:** none. The team page reads Phase 4 only through Phase 5's views. The trajectory needs one publication per week, which the weekly refresh already makes.
+- **Phase 7 (update to P7-a):** `PageId` gains `home`, `team`, `week` and `stats`, and the old ids are unchanged. The team page's team is `focusTeam`, and the new store field is `mapConference`. No tool signature changes; "set the focus team" now also drives the team page.
+- **Phase 8:**
+  - The demo opens on the map. Beat 1 becomes "click the bubble team on the map" → its page with odds, movement and games to watch. Beat 4's pages are the league tabs and the team page.
+  - Copy `~/.cfb-demo/logos` with the rehearsal snapshot.
+  - Use `APP_LOGOS=off` for any recording that leaves private media.
+
+### Tests (light process)
+
+A few component tests per page, on synthetic fixtures in `StrictMode`, one per new scenario (Scenario Coverage); unit tests for the pure parts (`layout.ts`, `teamColor.ts`, `url.ts`, the logo fetch rules, the snapshot mapping); one integration file for the served thin slice (`tests/it/test_app_team_it.py`, 9.7/9.8). There is no new E2E: the light process replaces task 6.2's Playwright smoke with a manual walk in V.3 (map → team → league → head-to-head → inspector).
 
 ## Design
 
@@ -156,7 +316,7 @@ The frontend is a dependency-light React app: no router, state, data-fetching or
             (a REFRESH_LOG row committed at each step's start and end) ──▶ CFB_API.REFRESH_TIMELINE / FETCHES
             (polled every 1 s while a refresh runs, else every 5 s, with CURRENT_POINT's follow key; follows runs started anywhere)
  Host     cache/live-calls.jsonl (+ .lock; plans app and add-cfb-app) · vs/live/ledger.yaml (caps; owner-edited)
-          .env (CFB_APP_PASSWORD, CFB_CONSOLE_PASSWORD; git-ignored)
+          ~/.cfb-demo/app.env (CFB_APP_PASSWORD, CFB_CONSOLE_PASSWORD; outside repo and OneDrive, 0600)
           ~/.exasol/personal/deployments/<local|default>/secrets.json (sys; read at connect, never stored)
 ```
 
@@ -234,13 +394,13 @@ The frontend is a dependency-light React app: no router, state, data-fetching or
 
 Errors carry `{error, message}` and never driver text: 400 (foreign `Host`; invalid argument; `ConditionError`), 403 (a `POST` check; no operator path; no console), 409 (`max_calls_exceeded`, `ledger_refused`, `quota_refused`, `live_busy`, `live_disabled`, `reconcile_pending`, `refresh_locked`, `refresh_running`, `whatif_run_changed`), 502 `cfbd_failed` (a live statement failed and was charged), 503 (`database_unreachable`, `busy`).
 
-**Settings** (`app/backend/settings.py`; environment first, then `.env`; nothing secret is ever logged)
+**Settings** (`app/backend/settings.py`; environment first, then `~/.cfb-demo/app.env` (`CFB_APP_ENV` overrides the path; [44]); repo `.env` for non-secret keys only; nothing secret is ever logged)
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `TARGET`, `EXASOL_DSN` | `local`, — | deployment and address override (`vs/host/target.py`) |
 | `CFB_APP_USER` | `CFB_APP_WEB` | the read user |
-| `CFB_APP_PASSWORD` | — (required) | its password; `.env` is git-ignored |
+| `CFB_APP_PASSWORD` | — (required) | its password, from `~/.cfb-demo/app.env` ([44]) |
 | `CFB_CONSOLE_USER` | `CFB_CONSOLE_WEB` | the console user (role `CFB_READER`) |
 | `CFB_CONSOLE_PASSWORD` | — | its password; without it the console is off |
 | `APP_HOST`, `APP_PORT` | `127.0.0.1`, `8000` | bind; `APP_HOST` is resolved, and it is loopback only if every address is |
@@ -407,7 +567,8 @@ Task 1.8 runs the dataviz validator (`validate_palette.js`) on the chosen hexes 
 | `make app` | `db-check`, `app-deps`, then `python -m scripts.app dev`: `APP_DEV=1`, uvicorn with `--reload` on 127.0.0.1:8000 with `APP_CORS_ORIGINS` set to the Vite origins, plus `npm run dev` (127.0.0.1:5173, `strictPort`, proxy `/api`; a `--host` override is refused); Ctrl-C stops both. No live refresh in this mode |
 | `make app-build` | `app-deps`, then `npm run build` (`tsc -b && vite build`) → `app/frontend/dist/` (git-ignored) |
 | `make app-serve` | `db-check`, then `python -m scripts.app serve`: one process, one worker; refuses without `dist/`; `TARGET=aws` works |
-| `make app-user [ROTATE=yes] [ARGS=…]` | `db-check`, then `python -m scripts.app user`: create or rotate the read user, and the console user when `CFB_CONSOLE_PASSWORD` is set (`app/access`) |
+| `make app-env` | `python -m scripts.app_env init`: create `~/.cfb-demo/app.env` (0600) with random `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` and a commented `ANTHROPIC_API_KEY`; never overwrites a key, prints no value, creates no user ([44]) |
+| `make app-user [ROTATE=yes] [ARGS=…]` | `db-check`, then `python -m scripts.app user`: create or rotate the read user, and the console user when `CFB_CONSOLE_PASSWORD` is set; both passwords come from `~/.cfb-demo/app.env` or the environment (`app/access`, [44]) |
 | `make app-deps` | `npm ci` in `app/frontend` when `package-lock.json` is newer than `node_modules` |
 | `make app-test` | `app-deps`, then `npm test` (vitest run) |
 | `make app-e2e` | `db-check`, `app-build`, then `pytest tests/it -m e2e` (run under the IT lock); Playwright locally or in `mcr.microsoft.com/playwright:v1.64.1-noble` through podman with `--network host`, per task 1.2's gate |
@@ -485,7 +646,7 @@ Outside Exasol: Starlette's `TrustedHostMiddleware` (source on GitHub, read 2026
 app/__init__.py  app/backend/__init__.py
 app/backend/main.py            create_app(settings, read_factory, console_factory, owner_factory, ledger); static + SPA fallback;
                                headers; errors; startup: privilege check, ledger state, reconciliation
-app/backend/settings.py        Settings.from_env (environment, .env); bind resolution; operator decision; host and origin sets (pure)
+app/backend/settings.py        Settings.from_env (environment, `~/.cfb-demo/app.env`, repo `.env` for non-secret keys; [44]); bind resolution; operator decision; host and origin sets (pure)
 app/backend/security.py        Host allowlist; X-CFB-Action, JSON and Origin check; CSP and headers; session cookie (pure + middleware)
 app/backend/db.py              ReadPool; LiveSession; console session factory; effective-privilege check; query recorder;
                                0-call conflict retry; 503 mapping
@@ -529,7 +690,7 @@ docs/spikes/s9_app_probe.py, docs/spikes/s9-app-probe.md, docs/app-verification.
 | One worker; a 4-session read pool with checkout timeout and replacement; a reserved live session; autocommit; retries only for 0-call statements ([13]) | Several workers; a connection per request; autocommit off; one pool for all | The in-process state needs one process. pyexasol sessions cannot be shared. A live wait must not hold a page session. Autocommit is the page contract |
 | React 19 + Vite 8 + TypeScript 6.0, no router, state, data or chart library; exact pins on both sides after a 7-day wait ([14]) | TypeScript 7; react-router, TanStack Query, a chart library; bounds in `uv.lock` | TypeScript 7 breaks typescript-eslint. Four routes, one store and four SVG forms do not justify libraries. FastAPI's churn makes exact pins and the wait necessary |
 | FastAPI serves `dist` with an SPA fallback and a CSP with nothing it would block; `make app` runs a pinned Vite with a proxy ([15]) | nginx in front; hash routing; an inline theme script; Google-hosted fonts | "A single process" (interview). `StaticFiles(html=True)` has no SPA fallback. `default-src 'self'` blocks inline scripts and other hosts' fonts |
-| Passwords from the environment or `.env`; `make app-user` creates both users; the start proves their effective privileges ([16], [25]) | Tooling writes the password; the read path as `sys` in development; a name check | No tool writes a secret; "read-only pages" cannot be misconfigured silently by any route a privilege can take |
+| Passwords from the environment or `~/.cfb-demo/app.env` (`make app-env` creates the file, [44]); `make app-user` creates both users; the start proves their effective privileges ([16], [25]) | Tooling writes the password; the read path as `sys` in development; a name check | No tool writes a secret; "read-only pages" cannot be misconfigured silently by any route a privilege can take |
 | As-of in the URL; follow mode by a key with the publication, holding reloads while a refresh runs ([17], [30]) | Session state only; always follow; reload on a `CURRENT_POINT` change | Links reproduce a view; beat 4's "pages move" happens without a click and never to an unpublished week |
 | A chat slot as a store, a region and a reserved path ([19]) | Build nothing; a placeholder panel | Phase 7 plugs in without a layout or state rework; nothing visible changes now |
 | Tests: API integration tests on the `TEST_` stack, component tests on validated fixtures, Playwright locally or through podman, else API-level ([20]) | Mocked-DB API tests only; E2E for everything; API-level at the first install problem | The database behavior is the risk; fixtures cannot drift; the browser wiring (polling, follow mode, the click-only preview) needs a browser when one can be had |
@@ -557,6 +718,9 @@ docs/spikes/s9_app_probe.py, docs/spikes/s9-app-probe.md, docs/app-verification.
 | app/upsets | NEW | `app/upsets/spec.md` |
 | app/head-to-head | NEW | `app/head-to-head/spec.md` |
 | app/shell | NEW | `app/shell/spec.md` |
+| app/map | NEW (UI revision) | `app/map/spec.md` |
+| app/team | NEW (UI revision) | `app/team/spec.md` |
+| app/league | NEW (UI revision) | `app/league/spec.md` |
 
 Domain `app/`, as `CLAUDE.md` plans it. The Phase 2–5 specs are not changed by delta files; none of them is recorded yet. This plan uses their contracts and leaves these recorder notes:
 - **`loader/refresh-week`, `loader/quota`:** unchanged. Recorder note: `make refresh` and the app share `loader/guard.py`; the app's spend counts under its own ledger plan; the app reconciles loader runs that have no ledger entry.
@@ -573,7 +737,7 @@ Domain `app/`, as `CLAUDE.md` plans it. The Phase 2–5 specs are not changed by
 | Explicit live spend | Every action that can call CFBD has a 0-call plan, a cost label or confirmation, a server re-plan against `max_calls`, ledger and quota guards (`BACKFILL_SPENDABLE` for previews and the console), one live request at a time, no retry, one ledger entry per live request even when it fails, fetch-log rows, and reconciliation of loader runs (`app/live-spend`) |
 | Read-only pages | Pages read only `CFB_API` and `CFB_API_LIVE`, as `CFB_APP_WEB` (lint plus integration test); only `live.py` names `GAME_PREVIEW` (lint). The start proves the effective privileges of the read and console users |
 | Operator path | The owner, through `vs/host/target.py` (the password read at connect time, never stored); the allowlist only (unit-tested statement templates); on only when every bind address is loopback; one connection per action |
-| Secrets | No password, key or DSN secret in the repository, logs, API responses or the built frontend (`app/access` scenario). `.env` stays git-ignored. The CFBD key stays in `CFBD_API` only (CLAUDE.md) |
+| Secrets | No password, key or DSN secret in the repository, logs, API responses or the built frontend (`app/access` scenario). Passwords live only in `~/.cfb-demo/app.env`, outside the repo and OneDrive ([44]); a `*_PASSWORD` or `*_API_KEY` key in the repo `.env` stops the app. The CFBD key stays in `CFBD_API` only (CLAUDE.md) |
 | CFBD terms | Credit in every page's footer; "not official NCAA or CFP data"; no raw response in git; the preview's `RAW_JSON` is never sent to the browser; fixtures are synthetic (sim-league names) |
 | Browser safety | Loopback by default; a `Host` allowlist (name and port) on every request; `X-CFB-Action`, JSON and a configured `Origin` on every `POST`; CORS only for listed origins (never `*`); a pinned Vite dev server; CSP `default-src 'self'` with no inline script and no foreign host; nosniff; `frame-ancestors 'none'` |
 | Accessibility and design | Base text ≥ 18 px; contrast ≥ 4.5:1 for text and ≥ 3:1 for controls and marks, in both themes (unit-tested); keyboard reachable; states as icon plus word; a table view for every chart; dataviz palette validated in both themes |
@@ -610,7 +774,7 @@ Domain `app/`, as `CLAUDE.md` plans it. The Phase 2–5 specs are not changed by
   - U1: "local free" windows.
   - U2 (resolved 2026-10-22): the owner authorized 1000 calls for 2026-11, and the orchestrator added the plan caps `add-cfb-app: 12` and `app: 60` to `vs/live/ledger.yaml` on the Phase 2 branch. No action left; the app warns at start if a cap is missing.
   - U3: the owner reviews decisions [2], [3], [10] and [24] (the backend process holds the `sys` connection on loopback; a curated console as a reader). This does not block any task.
-  - U4: the owner sets `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` in `.env` and runs `make app-user` once per deployment (user guide, task 7.1).
+  - U4: the owner sets `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` in `~/.cfb-demo/app.env` (`make app-env` creates it with random values, [44]) and runs `make app-user` once per deployment (user guide, task 7.1).
 
 ## Migration
 
@@ -628,7 +792,7 @@ No data migration: the app adds no database object except its two users.
 | `vs/live/ledger.yaml` | no change by this plan: the Phase 2 branch already holds `add-cfb-app: 12`, `app: 60`, `2026-10: 400` and `2026-11: 1000` |
 | `.gitignore` | + `app/frontend/test-results/`, `app/frontend/playwright-report/` (`node_modules/`, `dist/`, `cache/` and `.env` are already ignored) |
 | `tests/it/harness.py` | `leftovers` and `drop_namespace` also drop test app users (`CFB_TEST_APP2`); an accessor for `CFB_TEST_READER`'s password; the app stack lives in `tests/it/app_stack.py` |
-| Local `.env` (not committed) | + `CFB_APP_PASSWORD`, `CFB_CONSOLE_PASSWORD` |
+| `~/.cfb-demo/app.env` (outside the repo and OneDrive, 0600; `make app-env`, `scripts/app_env.py`, `vs/host/appenv.py`) | + `CFB_APP_PASSWORD`, `CFB_CONSOLE_PASSWORD`; the repo `.env` keeps non-secret keys only |
 
 ## Implementation Tasks
 
@@ -761,23 +925,24 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
 
 6. **End to end, access and performance**
    - [ ] 6.1 Complete `tests/it/test_app_access_it.py` (every page through the app role; no secret reaches the browser, with a built frontend) and `tests/it/test_app_as_of_it.py` (an earlier week moves every page *(stretch)*).
-   - [ ] 6.2 E2E smoke.
+   - [-] 6.2 E2E smoke. *Superseded on 2026-10-23 (UI revision, light process): the app now opens on the map, and the owner asked for few tests. The flows below become a manual walk in V.3 (map → team page → league odds → refresh in replay → head-to-head preview click), recorded in the verification report; a Playwright script is optional, not a gate.*
      - **With Playwright** (local or in the podman image, per gate 1.2): `app/frontend/e2e/smoke.spec.ts`, driven by `tests/it/test_app_e2e_it.py` (markers `it` and `e2e`) against `served_app()` in replay. It opens the app at 2026 week 9 and sees the odds with arrows; runs the refresh of week 10, sees `WAIT` running and the "pages update when it publishes" notice while the odds page keeps week 9, then every step done and the pages at week 10; and on head-to-head checks that no preview request was sent on load, clicks the preview, and sees "fetching", then `REPLAY`, with no request to the mock.
      - **Fallback:** the same flows as API-level steps in `tests/it/test_app_e2e_it.py` over `served_app()` with httpx, and the reason logged in this plan's decision log.
    - [ ] 6.3 `scripts/app.py perf` (`make app-perf`), with the fixed catalog of read endpoints. Unit test first: `tests/unit/test_app_perf.py`, which asserts that no preview, quota, console or refresh endpoint is in the catalog.
      - A local run in a "local free" window on the restored real data with a 100k published run (Phase 5's task 7.4 state): every local row of the budget, plus the replay preview click and the timeline visibility, with sizing recorded *(stretch: else measured on the 8.1 rehearsal)*.
-     - A projector and accessibility pass: a keyboard-only walk through the four pages, the inspector and the refresh; a review at 1280×720 in both themes *(stretch beyond the contrast tests)*.
+     - A projector and accessibility pass: a keyboard-only walk through the map (list view), a team page, the league tabs, head-to-head, the inspector and the refresh; a review at 1280×720 in both themes *(stretch beyond the contrast tests)*.
 
      Results go to `docs/app-verification.md`.
 
 7. **Documentation** (each file re-read first; `docs/roadmap.md`, `specs/architecture.md` and `CLAUDE.md` are edited only here)
    - [ ] 7.1 `docs/user-guide.md`, section "The app":
-     - creating the users (`CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD` in `.env`, `make app-user`, `ROTATE=yes`);
+     - creating the users (`make app-env` creates `~/.cfb-demo/app.env` with `CFB_APP_PASSWORD` and `CFB_CONSOLE_PASSWORD`, then `make app-user`, `ROTATE=yes`);
      - `make app`, `make app-build` and `make app-serve` (local and `TARGET=aws`); no live refresh under `make app`;
      - the operator path and the loopback rule; the `Host` allowlist and `APP_ALLOWED_HOSTS`; WSL2's forwarding of `127.0.0.1` to Windows `localhost`, not to the LAN;
      - what read-only does not mean: the read user can spend preview calls, and the console user any virtual-schema query, from a SQL client; the ledger guards the app's spend, not the roles'; probe 1.1(d)'s finding on passwords in statement text;
      - explicit spending, the ledger plans `app` and `add-cfb-app`, the "ledger off" badge (`LEDGER=off` for one's own key), busy refusals and reconciliation;
      - replay mode in the app; the inspector and the console; what each page reads.
+     - (UI revision) the map, team page and league tabs; `make logos` (an external fetch to the logo host, not a CFBD call; the cache in `~/.cfb-demo/logos`; never committed; `APP_LOGOS=off`); `make app-fixtures` and `make app-preview REAL=1`.
    - [ ] 7.2 `specs/architecture.md`:
      - § Components, Backend and Frontend: the three principals, the routes, the inspector and the console;
      - § Security model: the users `CFB_APP_WEB` and `CFB_CONSOLE_WEB`, the operator path, the `Host` and `Origin` rules, the positive privilege check, and what the roles can still spend outside the ledger; the fact that Lua scripts run with the caller's rights, with probe 1.1(a); "+ execute on its functions" removed;
@@ -792,7 +957,7 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
      - the frontend toolchain (Node ≥ 22.12, `npm ci`, the lockfile, exact pins, TypeScript 6.0 because of typescript-eslint), with eslint in `make lint` and vitest in `make test`;
      - the live-call sources gain the app (preview, console, refresh), ledgered under `app`; `Ledger.exclusive()` does not wait; the app reconciles loader runs;
      - the operator path rule (loopback only, allowlist) and the browser-safety rules;
-     - the `.env` keys `CFB_APP_USER`, `CFB_APP_PASSWORD`, `CFB_CONSOLE_USER` and `CFB_CONSOLE_PASSWORD`;
+     - the settings `CFB_APP_USER`, `CFB_CONSOLE_USER` (environment) and the secrets `CFB_APP_PASSWORD`, `CFB_CONSOLE_PASSWORD` in `~/.cfb-demo/app.env`, and why that file is not in the repo or OneDrive;
      - this plan's ledger cap.
 
      `specs/mission.md`:
@@ -819,6 +984,43 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
      - `FETCH_LOG` has no row from tests;
      - `docs/app-verification.md` is complete, with derived numbers only (latencies, counts, resolved versions, the palette report, the Playwright path, the probe findings).
 
+9. **UI revision (2026-10-23)** (§ UI revision; light process: a few component tests per task in `StrictMode` on synthetic fixtures, tests first; real data is for looking, not for tests). Each task follows the Visual design rules.
+   - [ ] 9.0 Foundation for the new pages (`src/api`, `src/state`, `src/theme`, `src/ui`, `App.tsx`, `preview/`, `app/backend/models.py`):
+     - **Contract:** the types and pydantic models `TeamsMapResponse`, `TeamResponse`, `TeamOutlookResponse`, `LeagueWeekResponse` and `LeagueStatsResponse` (each with `queries`, and `has_logo` on every team), `endpoints.ts`, and synthetic fixtures with sim-league names: `teams-map.json` (coordinates across the 48 states, one team in Honolulu, one without coordinates, a 12-team cluster), `team.json`, `team-outlook.json`, `team-outlook.empty.json`, `league-week.json` and `league-stats.json`; the manifest and `npm run schema`. `preview/fixtureApi.ts` gains `/api/team/<id>`, `/api/team/<id>/outlook`, the league routes, and `/api/logos/<id>.png` served from `CFB_LOGO_DIR` when the file exists (else 404).
+     - **Routing:** the page ids `home`, `team`, `week` and `stats`; `url.ts` for `/`, `/team/<id>`, `/league/<tab>` and the old paths (`replaceState`); `mapConference` in the store and as `?conf=`; `home` as the default; `App.tsx` registers placeholder pages in `src/map`, `src/team` and `src/league` for 9.1–9.4 to fill.
+     - **Design system:** the tokens (spacing, type, radii, shadows, `--surface-raised`, `--border-subtle`) with their contrast pairs; `src/theme/teamColor.ts`; `src/ui/` `Card`, `Chip`, `TeamMark`, `RankTag`, `RecordLine`, `StatTile` and `SqlButton`.
+     - Tests: `url.test.ts` (new paths, old-path redirect), `teamColor.test.ts`, `TeamMark.test.tsx`, `tokens.test.ts`; the existing frontend tests and `test_app_fixtures.py` stay green.
+   - [ ] 9.1 Shell and league host (`src/shell`, `src/league/LeaguePage.tsx`, one prop each in the built pages):
+     - the header navigation (Map · League · Head-to-head) and a team search over `/api/teams` (a combobox: keyboard, FBS first);
+     - the League page, whose tabs host the built Odds, Predictions and Upsets pages and the Week and Stats pages;
+     - `TeamMark` in the rows of `OddsTable`, `UpsetTable`, `PredictionList` and the head-to-head pickers, with no change in behavior;
+     - the shell restyled to the card and grid rules.
+
+     Tests: `Header.test.tsx` (navigation, search), `LeaguePage.test.tsx` (league: "The built pages are league tabs, and old links still work").
+   - [ ] 9.2 Map home (`src/map`):
+     - `d3-geo` 3.1.1, `topojson-client` 3.1.0, `us-atlas` 3.0.1, `@types/d3-geo` 3.1.1 and `@types/topojson-client` 3.1.5, pinned exactly, with the lockfile;
+     - `geo.ts`: the projection, and the state and nation paths from `states-albers-10m.json`;
+     - `layout.ts`: the relaxation and the leader lines;
+     - `UsMap.tsx` and `MapPage.tsx`: chips, zoom to fit, zoom buttons, the hover and focus card, the list view and "Not on the map".
+
+     Tests: `layout.test.ts` (Ann Arbor inside Michigan's bounds, Honolulu inside the Hawaii inset, map: "Crowded logos are pushed apart and keep a leader line"), `MapPage.test.tsx` (the other three map scenarios). The shell's logo scenario, frontend half, goes in `TeamMark.test.tsx`.
+   - [ ] 9.3 Team page (`src/team`):
+     - the hero, schedule and results, ratings and polls (`/api/team/{id}`);
+     - the outlook panels (`/api/team/{id}/outlook`): odds with movement, and a trajectory as a small SVG line with a table view; this week; games to watch with `RootingGuide` and `WhatIfPanel` for the focus team; rivalries;
+     - the empty states.
+
+     Tests: `TeamPage.test.tsx` (the four team scenarios).
+   - [ ] 9.4 League "This week" and "Stats" (`src/league/WeekPage.tsx`, `StatsPage.tsx`): matchup cards with the order and upset-alert rules; four stat cards with `InlineBar` bars and table views; the "SQL" buttons. Tests: `WeekPage.test.tsx`, `StatsPage.test.tsx` (the first two league scenarios).
+   - [ ] 9.5 Logos:
+     - `scripts/logos.py` and `make logos`, per § Logos;
+     - `app/backend/routes/logos.py` (an `APIRouter`, no database) with `APP_LOGO_DIR` and `APP_LOGOS` in `settings.py`;
+     - `has_logo` as a helper for the routes.
+
+     Tests first: `tests/unit/test_logos.py`, with a fake fetcher and no network (https upgrade, host allowlist, size and type refusals, the PNG signature, skip unless `FORCE`, the manifest, no `CFBD_VS` in the SQL), and `tests/unit/test_app_logos_route.py`, on a bare FastAPI app with the router (200, 404 JSON, 400 for a non-integer before file access, the dark fallback, no path traversal, `APP_LOGOS=off`).
+   - [ ] 9.6 Real-data snapshot: `scripts/app_fixtures.py`, `make app-fixtures`, and `REAL=` in `make app-preview` and `preview/fixtureApi.ts`, per § A real-data snapshot. Unit test first: `tests/unit/test_app_fixtures_export.py` (synthetic rows → models; no statement names `CFBD_VS`; the output directory is outside the repository). Then run it once against the target that holds the backfill (`TARGET=aws`, deploy and run only; 0 CFBD calls) after `make logos`, and record the counts (teams, on the map, with logos) in the task notes.
+   - [ ] 9.7 Thin-slice routes (`app/backend/routes/teams_map.py`, `team.py`, `league.py`; the statements in `sqlcatalog.py`; `queries`; `has_logo`). **Gate:** 2.2, Phase 2 merged, and P6-UI-b, c and d deployed. Integration test first: `tests/it/test_app_team_it.py` (map, team, this week and stats through the app role; the league scenario "Travel distance is great-circle kilometres from the home venue"; the shell's logo scenario, backend half).
+   - [ ] 9.8 Outlook routes: `GET /api/team/{id}/outlook`, and the run-dependent parts of `/api/league/week` (our pick, stakes). **Gate:** Phases 4–5 merged; 3.1. Extends `tests/it/test_app_team_it.py` (team: "With a published run …" through the API).
+
 ## Parallelization
 
 | Parallel Group | Tasks |
@@ -835,6 +1037,10 @@ Tasks are TDD per `/speq:code-guardrails`. Host code writes its unit tests first
 | Group E | 6.1, 6.2, 6.3 |
 | Group F | 7.1, 7.2, 7.3, 7.4 |
 | Group G (sequential, gated) | 8.1 → 8.2 → 8.3 |
+| Group UI-A (UI revision; no other phase) | 9.0, 9.5 |
+| Group UI-B (after 9.0) | 9.1, 9.2, 9.3, 9.4, 9.6 |
+| Group UI-R (gate: 2.2, Phase 2 merged, P6-UI-b/c/d) | 9.7 |
+| Group UI-O (gate: Phases 4–5 merged, 3.1) | 9.8 |
 
 Sequential dependencies:
 - **Start now, with no other phase:** A; then A-FE1 → A-FE2 as soon as 1.2 and 1.8 are done; A3 as soon as 1.1(d, e), 1.3, 1.5 and 1.6 are done. The frontend therefore runs while Phases 3–5 implement.
@@ -846,6 +1052,7 @@ Sequential dependencies:
   - D: 4.3 needs 4.1 and 4.2.
   - E: 6.1 needs every route and 5.1–5.6 (a built frontend); 6.2 needs 6.1's build and 1.2's gate; 6.3 needs every route and a "local free" window with restored real data.
   - F needs green A–E. G needs F, the live groups of Phases 2, 4 and 5, and U1.
+- **UI revision:** UI-A starts now (9.0 and 9.5 touch disjoint files). UI-B starts when 9.0 is done: 9.1–9.4 each own their directory (`src/shell` with `src/league/LeaguePage.tsx`; `src/map`; `src/team`; `src/league/WeekPage.tsx` and `StatsPage.tsx`), and 9.6 owns `scripts/app_fixtures.py` and the `REAL=` part of `preview/`. Suggested staffing, 3 implementers: FE-1 does 9.0, then 9.1 and 9.2; FE-2 does 9.3 and 9.4 after 9.0; BE-1 does 9.5, then 9.6. 9.7 and 9.8 go to whoever does group C. **2.2's gate moves up:** Phase 2 merged and P6-UI-b, c and d deployed are enough for 2.2 and 9.7 (slice S2); the rest of group B keeps its gate.
 - **1.1's gates** fix 2.1 (timeouts, privilege check); **1.10's gates** fix 2.1's retry policy (a follow-up inside 2.2), 4.2 (poll, hold) and 4.3 (no-pushdown handling, stored query).
 
 ### Demo-minimum cut line
@@ -853,7 +1060,7 @@ Sequential dependencies:
 For the orchestrator to apply if a predecessor (most likely Phase 5) lands late. Below the line is what the mid-November demo needs; above it is stretch, which may move to Phase 8 with its scenarios and tests. The cut never touches security or spending.
 
 **Must (the demo cannot run without it):**
-- **Shell:** `make app-serve` as one process; the four page tabs; the footer credit; the outage banner; both themes with the tested contrast floors; the CSP-safe theme script; the ledger and quota badges.
+- **Shell:** `make app-serve` as one process; the map home, the team page (record, schedule, SP+; the outlook once Phases 4–5 publish), the league tabs and head-to-head (UI revision; the map's zoom buttons and the stats tab are the first UI items to cut); the footer credit; the outage banner; both themes with the tested contrast floors; the CSP-safe theme script; the ledger and quota badges.
 - **Security and spending, all of review M1–M7:** the `Host` allowlist, the `Origin` set, the pinned Vite, the bind resolution; the positive privilege check for both users; the spending guard with the ledger written in a `finally`, no retry, the live timeouts, the live gate, the single flight, `live_busy`, reconciliation, no live refresh under `make app`, the ledger state at start, the `BACKFILL_SPENDABLE` rule, and the replay-safe quota badge.
 - **As-of:** opening at `CURRENT_POINT`; follow mode by the follow key with the hold until the run ends; the shared point validation.
 - **Odds (beats 1 and 4):** the table with arrows (icon and word), the run banner, the focus team, the what-if toggles with sample and flags, and the unconditional rooting guide.
@@ -967,8 +1174,21 @@ If the cut is applied, the moved scenarios leave this plan's delta specs before 
 | shell: Both themes keep text legible on a projector | Unit + Component | `app/frontend/src/theme/tokens.test.ts`, `app/frontend/src/shell/ThemeSwitch.test.tsx` | `meets the contrast and size floors`, `switches, persists and survives storage errors` |
 | shell: A database outage shows a clear state, not a crash | Integration + Component | `tests/it/test_app_shell_it.py`, `app/frontend/src/shell/AppShell.test.tsx` | `test_database_outage_clear_state`, `shows an outage banner with retry` |
 | shell: The chat slot receives the app state | Component | `app/frontend/src/shell/ChatSlot.test.tsx` | `receives the app state and drives it` |
+| shell: Team logos come from the app, with a badge when one is missing | Unit + Component + Integration | `tests/unit/test_app_logos_route.py`, `app/frontend/src/ui/TeamMark.test.tsx`, `tests/it/test_app_team_it.py` | `test_logo_route_statuses`, `draws the logo or a badge and never asks for a missing logo`, `test_has_logo_matches_cache` |
+| map: The map shows every FBS team at its home stadium | Unit + Component | `app/frontend/src/map/layout.test.ts`, `app/frontend/src/map/MapPage.test.tsx` | `projects Ann Arbor into Michigan and Honolulu into the Hawaii inset`, `draws one linked marker per located team and lists the rest` |
+| map: Crowded logos are pushed apart and keep a leader line | Unit | `app/frontend/src/map/layout.test.ts` | `separates a 12-team cluster deterministically with leader lines` |
+| map: A conference filter narrows and zooms the map | Component | `app/frontend/src/map/MapPage.test.tsx` | `filters, zooms and writes conf to the URL` |
+| map: The list view is the map's table view | Component | `app/frontend/src/map/MapPage.test.tsx` | `lists the same teams by conference` |
+| team: The team page shows record, schedule and ratings at the point | Component + Integration | `app/frontend/src/team/TeamPage.test.tsx`, `tests/it/test_app_team_it.py` | `shows hero, schedule and ratings`, `test_team_page_reads_through_app_role` |
+| team: Outlook panels say when no run is published | Component | `app/frontend/src/team/TeamPage.test.tsx` | `explains empty outlook panels without an error` |
+| team: With a published run, the team page shows its odds, prediction and games to watch | Component + Integration | `app/frontend/src/team/TeamPage.test.tsx`, `tests/it/test_app_team_it.py` | `shows odds, trajectory, this week and games to watch`, `test_team_outlook_with_run` |
+| team: The team page leads to head-to-head | Component | `app/frontend/src/team/TeamPage.test.tsx` | `links schedule rows and rivalries to head-to-head` |
+| league: This week lists the coming games, most interesting first | Component + Integration | `app/frontend/src/league/WeekPage.test.tsx`, `tests/it/test_app_team_it.py` | `orders by interest with source labels and upset alerts`, `test_league_week_reads_through_app_role` |
+| league: Each stats card shows its SQL on request | Component | `app/frontend/src/league/StatsPage.test.tsx` | `opens the inspector at the card's entry` |
+| league: The built pages are league tabs, and old links still work | Unit + Component | `app/frontend/src/state/url.test.ts`, `app/frontend/src/league/LeaguePage.test.tsx` | `replaces old paths with league paths`, `hosts the built pages as tabs` |
+| league: Travel distance is great-circle kilometres from the home venue | Integration | `tests/it/test_app_team_it.py` | `test_travel_km_matches_great_circle` |
 
-73 scenarios, each mapped to at least one test. Component tests render real components in `StrictMode` against synthetic API fixtures that the backend's response models validate (`tests/unit/test_app_fixtures.py`). Unit tests cover only pure computation: the contrast tokens and the rank format.
+86 scenarios (73 + 13 of the UI revision), each mapped to at least one test. Component tests render real components in `StrictMode` against synthetic API fixtures that the backend's response models validate (`tests/unit/test_app_fixtures.py`). Unit tests cover only pure computation: the contrast tokens and the rank format.
 
 Supporting tests back the integration tests; they do not replace them:
 - **Unit** (pure, or with fakes; no database):
@@ -995,6 +1215,8 @@ All commands run from the repo root against Exasol Personal local (`TARGET=local
 | app/predictions | Predictions page at the current point; switch the population | The headline record (for example "41–9") with the line beside it, labeled "reconstructed …" when the freeze kind is `ALL`; this week's predictions; the calibration dots and table; every number changes with the population |
 | app/upsets | Upsets page at the current point | The upset of the week with "since 1978", "T-n" where tied, the source beside every rank; the all-time and line-era top 25 |
 | app/head-to-head | Michigan vs Ohio State | The series since 1897 at 0 calls in < 1.2 s; the next meeting with our prediction and stakes, or the latest meeting as the preview's game; the preview only after a click, with the button disabled while it runs |
+| app/map, app/team, app/league (S1, real data, today) | After the backfill and Phase 3's views on the target: `make logos TARGET=aws`, then `make app-fixtures TARGET=aws SEASON=2026`, then `make app-preview REAL=1`; open `http://127.0.0.1:5173/`, pick "SEC", click a team, open League → This week and Stats; `ls ~/.cfb-demo/logos \| wc -l` | The summary says "0 CFBD calls" and counts the external logo fetches; the banner reads "real data snapshot of aws"; about 136 FBS logos on the map with Hawaii in its inset and leader lines in Texas, Florida and the Southeast; "SEC" zooms to the Southeast; the team page shows the real record, schedule with scores and SP+; this week lists the real slate with lines; about 270 files in the cache |
+| app/map, app/team, app/league (S2/S3, served) | With `make app-serve`: `curl -s 'http://127.0.0.1:8000/api/teams/map' \| head -c 300`; `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/api/logos/130.png`; `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/api/logos/abc.png`; open `/`, a team page, every league tab; click a card's "SQL"; `APP_LOGOS=off make app-serve` | JSON with `has_logo` per team; `200` (or `404` JSON without a cached logo); `400`; the inspector opens at that card's statement with "no virtual table: 0 calls"; with logos off, only badges, and no request to `/api/logos/` |
 | app/shell | `curl -sI http://127.0.0.1:8000/odds`; `curl -s http://127.0.0.1:8000/ \| grep -c '<script>'`; switch the theme and reload; stop the database briefly (`exasol stop -d local` in a local free window), then start it | `200`, `text/html`, the CSP header; `0` inline scripts; the theme is kept without a flash; an outage banner with retry, then the data again without restarting the server; the footer "Data provided by CollegeFootballData.com" on every page |
 
 ### Checklist
@@ -1013,8 +1235,10 @@ All commands run from the repo root against Exasol Personal local (`TARGET=local
 | Operator allowlist | `uv run pytest tests/unit/test_app_operator.py` | Every operator statement matches an allowlist template |
 | Browser safety | `uv run pytest tests/unit/test_app_security.py`; `npm --prefix app/frontend test -- viteConfig`; with `make app-serve` running: `curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: evil.example:8000' http://127.0.0.1:8000/api/config` | Pass; pass; `400` |
 | Live spending | `uv run pytest tests/unit/test_app_live.py tests/unit/test_app_spend.py tests/unit/test_loader_guard.py` | Pass: one execution per live statement, ledger before fetch log, failure charging, lock only for live plans, reconciliation |
-| Secrets | `git grep -n -E '(CFB_APP\|CFB_CONSOLE)_PASSWORD[[:space:]]*=[[:space:]]*[^[:space:]]' -- . ':!docs' ':!specs'`; `flock <scratchpad>/cfb-it.lock uv run pytest tests/it/test_app_access_it.py -k no_secret` | No password value in a tracked file outside documentation (`.env` is ignored); the scan of every response and of `dist/` for the test passwords and the marker key passes (a plain search for the word "password" would match react-dom's input-type table) |
+| Secrets | `git grep -n -E '(CFB_APP\|CFB_CONSOLE)_PASSWORD[[:space:]]*=[[:space:]]*[^[:space:]]' -- . ':!docs' ':!specs'`; `flock <scratchpad>/cfb-it.lock uv run pytest tests/it/test_app_access_it.py -k no_secret` | No password value in a tracked file outside documentation (secrets live outside the repo, in `~/.cfb-demo/app.env`); the scan of every response and of `dist/` for the test passwords and the marker key passes (a plain search for the word "password" would match react-dom's input-type table) |
 | Performance | `make app-perf` (task 6.3); task 8.2 on AWS | Budget met, or a logged decision with the breakdown; no live endpoint timed |
 | Deploy | `make deploy && make grants && make app-user && make app-build && make app-serve` | The server starts on 127.0.0.1:8000 with the operator and console paths on, the privilege check passed, and no missing ledger cap; `/api/health` 200 |
 | Zero calls | `make record ARGS="--ledger"`; `make quota TARGET=aws` before and after task 8.2 | Ledger entries for `add-cfb-app` ≤ 12 (8 planned), one to one with the `FETCH_LOG` rows of the window; the `/info` drop equals the sum of every ledger entry in the window |
 | No data in git | `git ls-files '*.parquet' '*.cfbd.json' 'cache/*' 'app/frontend/dist/*'` | Empty; the fixtures are synthetic |
+| No team marks in git, no hotlinking | `git ls-files \| grep -i -E 'logo.*\.(png\|svg\|jpe?g)$\|teamlogos'`; `git grep -n -i 'espncdn' -- app/frontend app/backend`; after `make app-build`: `grep -rl -i espncdn app/frontend/dist \| wc -l` | Empty; empty (only `scripts/logos.py` names the logo host); `0` |
+| Map bundle offline | `make app-build`; `grep -ho 'https://[a-z0-9.-]*' app/frontend/dist/assets/*.js \| sort -u` | No map, tile, font or logo host: at most the documentation links React's error messages carry; the atlas is inside the bundle |

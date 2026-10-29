@@ -108,6 +108,19 @@ SELECT r."TEAM_ID", c."N_MATCHING", COALESCE(k."N_IN_CFP", 0) AS "N_IN_CFP",
  ORDER BY r."TEAM_ID\""""
 
 
+def matching_paths_sql(
+    run_id: int, conditions: Sequence[Condition], names: Names | None = None
+) -> str:
+    """A CTE of matching season ids and outcome strings for conditional game analysis."""
+    chosen = names or Names()
+    run = _number(run_id, "run id")
+    filters = [f'o."RUN_ID" = {run}', *_filters(conditions)]
+    return (
+        'WITH "MATCHING" AS (SELECT o."SIM_ID", o."OUTCOMES" FROM '
+        f"{_object(chosen, chosen.outcomes)} o\n WHERE {' AND '.join(filters)})"
+    )
+
+
 def _matching(run: str, conditions: Sequence[Condition], names: Names) -> str:
     filters = [f'o."RUN_ID" = {run}', *_filters(conditions)]
     return (

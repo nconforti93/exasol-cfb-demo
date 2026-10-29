@@ -1,0 +1,150 @@
+.predictions-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.predictions-head h2 {
+  margin: 0;
+}
+
+.population {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.predictions-section,
+.scorecard {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+}
+
+.predictions-section h3,
+.scorecard h3 {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.scorecard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1rem 2rem;
+}
+
+.scorecard-record {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.scorecard-record-big {
+  margin: 0;
+  font-size: 3rem;
+  line-height: 1.1;
+}
+
+.scorecard-sub {
+  color: var(--ink-secondary);
+}
+
+.scorecard-freeze {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0;
+  color: var(--ink-primary);
+}
+
+.scorecard-reconstructed {
+  padding: 0.3rem 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+.scorecard-line {
+  padding-left: 1rem;
+  border-left: 3px solid var(--grid);
+}
+
+.scorecard-line p {
+  margin: 0;
+}
+
+.scorecard-detail {
+  margin-top: 0.75rem;
+}
+
+.scorecard-detail th,
+.scorecard-detail td,
+.prediction-table th,
+.prediction-table td {
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--grid);
+}
+
+.prediction-table {
+  width: 100%;
+}
+
+.prediction-table thead th {
+  color: var(--ink-secondary);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.prediction-table tbody th {
+  font-weight: 400;
+}
+
+.grade {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.grade-correct .icon {
+  color: var(--status-good);
+}
+
+.grade-wrong .icon {
+  color: var(--status-critical);
+}
+
+.grade-tie .icon,
+.grade-no_pick .icon,
+.grade-none .icon {
+  color: var(--ink-muted);
+}
+
+.badge-reconstructed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.pred-scroll {
+  overflow-x: auto;
+}
+
+.pred-note,
+.pred-muted {
+  color: var(--ink-secondary);
+}
+
+.pred-note {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.prediction-table td:first-child {
+  white-space: nowrap;
+}

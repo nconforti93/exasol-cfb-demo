@@ -1,0 +1,45 @@
+{
+  "id": "stored",
+  "action_id": "a-0004",
+  "columns": [
+    "REQ_SLICE",
+    "REQ_SOURCE",
+    "REQ_ROWS"
+  ],
+  "rows": [
+    [
+      "/games?seasonType=regular&year=1997",
+      "STORED",
+      1
+    ],
+    [
+      "/games?seasonType=regular&year=1998",
+      "STORED",
+      1
+    ]
+  ],
+  "row_count": 2,
+  "calls_spent": 0,
+  "source": "STORED",
+  "fetch_log_ok": true,
+  "requests": [
+    {
+      "slice": "/games?seasonType=regular&year=1997",
+      "source": "STORED",
+      "status": 200,
+      "attempts": 1,
+      "ms": 0,
+      "rows": 1,
+      "requested_at": null
+    },
+    {
+      "slice": "/games?seasonType=regular&year=1998",
+      "source": "STORED",
+      "status": 200,
+      "attempts": 1,
+      "ms": 0,
+      "rows": 1,
+      "requested_at": null
+    }
+  ]
+}

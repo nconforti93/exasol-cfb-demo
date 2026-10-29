@@ -1,0 +1,47 @@
+{
+  "target": {
+    "season": 2026,
+    "week": 10,
+    "season_type": "regular"
+  },
+  "mode": "LIVE",
+  "can_run": true,
+  "reasons": [],
+  "estimate": {
+    "total_calls": 4,
+    "per_table": {
+      "GAMES": 1,
+      "GAMES_TEAMS": 3
+    }
+  },
+  "needs_confirmation": true,
+  "plus_retries": true,
+  "quota": {
+    "mode": "live",
+    "read_at": "2026-10-23T09:09:00Z",
+    "age_seconds": 0,
+    "remaining_calls": 640,
+    "used_calls": 360,
+    "project_budget": 1000,
+    "refresh_spendable": 600,
+    "backfill_spendable": 500
+  },
+  "ledger": {
+    "on": true,
+    "plan": "app",
+    "plan_cap": 20,
+    "plan_room": 20,
+    "month": "2026-10",
+    "month_cap": 20,
+    "month_room": 20
+  },
+  "running": [],
+  "week": {
+    "games": 62,
+    "completed": 59,
+    "not_kicked_off": 3,
+    "point_will_move": false,
+    "message": "week 10 is not complete: 3 games have not kicked off; the point stays at week 9"
+  },
+  "dev_blocks_live": false
+}

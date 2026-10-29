@@ -1,0 +1,55 @@
+.series-chart {
+  width: 100%;
+  min-width: 0;
+}
+
+.series-chart svg {
+  display: block;
+  overflow: visible;
+}
+
+.series-grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.series-tick {
+  fill: var(--ink-secondary);
+  font: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.series-line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.series-mark {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.series-accent .series-line {
+  stroke: var(--series-accent, var(--seq-bar));
+}
+
+.series-accent .series-mark {
+  fill: var(--series-accent, var(--seq-bar));
+}
+
+.series-neutral .series-line {
+  stroke: var(--ink-secondary);
+  stroke-dasharray: 6 5;
+}
+
+.series-neutral .series-mark {
+  fill: var(--ink-secondary);
+}
+
+.series-end-label {
+  fill: var(--ink-primary);
+  font: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}

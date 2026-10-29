@@ -1,0 +1,14 @@
+{
+  "team_id": 101,
+  "opponent_id": 102,
+  "game_id": 9003,
+  "game_basis": "next",
+  "plan": {
+    "source": "LIVE",
+    "live_calls": 1,
+    "fetch_mode": "LIVE"
+  },
+  "cached": null,
+  "disabled_reason": "live actions disabled: no ledger cap for plan app",
+  "busy_reason": null
+}

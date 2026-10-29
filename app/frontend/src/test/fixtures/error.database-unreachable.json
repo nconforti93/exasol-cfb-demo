@@ -1,0 +1,4 @@
+{
+  "error": "database_unreachable",
+  "message": "Exasol unreachable at 127.0.0.1:8563 (target local)"
+}

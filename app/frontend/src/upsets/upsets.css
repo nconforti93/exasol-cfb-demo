@@ -1,0 +1,86 @@
+.upset-feature {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-left: 6px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.5rem 1rem 0.9rem;
+}
+
+.upset-score {
+  margin: 0.25rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.upset-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.5rem 1.5rem;
+  margin: 0.5rem 0 0;
+}
+
+.upset-facts div {
+  display: flex;
+  flex-direction: column;
+}
+
+.upset-facts dt {
+  color: var(--ink-secondary);
+  font-size: 0.9rem;
+}
+
+.upset-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.upset-note {
+  color: var(--ink-secondary);
+  margin: 0.25rem 0;
+}
+
+.upset-empty {
+  margin: 0.25rem 0;
+  padding: 0.6rem 0.9rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+.upset-table {
+  width: 100%;
+}
+
+.upset-table caption {
+  text-align: left;
+  color: var(--ink-secondary);
+  padding-bottom: 0.25rem;
+}
+
+.upset-table th,
+.upset-table td {
+  padding: 0.25rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--grid);
+}
+
+.upset-table thead th {
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+.upset-scroll {
+  overflow-x: auto;
+}
+
+.upset-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
+  gap: 1rem;
+}
+
+.upset-list {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 0.5rem 1rem 0.9rem;
+}

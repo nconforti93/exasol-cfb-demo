@@ -1,0 +1,51 @@
+{
+  "id": "fan-out",
+  "action_id": "a-0003",
+  "columns": [
+    "GAME_ID",
+    "TEAM"
+  ],
+  "rows": [
+    [
+      1,
+      "Michigan"
+    ],
+    [
+      2,
+      "Michigan"
+    ]
+  ],
+  "row_count": 60,
+  "calls_spent": 3,
+  "source": "LIVE",
+  "fetch_log_ok": true,
+  "requests": [
+    {
+      "slice": "/games/teams?seasonType=both&team=Michigan&year=2022",
+      "source": "LIVE",
+      "status": 200,
+      "attempts": 1,
+      "ms": 400,
+      "rows": 20,
+      "requested_at": "2026-10-23T09:20:00.0Z"
+    },
+    {
+      "slice": "/games/teams?seasonType=both&team=Michigan&year=2023",
+      "source": "LIVE",
+      "status": 200,
+      "attempts": 1,
+      "ms": 410,
+      "rows": 20,
+      "requested_at": "2026-10-23T09:20:00.1Z"
+    },
+    {
+      "slice": "/games/teams?seasonType=both&team=Michigan&year=2024",
+      "source": "LIVE",
+      "status": 200,
+      "attempts": 1,
+      "ms": 420,
+      "rows": 20,
+      "requested_at": "2026-10-23T09:20:00.1Z"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "point": {
+    "season": 2026,
+    "week_seq": 8,
+    "next_week_seq": 9,
+    "label": "2026, after week 8",
+    "is_current": false
+  },
+  "notice": null,
+  "move_threshold": 0.007,
+  "run": {
+    "run_id": 30,
+    "publication_id": 11,
+    "run_origin": "REFRESH",
+    "n_sims": 4000,
+    "seconds_total": 3.2,
+    "sims_per_second": 625,
+    "nodes": 1,
+    "instances": 8,
+    "published_at": "2026-10-18T22:04:11Z"
+  },
+  "whatif": {
+    "available": false,
+    "reason": "run_at_other_point",
+    "message": "what-ifs use the run published at 2026, after week 9",
+    "run_id": 7,
+    "run_label": "2026, after week 9"
+  },
+  "rows": [
+    {
+      "odds_rank": 1,
+      "team_id": 101,
+      "school": "Ashford",
+      "conference": "Atlantic",
+      "p_in_cfp": 0.7,
+      "p_bye": 0.2333333333333333,
+      "p_quarterfinal": 0.48999999999999994,
+      "p_semifinal": 0.315,
+      "p_final": 0.196,
+      "p_champion": 0.11666666666666665,
+      "p_conf_champion": 0.4,
+      "expected_wins": 9.9,
+      "mean_seed": 4,
+      "prev_as_of_label": "2026, after week 8",
+      "prev_p_in_cfp": 0.699,
+      "delta_p_in_cfp": 0.001,
+      "delta_p_champion": 0.0002,
+      "rank_change": 0,
+      "move": "SAME"
+    }
+  ]
+}

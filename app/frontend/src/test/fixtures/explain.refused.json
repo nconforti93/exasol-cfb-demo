@@ -1,0 +1,25 @@
+{
+  "entry_id": "over-budget",
+  "principal": "reader",
+  "no_virtual_table": false,
+  "message": null,
+  "refused": "15 slices exceed the budget of 10 per query",
+  "spend": {
+    "source": "LIVE",
+    "live_calls": 15,
+    "fetch_mode": "LIVE"
+  },
+  "manifests": [
+    {
+      "table": "GAMES_TEAMS",
+      "fetch_mode": "LIVE",
+      "read_through": true,
+      "budget": 10,
+      "planned_requests": 15,
+      "slice_keys": [],
+      "sources": [
+        "LIVE"
+      ]
+    }
+  ]
+}

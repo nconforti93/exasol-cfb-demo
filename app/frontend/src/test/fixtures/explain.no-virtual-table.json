@@ -1,0 +1,13 @@
+{
+  "entry_id": "q-0001",
+  "principal": "app",
+  "no_virtual_table": true,
+  "message": "no virtual table: 0 calls",
+  "refused": null,
+  "spend": {
+    "source": "NONE",
+    "live_calls": 0,
+    "fetch_mode": null
+  },
+  "manifests": []
+}

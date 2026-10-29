@@ -1,0 +1,15 @@
+{
+  "run": null,
+  "fetches": [],
+  "follow": {
+    "key": {
+      "as_of_season": 2026,
+      "as_of_week_seq": 9,
+      "publication_id": 12,
+      "whatif_run_id": 7,
+      "whatif_views_current": true
+    },
+    "hold": false,
+    "stuck": false
+  }
+}

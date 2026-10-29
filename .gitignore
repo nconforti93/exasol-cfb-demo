@@ -11,3 +11,7 @@ __pycache__/
 build/
 .mypy_cache/
 .ruff_cache/
+app/frontend/playwright-report/
+app/frontend/test-results/
+app/frontend/*.tsbuildinfo
+app/frontend/node_modules

@@ -1,0 +1,18 @@
+{
+  "team_id": 101,
+  "opponent_id": 102,
+  "game_id": 9003,
+  "game_basis": "next",
+  "plan": {
+    "source": "LIVE",
+    "live_calls": 1,
+    "fetch_mode": "LIVE"
+  },
+  "cached": {
+    "cached_at": "2026-10-23T09:00:00Z",
+    "source": "LIVE",
+    "req_ms": 412
+  },
+  "disabled_reason": null,
+  "busy_reason": null
+}

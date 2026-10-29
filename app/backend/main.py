@@ -1,0 +1,300 @@
+"""FastAPI entry point for the read-only app shell and future guarded actions."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import AsyncIterator, Callable, MutableMapping
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pyexasol import ExaCommunicationError, ExaQueryError
+from starlette.middleware import Middleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.responses import Response
+
+from app.backend import db, security, sqlcatalog
+from app.backend.operator import OperatorPath
+from app.backend.readcache import DISPLAY_TTL_SECONDS, Memo, ReadCache
+from app.backend.routes.console import make_router as console_router
+from app.backend.routes.inspector import make_router as inspector_router
+from app.backend.routes.logos import make_router as logo_router
+from app.backend.routes.matchup import make_router as matchup_router
+from app.backend.routes.predictions import make_router as predictions_router
+from app.backend.routes.preview import make_router as preview_router
+from app.backend.routes.quota import make_router as quota_router
+from app.backend.routes.read import make_router as read_router
+from app.backend.routes.refresh import make_router as refresh_router
+from app.backend.routes.timeline import make_router as timeline_router
+from app.backend.routes.upsets import make_router as upsets_router
+from app.backend.routes.whatif import make_router as whatif_router
+from app.backend.sessions import LiveGate, SessionStore
+from app.backend.settings import Settings
+from loader.guard import ReconcilePending
+from vs.host import ledger as ledger_module
+
+VERSION = "0.1.0"
+SHELL_CACHE = "no-cache"
+ASSET_CACHE = "public, max-age=31536000, immutable"
+ERROR_CODES = {
+    400: "invalid_argument",
+    403: "forbidden",
+    409: "live_busy",
+    502: "cfbd_failed",
+    503: "database_unreachable",
+}
+
+
+class CachedAssets(StaticFiles):
+    """Serve hashed frontend assets with immutable caching."""
+
+    async def get_response(self, path: str, scope: MutableMapping[str, Any]) -> Response:
+        """Add the long cache lifetime after StaticFiles has chosen the asset or a 404."""
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = ASSET_CACHE
+        return response
+
+
+def _ledger_state(settings: Settings, calls: ledger_module.Ledger) -> dict[str, Any]:
+    if not settings.ledger_enabled:
+        return {
+            "on": False,
+            "plan": None,
+            "plan_cap": None,
+            "plan_room": None,
+            "month": None,
+            "month_cap": None,
+            "month_room": None,
+        }
+    month = datetime.now(UTC).strftime("%Y-%m")
+    config = calls.config
+    entries = calls.entries()
+    plan_cap = config.plans.get(settings.ledger_plan)
+    month_cap = config.months.get(month)
+    return {
+        "on": True,
+        "plan": settings.ledger_plan,
+        "plan_cap": plan_cap,
+        "plan_room": None
+        if plan_cap is None
+        else max(0, plan_cap - ledger_module.plan_total(entries, settings.ledger_plan)),
+        "month": month,
+        "month_cap": month_cap,
+        "month_room": None
+        if month_cap is None
+        else max(0, month_cap - ledger_module.month_total(entries, month)),
+    }
+
+
+def create_app(
+    settings: Settings,
+    read_factory: Callable[[Settings], Any] = db.build_database,
+    console_factory: Callable[[Settings], Any] | None = None,
+    owner_factory: Callable[[Settings, db.Connector], Any] = OperatorPath,
+    ledger: ledger_module.Ledger | None = None,
+    *,
+    start_check: Callable[..., Any] | None = None,
+    reconcile: Callable[..., Any] | None = None,
+) -> FastAPI:
+    """Build the one-worker app; I/O is deferred to startup and request handlers for testability."""
+    calls = ledger or ledger_module.Ledger(settings.ledger_path, enabled=settings.ledger_enabled)
+    connector = db.default_connector(settings)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        database = read_factory(settings)
+        operator = owner_factory(settings, connector)
+        app.state.database = database
+        app.state.operator = operator
+        app.state.console = console_factory(settings) if console_factory else database.console
+        app.state.start_check = (start_check or db.run_start_check)(
+            settings,
+            connector,
+            operator.impersonation_reader() if hasattr(operator, "impersonation_reader") else None,
+        )
+        app.state.ledger = _ledger_state(settings, calls)
+        app.state.reconciled = False
+        if reconcile is not None:
+            try:
+                reconcile(settings, operator, calls)
+                app.state.reconciled = True
+            except ReconcilePending:
+                # Read pages remain useful, but no live action can pass its gate.
+                app.state.reconciled = False
+        try:
+            yield
+        finally:
+            database.close()
+
+    browser = security.SecurityConfig(
+        settings.allowed_hosts, settings.origins, settings.cors_origins
+    )
+    app = FastAPI(
+        lifespan=lifespan,
+        middleware=[
+            *security.middleware(browser),
+            # Innermost: the 500 KB bundle and the larger read responses compress about 5x.
+            Middleware(GZipMiddleware, minimum_size=1024),
+        ],
+    )
+    app.state.settings = settings
+    sessions = SessionStore()
+    app.state.sessions = sessions
+    app.state.live_gate = LiveGate()
+    app.state.read_cache = ReadCache()
+    app.state.memo = Memo()
+    app.include_router(logo_router(settings.logo_dir, enabled=settings.logos_enabled))
+    app.include_router(read_router(settings, sessions))
+    app.include_router(whatif_router(settings, sessions))
+    app.include_router(predictions_router(settings, sessions))
+    app.include_router(upsets_router(settings, sessions))
+    app.include_router(matchup_router(settings, sessions))
+    app.include_router(preview_router(settings, sessions, calls))
+    app.include_router(quota_router(settings, sessions))
+    app.include_router(refresh_router(settings, sessions, calls))
+    app.include_router(timeline_router(settings, sessions, calls))
+    app.include_router(inspector_router(sessions))
+    app.include_router(console_router(settings, sessions, calls))
+
+    @app.get("/api/health")
+    def health(request: Request) -> dict[str, bool]:
+        request.app.state.database.pool.run("SELECT 1")
+        return {"ok": True}
+
+    def _fetch_mode(state: Any) -> str | None:
+        try:
+            return state.operator.fetch_mode(settings.namespace) if state.operator.enabled else None
+        except Exception:
+            return None
+
+    def _refresh_target(state: Any) -> dict[str, Any] | None:
+        if not state.operator.enabled:
+            return None
+        try:
+            statement = sqlcatalog.CATALOG["current_point"]
+            rows = state.database.pool.run(
+                statement.sql,
+                sqlcatalog.parameters(
+                    statement,
+                    api_schema=settings.api_schema,
+                    api_live_schema=settings.api_live_schema,
+                ),
+            ).dicts()
+            if not rows:
+                return None
+            point = rows[0]
+            next_week = state.operator.refresh_target(
+                settings.namespace,
+                int(point["AS_OF_SEASON"]),
+                int(point["AS_OF_WEEK_SEQ"]),
+            )
+        except Exception:
+            return None
+        if next_week is None:
+            return None
+        return {"season": next_week[0], "week": next_week[1], "season_type": next_week[2]}
+
+    @app.get("/api/config")
+    def config(request: Request) -> dict[str, Any]:
+        state = request.app.state
+        state.ledger = _ledger_state(settings, calls)
+        # Display only: the refresh and preview routes read the mode again before any spend.
+        fetch_mode, refresh_target = state.memo.get(
+            "config", DISPLAY_TTL_SECONDS, lambda: (_fetch_mode(state), _refresh_target(state))
+        )
+        reasons = []
+        if settings.dev:
+            reasons.append("development mode")
+        if not state.operator.enabled:
+            reasons.append(state.operator.reason)
+        if not state.reconciled:
+            reasons.append("startup reconciliation is unavailable")
+        if not settings.ledger_enabled:
+            reasons.append("ledger off")
+        elif state.ledger["plan_cap"] is None or state.ledger["month_cap"] is None:
+            reasons.append("the ledger has no cap for this plan or month")
+        if fetch_mode is None:
+            reasons.append("the virtual schema mode is unavailable")
+        console = state.console.availability
+        return {
+            "version": VERSION,
+            "target": settings.target,
+            "dev": settings.dev,
+            "fetch_mode": fetch_mode,
+            "refresh_target": refresh_target,
+            "operator": {
+                "enabled": state.operator.enabled,
+                "reason": None if state.operator.enabled else state.operator.reason,
+            },
+            "console": {
+                "enabled": console.enabled,
+                "reason": None if console.enabled else console.reason,
+            },
+            "ledger": state.ledger,
+            "live": {"enabled": not reasons, "reasons": reasons},
+            "read_check_skipped": bool(getattr(state.start_check, "skipped", False)),
+            "chat": {
+                "available": False,
+                "enabled": False,
+                "reason": "chat arrives with Phase 7",
+                "model": None,
+            },
+        }
+
+    @app.exception_handler(HTTPException)
+    async def http_error(_: Request, error: HTTPException) -> JSONResponse:
+        code = ERROR_CODES.get(error.status_code, "invalid_argument")
+        return JSONResponse(
+            {"error": code, "message": str(error.detail)}, status_code=error.status_code
+        )
+
+    @app.exception_handler(db.PoolBusy)
+    async def busy(_: Request, __: db.PoolBusy) -> JSONResponse:
+        return JSONResponse(
+            {"error": "busy", "message": "database sessions are busy"}, status_code=503
+        )
+
+    @app.exception_handler(db.DatabaseUnreachable)
+    async def unreachable(_: Request, __: db.DatabaseUnreachable) -> JSONResponse:
+        return JSONResponse(
+            {"error": "database_unreachable", "message": "database is unavailable"}, status_code=503
+        )
+
+    @app.exception_handler(ExaCommunicationError)
+    @app.exception_handler(ExaQueryError)
+    async def driver_error(_: Request, __: Exception) -> JSONResponse:
+        return JSONResponse(
+            {"error": "database_unreachable", "message": "database query failed"}, status_code=503
+        )
+
+    @app.get("/api/{path:path}")
+    def unknown_api(path: str) -> JSONResponse:
+        return JSONResponse(
+            {"error": "not_found", "message": "API route not found"}, status_code=404
+        )
+
+    static_dir = settings.static_dir
+    app.mount(
+        "/assets", CachedAssets(directory=static_dir / "assets", check_dir=False), name="assets"
+    )
+
+    @app.get("/{path:path}")
+    def shell(path: str) -> FileResponse:
+        if path and "." in Path(path).name:
+            raise HTTPException(404, "file not found")
+        index = static_dir / "index.html"
+        if not index.is_file():
+            raise HTTPException(503, "built frontend is unavailable; run make app-build")
+        return FileResponse(index, media_type="text/html", headers={"Cache-Control": SHELL_CACHE})
+
+    return app
+
+
+def app_factory() -> FastAPI:
+    """Uvicorn reload target; settings are read in each child process."""
+    return create_app(Settings.from_env(os.environ))
