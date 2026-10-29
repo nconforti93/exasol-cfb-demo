@@ -24,6 +24,8 @@ snapshot:
 # refreshed week and stops the chain on a failed ERROR check (model/lua/refresh_model.lua).
 refresh_steps:
   - {step_no: 100, name: MODEL, script: CFB_INFRA.REFRESH_MODEL}
+  - {step_no: 200, name: PREDICT, script: CFB_INFRA.REFRESH_PREDICT}
+  - {step_no: 300, name: SIMULATE, script: CFB_INFRA.REFRESH_SIMULATE}
 
 entries:
   # Reference data: one call each.

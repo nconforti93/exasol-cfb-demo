@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -154,17 +154,21 @@ def build_entry_script(
     extra_names: Mapping[str, str] | None = None,
     prelude: str = "",
     lua_dir: Path = LUA_DIR,
+    libraries: Sequence[Path] = (),
 ) -> str:
     """`CREATE OR REPLACE LUA SCRIPT <infra>.<name>(...) RETURNS TABLE` for an entry file outside
-    `loader/lua/`: the constants (with `extra_names`), `prelude`, `loadlib.lua`, the entry file."""
+    `loader/lua/`: the constants (with `extra_names`), `prelude`, `loadlib.lua`, the `libraries`
+    of the caller in order (Phase 4's `engine/lua/simlib.lua`), the entry file."""
     script = LuaScript(name, parameters, entry_file.name, f"{name.lower()}.sql")
     library = _read(lua_dir, LIBRARY_FILE)
+    own = [(path.name, _read(path.parent, path.name)) for path in libraries]
     entry = _read(entry_file.parent, entry_file.name)
     generated = _normalize(prelude) if prelude else ""
-    for label, text in ((LIBRARY_FILE, library), (entry_file.name, entry), ("prelude", generated)):
+    sources = ((LIBRARY_FILE, library), *own, (entry_file.name, entry), ("prelude", generated))
+    for label, text in sources:
         _require_clean(label, text)
     parts = [render_constants(namespace, extra_names), *([generated] if generated else []), library]
-    body = "\n".join([*parts, entry])
+    body = "\n".join([*parts, *(text for _, text in own), entry])
     text = script.header(namespace.infra_schema) + body + SCRIPT_TERMINATOR
     _require_size(script.name, text)
     return text

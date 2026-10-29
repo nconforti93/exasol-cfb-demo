@@ -15,6 +15,7 @@ dev = [
     "types-PyYAML>=6",
     "pyexasol>=2,<3",
     "lupa>=2",
+    "numpy==1.26.4",
 ]
 
 [tool.uv]
@@ -49,7 +50,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["vs", "loader", "model", "analyses", "scripts", "tests"]
+files = ["vs", "loader", "model", "engine", "analyses", "scripts", "tests"]
 mypy_path = "."
 explicit_package_bases = true
 

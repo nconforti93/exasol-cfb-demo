@@ -39,6 +39,26 @@
 #   model-docs         regenerates docs/model-dictionary.md from sql/model/ (no database).
 #   model-perf         times the model on the scaled league (ARGS="--prefix PERF_"); task 3.7.
 #                      All five are scripts/model.py.
+#   sim                lints sql/sim/, then installs CFB_SIM and the engine script CFB_INFRA.SIM_ENGINE in
+#                      one transaction under the loader's run lock (kind DEPLOY; refused while a loader
+#                      run, snapshot or restore holds it). Data tables are created when missing and
+#                      never replaced, so a redeploy keeps every run. ARGS="--prefix TEST_" deploys
+#                      another namespace; ARGS="--lint-only" lints and builds without a connection.
+#                      scripts/sim.py; 0 CFBD calls.
+#   sim-fit            fits the score model's constants on the stored 2014-2025 games and SP+ ratings of
+#                      the target (read-only, 0 CFBD calls, never the virtual schema), prints them with
+#                      the fit quality and rewrites the seed sql/sim/010_sim_params.sql. ARGS="--dry-run"
+#                      writes nothing. Review the diff, commit it, then `make sim` deploys it.
+#   simulate           SEASON=y WEEK=w [SIMS=n] [BATCH=n] [SEED=n] [LABEL=text] [SEASON_TYPE=postseason]:
+#                      EXECUTE SCRIPT CFB_INFRA.SIMULATE (run lock kind SIMULATE): snapshots the inputs
+#                      of the point, simulates the rest of the season in the database and stores the
+#                      odds and outcome strings; prints the run's seconds and the top 25 odds.
+#                      Defaults: 100,000 seasons in batches of 5,000. 0 CFBD calls.
+#   what-if            TEAM=school|id [RUN_ID=id] WIN=next|game_id[,..] [LOSE=..]: the team's playoff odds
+#                      now and in the stored seasons where it wins (loses) those games, the matching
+#                      seasons and the query seconds; RUN_ID defaults to the newest DONE run. Read-only.
+#   predict            SEASON=y WEEK=w [SEASON_TYPE=regular|postseason]: freezes the score model's
+#                      next-week games through the point, marking missed games reconstructed. 0 calls.
 
 TARGET ?= local
 export TARGET
@@ -55,7 +75,7 @@ ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
 .PHONY: backfill refresh quota snapshot restore snapshots model model-check model-refresh model-docs
-.PHONY: model-perf api
+.PHONY: model-perf api sim sim-fit simulate what-if predict
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -145,3 +165,18 @@ model-docs:
 
 model-perf: db-check
 	$(PY) -m scripts.model perf $(ARGS)
+
+sim: db-check
+	$(PY) -m scripts.sim deploy $(ARGS)
+
+sim-fit: db-check
+	$(PY) -m scripts.sim fit $(ARGS)
+
+simulate: db-check
+	$(PY) -m scripts.sim simulate --season "$(SEASON)" --week "$(WEEK)" $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(if $(SIMS),--sims "$(SIMS)") $(if $(BATCH),--batch "$(BATCH)") $(if $(SEED),--seed "$(SEED)") $(if $(LABEL),--label "$(LABEL)") $(ARGS)
+
+what-if: db-check
+	$(PY) -m scripts.sim what-if --team "$(TEAM)" $(if $(RUN_ID),--run "$(RUN_ID)") $(if $(WIN),--win "$(WIN)") $(if $(LOSE),--lose "$(LOSE)") $(ARGS)
+
+predict: db-check
+	$(PY) -m scripts.sim predict --season "$(SEASON)" --week "$(WEEK)" $(if $(SEASON_TYPE),--season-type "$(SEASON_TYPE)") $(ARGS)
