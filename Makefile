@@ -55,7 +55,7 @@ ARGS     ?=
 
 .PHONY: generate bundle test test-it test-network lint coverage deploy grants dns-check record db-check
 .PHONY: backfill refresh quota snapshot restore snapshots model model-check model-refresh model-docs
-.PHONY: model-perf
+.PHONY: model-perf release-check-fast demo-freeze
 
 db-check:
 	@$(PY) -m scripts.dbcheck
@@ -81,6 +81,16 @@ lint:
 	$(RUN) ruff check .
 	$(RUN) ruff format --check .
 	$(RUN) mypy
+	$(PY) -m scripts.release_check --fast
+
+# Demo freeze (Phase 8, decision [44]): pins content digests of the stored-data definitions that
+# kit snapshots depend on in demo/freeze.yaml. `make lint` fails while a pinned path differs.
+#   make demo-freeze FROM=2026-11-01 UNTIL=2026-11-21 [FORCE=yes]
+release-check-fast:
+	$(PY) -m scripts.release_check --fast
+
+demo-freeze:
+	$(PY) -m scripts.release_check freeze --from "$(FROM)" --until "$(UNTIL)" $(if $(filter yes,$(FORCE)),--force)
 
 # Unit + CLI tests only. Each of the three runtime packages (vs/cfbd_vs, vs/gen, loader) must reach 90 % (fail_under in pyproject.toml).
 coverage:
