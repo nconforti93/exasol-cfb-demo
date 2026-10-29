@@ -11,6 +11,8 @@ Conventions the parser relies on:
 
 * Statements end with `;` outside strings and comments; a function or script ends with a line that
   holds only `/`. `--` and `/* */` comments are removed from the statements.
+* A data table is `CREATE TABLE IF NOT EXISTS` in a file named `<object>.sql` (no number): `deploy`
+  creates it when missing and never replaces or drops it, so its rows survive every redeploy.
 * A reference is `SCHEMA.NAME` after `FROM`, `JOIN` or `INTO`, a qualified function call, or any
   `{PLACEHOLDER}.NAME`. A bare qualifier counts as a schema only when it is an upper-case
   identifier, so lower-case aliases (`g."SEASON"`) never look like schemas.
@@ -20,7 +22,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,6 +34,11 @@ from vs.host.metaddl import fill_placeholders, placeholder_values
 from vs.host.namespace import Namespace
 
 MODEL_SCHEMA_PLACEHOLDER = "{MODEL_SCHEMA}"
+SIM_SCHEMA_PLACEHOLDER = "{SIM_SCHEMA}"
+SIM_ALLOWED_REFS = (
+    "{SIM_SCHEMA}.*",
+    "{MODEL_SCHEMA}.*",
+)
 MODEL_ALLOWED_REFS = (
     "{MODEL_SCHEMA}.*",
     "{CORE_SCHEMA}.*",
@@ -46,6 +53,7 @@ RESERVED_KEYWORDS_FILE = (
 )
 
 _FILE_NAME = re.compile(r"(\d{3})_([a-z][a-z0-9_]*)\.sql")
+_DATA_FILE_NAME = re.compile(r"([a-z][a-z0-9_]*)\.sql")
 _DDL_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 _PLACEHOLDER = re.compile(r"\{[A-Z][A-Z_]*\}")
 _QUOTED = r'"(?:[^"]|"")*"'
@@ -57,7 +65,7 @@ _COLUMN_NAME = re.compile(rf"\s*(?P<name>{_NAME})")
 _CREATE_HEAD = re.compile(
     r"CREATE\s+(?P<replace>OR\s+REPLACE\s+)?(?P<force>FORCE\s+)?"
     r"(?:(?:LUA|PYTHON3?|JAVA|R)\s+)?(?:(?:SCALAR|SET|ADAPTER)\s+)?"
-    r"(?P<kind>TABLE|VIEW|FUNCTION|SCRIPT)\b\s*"
+    r"(?P<kind>TABLE|VIEW|FUNCTION|SCRIPT)\b\s*(?P<exists>IF\s+NOT\s+EXISTS\s+)?"
 )
 _INSERT_HEAD = re.compile(r"INSERT\s+INTO\s+")
 _COMMENT_ON_HEAD = re.compile(r"COMMENT\s+ON\s+(?P<kind>TABLE|COLUMN|FUNCTION|SCRIPT)\s+")
@@ -100,7 +108,7 @@ class SqlObject:
 
     `kind` is `TABLE`, `VIEW`, `FUNCTION` or `SCRIPT`, empty if the file defines none. `schema` is
     the placeholder or schema as written. `problems` are `"rule: detail"` findings of the parser
-    that `lint` reports.
+    that `lint` reports. `keep_existing` marks a data table (`CREATE TABLE IF NOT EXISTS`).
     """
 
     file: str
@@ -115,6 +123,7 @@ class SqlObject:
     comment: str | None
     references: tuple[str, ...]
     problems: tuple[str, ...] = ()
+    keep_existing: bool = False
 
     @property
     def qualified_name(self) -> str:
@@ -139,16 +148,27 @@ def load(directory: Path) -> list[SqlObject]:
 
 
 def lint(
-    objects: Iterable[SqlObject], *, allowed_refs: Iterable[str], reserved: frozenset[str]
+    objects: Iterable[SqlObject],
+    *,
+    allowed_refs: Iterable[str],
+    reserved: frozenset[str],
+    schema_placeholder: str = MODEL_SCHEMA_PLACEHOLDER,
 ) -> list[str]:
-    """Every problem of `objects` as `"file: object: rule: detail"`; `[]` means clean."""
+    """Every problem of `objects` as `"file: object: rule: detail"`; `[]` means clean.
+
+    Every object must be created in `schema_placeholder`; data tables (`keep_existing`) are
+    exempt from `CREATE OR REPLACE` and from the numbered file name.
+    """
     allowed = tuple(allowed_refs)
     placeholders = set(placeholder_values(Namespace("")))
     problems: list[str] = []
     seen: dict[tuple[str, str], str] = {}
     for obj in objects:
         label = obj.name or "-"
-        found = [*obj.problems, *_lint_object(obj, allowed, placeholders, reserved)]
+        found = [
+            *obj.problems,
+            *_lint_object(obj, allowed, placeholders, reserved, schema_placeholder),
+        ]
         key = (obj.schema, obj.name)
         if obj.name and key in seen:
             found.append(f"duplicate: also defined in {seen[key]}")
@@ -190,11 +210,15 @@ def unquote(identifier: str) -> str:
 
 
 def _lint_object(
-    obj: SqlObject, allowed: tuple[str, ...], placeholders: set[str], reserved: frozenset[str]
+    obj: SqlObject,
+    allowed: tuple[str, ...],
+    placeholders: set[str],
+    reserved: frozenset[str],
+    schema_placeholder: str,
 ) -> list[str]:
     found: list[str] = []
     found.extend(_lint_file_name(obj))
-    found.extend(_lint_creation(obj))
+    found.extend(_lint_creation(obj, schema_placeholder))
     found.extend(_lint_names(obj, reserved))
     found.extend(_lint_comments(obj))
     found.extend(_lint_references(obj, allowed))
@@ -203,6 +227,11 @@ def _lint_object(
 
 
 def _lint_file_name(obj: SqlObject) -> list[str]:
+    if obj.keep_existing:
+        data = _DATA_FILE_NAME.fullmatch(obj.file)
+        if data is None or (obj.name and data.group(1) != obj.name.lower()):
+            return [f"file-name: data table {obj.name} must be defined in {obj.name.lower()}.sql"]
+        return []
     match = _FILE_NAME.fullmatch(obj.file)
     if match is None:
         return ["file-name: the file name must be NNN_<object>.sql (three digits, lower case)"]
@@ -212,13 +241,20 @@ def _lint_file_name(obj: SqlObject) -> list[str]:
     return []
 
 
-def _lint_creation(obj: SqlObject) -> list[str]:
+def _lint_creation(obj: SqlObject, schema_placeholder: str) -> list[str]:
     if not obj.kind:
         return []
     found: list[str] = []
-    if obj.schema != MODEL_SCHEMA_PLACEHOLDER:
-        found.append(f"schema: the object must be created in {MODEL_SCHEMA_PLACEHOLDER}")
-    if not obj.is_replace:
+    if obj.schema != schema_placeholder:
+        found.append(f"schema: the object must be created in {schema_placeholder}")
+    if obj.keep_existing:
+        if obj.kind != "TABLE":
+            found.append(f"data-table: IF NOT EXISTS is for tables, not for a {obj.kind}")
+        if obj.is_replace:
+            found.append("data-table: a data table is never created with OR REPLACE")
+        if len(obj.statements) != 1:
+            found.append("data-table: the file holds the CREATE statement and nothing else")
+    elif not obj.is_replace:
         found.append(f"replace: {obj.kind} must be created with CREATE OR REPLACE")
     elif obj.kind == "VIEW" and not obj.is_force:
         found.append("force: a view must be created with CREATE OR REPLACE FORCE VIEW")
@@ -357,6 +393,7 @@ def _build_object(
         comment=comment,
         references=_references(text, spans, own),
         problems=tuple(problems),
+        keep_existing=head.group("exists") is not None,
     )
 
 
@@ -640,7 +677,9 @@ class DeployReport:
 
     `retyped` names objects that existed with another kind and were dropped first (`GAME (was
     TABLE)`); `dropped` names objects no file defines, `VIEW OLD_VIEW`. The comment counts are
-    those of the database after the compile pass.
+    those of the database after the compile pass. `kept` names the data tables (and `keep` names)
+    that existed before and were left as they were; `differences` lists where such a table's
+    columns or comments differ from its file (reported, never migrated).
     """
 
     schema: str
@@ -655,6 +694,8 @@ class DeployReport:
     comments_expected: int
     extra_statements: int
     lines: tuple[str, ...]
+    kept: tuple[str, ...] = ()
+    differences: tuple[str, ...] = ()
 
     @property
     def summary(self) -> str:
@@ -681,6 +722,7 @@ def deploy(
     objects: Sequence[SqlObject],
     *,
     extra_statements: Sequence[str] = (),
+    keep: Collection[str] = (),
     lock: HeldLock,
 ) -> DeployReport:
     """Install rendered `objects` into `schema` in one transaction; `lock` is the held run lock.
@@ -694,11 +736,14 @@ def deploy(
        every table, view, function or script that no file defines (orphans, only in `schema`);
     2. the statements of every object in file order (`FORCE` views may reference later files),
        then `extra_statements` (for example a Lua script of another schema);
-    3. the compile pass: `SELECT 1 FROM <view> WHERE 1 = 0` for every view, in file order. A
+    3. data tables (`keep_existing` objects) are created when missing and never replaced; names in
+       `keep` are never dropped as orphans either (a table whose file was removed keeps its rows);
+    4. the compile pass: `SELECT 1 FROM <view> WHERE 1 = 0` for every view, in file order. A
        `FORCE` view fails only at its first query, and the database lists a view's columns and
        comments only once it compiled, and marks views of a replaced table `OUTDATED`;
-    4. the read-back: every object and column comment must equal the declared one, the columns of
-       a view must be its declared columns and not `OUTDATED`.
+    5. the read-back: every object and column comment must equal the declared one, the columns of
+       a view must be its declared columns and not `OUTDATED`. A data table that existed before
+       is only compared: a difference goes into `DeployReport.differences`, not into an error.
 
     Any failure rolls the whole transaction back, so the previous schema stays as it was, and
     raises `DeployError` naming file, object and the database's message. `lock.detail` gets the
@@ -710,7 +755,7 @@ def deploy(
     if switch is not None:
         switch(False)
     try:
-        report = _Transaction(connection, schema, objects, extra_statements).run()
+        report = _Transaction(connection, schema, objects, extra_statements, keep).run()
         connection.execute("COMMIT")
     except BaseException as error:
         _roll_back(connection, error)
@@ -757,12 +802,19 @@ def _check_autocommit(connection: Any) -> None:
 
 class _Transaction:
     def __init__(
-        self, connection: Any, schema: str, objects: Sequence[SqlObject], extra: Sequence[str]
+        self,
+        connection: Any,
+        schema: str,
+        objects: Sequence[SqlObject],
+        extra: Sequence[str],
+        keep: Collection[str] = (),
     ) -> None:
         self._connection = connection
         self._schema = schema
         self._objects = objects
         self._extra = extra
+        self._keep = frozenset(keep)
+        self._existing_data: tuple[str, ...] = ()
 
     def run(self) -> DeployReport:
         self._execute(f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
@@ -774,16 +826,24 @@ class _Transaction:
         views = [obj for obj in self._objects if obj.kind == "VIEW"]
         for view in views:
             self._compile(view)
-        found, expected = self._read_back()
-        return self._report(retyped, dropped, len(views), found, expected)
+        found, expected, differences = self._read_back()
+        return self._report(retyped, dropped, len(views), found, expected, differences)
 
     def _drop_stale(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         defined = {obj.name: obj.kind for obj in self._objects}
+        data = {obj.name for obj in self._objects if obj.keep_existing}
         existing = self._existing()
+        self._existing_data = tuple(sorted(name for name, _ in existing if name in data))
         retyped = [
-            (name, kind) for name, kind in existing if name in defined and defined[name] != kind
+            (name, kind)
+            for name, kind in existing
+            if name in defined and defined[name] != kind and name not in self._keep
         ]
-        orphans = [(name, kind) for name, kind in existing if name not in defined]
+        orphans = [
+            (name, kind)
+            for name, kind in existing
+            if name not in defined and name not in self._keep
+        ]
         for name, kind in sorted([*retyped, *orphans], key=lambda item: _DROP_ORDER.index(item[1])):
             self._run_statement(
                 f"DROP {kind} {qualified_name(self._schema, name)}", f"{kind} {name}"
@@ -820,14 +880,19 @@ class _Transaction:
     def _execute(self, sql: str) -> Any:
         return self._connection.execute(sql)
 
-    def _read_back(self) -> tuple[int, int]:
+    def _read_back(self) -> tuple[int, int, tuple[str, ...]]:
         actual_objects = {name: (kind, comment) for name, kind, comment in self._catalog()}
         actual_columns = self._columns()
         problems: list[str] = []
+        differences: list[str] = []
         found = expected = 0
         for obj in self._objects:
+            kept = obj.name in self._existing_data
             found_here, expected_here = _compare_object(
-                obj, actual_objects.get(obj.name), actual_columns.get(obj.name, []), problems
+                obj,
+                actual_objects.get(obj.name),
+                actual_columns.get(obj.name, []),
+                differences if kept else problems,
             )
             found += found_here
             expected += expected_here
@@ -836,7 +901,7 @@ class _Transaction:
                 f"{self._schema} read back from the database does not match the files:\n  "
                 + "\n  ".join(problems)
             )
-        return found, expected
+        return found, expected, tuple(differences)
 
     def _columns(self) -> dict[str, list[tuple[str, str | None, str | None]]]:
         rows = self._execute(
@@ -856,6 +921,7 @@ class _Transaction:
         views: int,
         found: int,
         expected: int,
+        differences: tuple[str, ...],
     ) -> DeployReport:
         counts = {kind: sum(1 for o in self._objects if o.kind == kind) for kind in _OBJECT_TYPES}
         percent = found * 100 // expected if expected else 100
@@ -865,6 +931,8 @@ class _Transaction:
             f"{counts['FUNCTION']} functions, {counts['SCRIPT']} scripts replaced",
             *(f"retyped: {name}" for name in retyped),
             f"dropped: {', '.join(dropped) if dropped else 'none'}",
+            *self._data_lines(),
+            *(f"differs: {text}" for text in differences),
             f"extra statements: {len(self._extra)} run",
             f"views compiled: {views}",
             f"comments: {found} of {expected} ({percent} %)",
@@ -882,6 +950,18 @@ class _Transaction:
             comments_expected=expected,
             extra_statements=len(self._extra),
             lines=lines,
+            kept=self._existing_data,
+            differences=differences,
+        )
+
+    def _data_lines(self) -> tuple[str, ...]:
+        data = [obj.name for obj in self._objects if obj.keep_existing]
+        if not data:
+            return ()
+        created = [name for name in data if name not in self._existing_data]
+        return (
+            f"data tables: {len(self._existing_data)} kept as they were, "
+            f"{len(created)} created ({', '.join(created) if created else 'none'})",
         )
 
 
@@ -929,6 +1009,8 @@ def _same_comment(declared: str | None, actual: str | None) -> bool:
 
 __all__ = [
     "MODEL_ALLOWED_REFS",
+    "SIM_ALLOWED_REFS",
+    "SIM_SCHEMA_PLACEHOLDER",
     "Column",
     "DeployReport",
     "SqlObject",

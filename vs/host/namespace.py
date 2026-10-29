@@ -63,6 +63,11 @@ class Namespace:
         return f"{self.prefix}CFB_MODEL"
 
     @property
+    def sim_schema(self) -> str:
+        """The simulation schema: score model views, run tables and prediction tables."""
+        return f"{self.prefix}CFB_SIM"
+
+    @property
     def vs_name(self) -> str:
         return f"{self.prefix}CFBD_VS"
 

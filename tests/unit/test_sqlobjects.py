@@ -6,6 +6,8 @@ from vs.host.metaddl import MetaDdlError
 from vs.host.namespace import Namespace
 from vs.host.sqlobjects import (
     MODEL_ALLOWED_REFS,
+    SIM_ALLOWED_REFS,
+    SIM_SCHEMA_PLACEHOLDER,
     SqlObject,
     lint,
     load,
@@ -516,3 +518,90 @@ def test_a_table_comment_over_2000_characters_is_reported(tmp_path: Path) -> Non
     )
     (problem,) = problems_of(tmp_path, text, "100_t.sql")
     assert "comment-length" in problem
+
+
+# --- schema placeholder and data tables --------------------------------------------------------
+
+DATA_TABLE = """\
+CREATE TABLE IF NOT EXISTS {SIM_SCHEMA}.RUN_LOG (
+  RUN_ID DECIMAL(18,0) IDENTITY NOT NULL COMMENT IS 'Run number',
+  NOTE VARCHAR(20) UTF8 COMMENT IS 'A note'
+) COMMENT IS 'One row per run.';
+"""
+
+
+def lint_sim(directory: Path) -> list[str]:
+    return lint(
+        load(directory),
+        allowed_refs=SIM_ALLOWED_REFS,
+        reserved=RESERVED,
+        schema_placeholder=SIM_SCHEMA_PLACEHOLDER,
+    )
+
+
+def test_the_schema_placeholder_decides_which_schema_an_object_must_use(tmp_path: Path) -> None:
+    write_files(tmp_path, {"100_v.sql": view_file("V")})
+    (problem,) = [p for p in lint_sim(tmp_path) if ": schema:" in p]
+    assert problem.startswith("100_v.sql: V: schema") and "{SIM_SCHEMA}" in problem
+
+
+def test_sim_objects_may_read_the_model_and_themselves_only(tmp_path: Path) -> None:
+    text = (
+        "CREATE OR REPLACE FORCE VIEW {SIM_SCHEMA}.V (X COMMENT IS 'x') AS\n"
+        "SELECT 1 FROM {MODEL_SCHEMA}.GAME, {SIM_SCHEMA}.OTHER, {CORE_SCHEMA}.GAMES\n"
+        "COMMENT IS 'One row per v.';\n"
+    )
+    write_files(tmp_path, {"100_v.sql": text})
+    (problem,) = lint_sim(tmp_path)
+    assert "reference" in problem and "{CORE_SCHEMA}.GAMES" in problem
+
+
+def test_a_data_table_is_parsed_with_its_exists_flag_and_needs_no_replace(tmp_path: Path) -> None:
+    write_files(tmp_path, {"run_log.sql": DATA_TABLE})
+    (log,) = load(tmp_path)
+    assert (log.kind, log.schema, log.name) == ("TABLE", "{SIM_SCHEMA}", "RUN_LOG")
+    assert log.keep_existing and not log.is_replace
+    assert [c.name for c in log.columns] == ["RUN_ID", "NOTE"]
+    assert log.comment == "One row per run."
+    assert lint_sim(tmp_path) == []
+
+
+def test_a_replaced_table_is_not_a_data_table() -> None:
+    (era,) = [o for o in load(FIXTURES / "valid") if o.name == "ERA"]
+    assert not era.keep_existing
+
+
+def test_a_data_table_file_is_named_after_the_table_without_a_number(tmp_path: Path) -> None:
+    write_files(tmp_path, {"100_run_log.sql": DATA_TABLE})
+    (problem,) = lint_sim(tmp_path)
+    assert problem.startswith("100_run_log.sql: RUN_LOG: file-name") and "run_log.sql" in problem
+
+
+def test_a_data_table_holds_only_its_create_statement(tmp_path: Path) -> None:
+    text = DATA_TABLE + "INSERT INTO {SIM_SCHEMA}.RUN_LOG VALUES (1, 'x');\n"
+    write_files(tmp_path, {"run_log.sql": text})
+    (problem,) = lint_sim(tmp_path)
+    assert problem.startswith("run_log.sql: RUN_LOG: data-table")
+
+
+def test_a_data_table_needs_comments_like_every_object(tmp_path: Path) -> None:
+    write_files(tmp_path, {"run_log.sql": DATA_TABLE.replace(" COMMENT IS 'A note'", "")})
+    (problem,) = lint_sim(tmp_path)
+    assert problem.startswith("run_log.sql: RUN_LOG: comment") and "NOTE" in problem
+
+
+def test_if_not_exists_is_for_tables_only(tmp_path: Path) -> None:
+    text = (
+        "CREATE VIEW IF NOT EXISTS {SIM_SCHEMA}.V (X COMMENT IS 'x') AS SELECT 1\n"
+        "COMMENT IS 'One row per v.';\n"
+    )
+    write_files(tmp_path, {"v.sql": text})
+    problems = lint_sim(tmp_path)
+    assert any("data-table: IF NOT EXISTS is for tables" in p for p in problems), problems
+
+
+def test_render_fills_the_sim_schema_placeholder(tmp_path: Path) -> None:
+    write_files(tmp_path, {"run_log.sql": DATA_TABLE})
+    (log,) = render(load(tmp_path), Namespace("TEST_"))
+    assert log.schema == "TEST_CFB_SIM"
+    assert log.statements[0].startswith("CREATE TABLE IF NOT EXISTS TEST_CFB_SIM.RUN_LOG (")

@@ -1,0 +1,4 @@
+# REFRESH_SIMULATE defaults. Manual SIMULATE keeps its own explicit arguments/defaults.
+targets:
+  local: {n_sims: 100000, sims_per_batch: 5000}
+  aws: {n_sims: 1000000, sims_per_batch: 10000}

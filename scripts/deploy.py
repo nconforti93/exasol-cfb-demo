@@ -1,4 +1,4 @@
-"""`make deploy`: build the bundle, then deploy the CFBD virtual schema, the loader and the model.
+"""`make deploy`: build the bundle, then deploy the VS, loader, model and simulation.
 
 The real deployment is created and owned by `sys` ([20]); the password is read at run time from
 the secrets file of the selected Exasol Personal deployment (`--target local|aws` or `TARGET`, see
@@ -8,8 +8,8 @@ reading the mock connection `CFBD_API_MOCK`; it is refused together with the rea
 
 Steps and their rules are documented in `vs/host/deploy.py` (virtual schema),
 `loader/deploy.py` (loader: plan tables, views, Lua scripts), which runs second on the same
-connection, and `model/deploy.py` (`CFB_MODEL`: lint, then one transaction), which runs last. The
-model files are linted before any connection is made, so a lint problem changes nothing. The one
+connection, then `model/deploy.py` (`CFB_MODEL`) and `engine/deploy.py` (`CFB_SIM`). The model and
+simulation files are linted before any connection is made, so a lint problem changes nothing. The one
 thing to remember: the fetch UDF is replaced only when its body changed, because
 `CREATE OR REPLACE` drops its script-bound connection grant.
 
@@ -19,11 +19,11 @@ month cap), then `--loader-config "k=v,..."` (make: `LOADER_CONFIG=...`), which 
 The deploy prints where each override came from; they last until the next deploy.
 
 Run lock: once the namespace has `<infra>.RUN_LOCK` (installed by its first deploy), the deploy
-holds one `DEPLOY` run lock (`loader.runlock.run_lock`) around the virtual schema, the loader and
-the model deploy, so it never replaces the plan, the views or the scripts under a running backfill
+holds one `DEPLOY` run lock (`loader.runlock.run_lock`) around the virtual schema, loader, model and
+simulation deploy, so it never replaces the plan, views or scripts under a running backfill
 or refresh. A running loader run refuses the deploy before anything changes. The first deploy
-runs the virtual schema and the loader without the lock and installs it; its model step then
-takes the lock itself, like `make model` (Phase 3 decision [35]).
+runs the virtual schema and loader without the lock and installs it; model and simulation then
+take the lock in turn, like `make model` and `make sim`.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from engine import deploy as sim_deploy
 from loader import deploy as loader_deploy
 from loader import target_config
 from loader.runlock import HeldLock, RunLockError, RunLockRefused, lock_installed, run_lock
@@ -61,6 +62,19 @@ class ModelDeployer(Protocol):
     def __call__(
         self, connection: Any, namespace: Namespace, *, lock: HeldLock | None = None
     ) -> model_deploy.ModelReport: ...
+
+
+class SimDeployer(Protocol):
+    """`engine.deploy.deploy_sim`, with the caller's lock and selected target."""
+
+    def __call__(
+        self,
+        connection: Any,
+        namespace: Namespace,
+        *,
+        lock: HeldLock | None = None,
+        target_name: str = "local",
+    ) -> sim_deploy.SimReport: ...
 
 
 def utc_now() -> datetime:
@@ -101,6 +115,7 @@ def main(
     month_caps: MonthCaps = ledger_month_caps,
     target_settings: TargetConfig | None = None,
     deploy_model: ModelDeployer | None = None,
+    deploy_sim: SimDeployer | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -126,13 +141,21 @@ def main(
         loader_options = loader_deploy.LoaderOptions(config_overrides=overrides.values)
         loader_deploy.validate(namespace, loader_options)
         model_deploy.prepare(namespace)
+        sim_deploy.prepare(namespace)
+        sim_deploy.refresh_settings()
         sizes = write_bundle()
         print(
             f"bundle: adapter {sizes.adapter_chars:,} and fetch UDF {sizes.fetch_chars:,} "
             f"characters, written to {bundle.DEFAULT_OUT_DIR}"
         )
         next_steps = deploy_namespace(
-            connector(deployment), namespace, options, loader_options, deploy_model
+            connector(deployment),
+            namespace,
+            options,
+            loader_options,
+            deploy_model,
+            deploy_sim,
+            deployment.name,
         )
     except (
         deploy.DeployError,
@@ -156,13 +179,16 @@ def deploy_namespace(
     options: deploy.DeployOptions,
     loader_options: loader_deploy.LoaderOptions,
     deploy_model: ModelDeployer | None = None,
+    deploy_sim: SimDeployer | None = None,
+    target_name: str = "local",
 ) -> tuple[str, ...]:
-    """Deploy the virtual schema, the loader, then the model, under one run lock once installed.
+    """Deploy the virtual schema, loader, model and simulation under one lock once installed.
 
     The model deploys under the held lock (one `DEPLOY` run); on the first deploy, which installs
     the lock, the model step takes it itself. A refusal of that step names what was deployed.
     """
     install_model = deploy_model or model_deploy.deploy_model
+    install_sim = deploy_sim or sim_deploy.deploy_sim
     try:
         with _deploy_lock(connection, namespace) as lock:
             report = deploy.deploy(connection, namespace, options)
@@ -171,6 +197,8 @@ def deploy_namespace(
             print("\n".join(loader.lines))
             model = _deploy_model(install_model, connection, namespace, lock)
             print("\n".join(model.lines))
+            simulation = _deploy_sim(install_sim, connection, namespace, lock, target_name)
+            print("\n".join(simulation.lines))
             if lock is not None:
                 plan = f"deployed plan {loader.plan_hash[:12]}"
                 lock.detail = f"{plan}; {lock.detail}" if lock.detail else plan
@@ -198,6 +226,22 @@ def _deploy_model(
         raise deploy.DeployError(
             f"{error}; the virtual schema and the loader were deployed, the model was not: "
             "run `make model` when the run has ended"
+        ) from None
+
+
+def _deploy_sim(
+    install_sim: SimDeployer,
+    connection: Any,
+    namespace: Namespace,
+    lock: HeldLock | None,
+    target_name: str,
+) -> sim_deploy.SimReport:
+    try:
+        return install_sim(connection, namespace, lock=lock, target_name=target_name)
+    except RunLockRefused as error:
+        raise deploy.DeployError(
+            f"{error}; the virtual schema, loader and model were deployed, the simulation was not: "
+            "run `make sim` when the run has ended"
         ) from None
 
 

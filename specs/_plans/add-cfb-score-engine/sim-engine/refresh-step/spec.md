@@ -1,47 +1,32 @@
-# Feature: Simulation step of the weekly refresh
+# Feature: Prediction and simulation steps of the weekly refresh
 
-After a game week, one call refreshes everything: fetch, merge, model, predictions, simulations. The simulation step reruns the season's playoff odds from the new point, so the odds pages move with the refresh, and the demo's timeline shows the seasons simulated and the seconds they took.
+After a game week, one call refreshes everything: fetch, model, predictions, simulations. The refresh freezes next week's predictions and reruns the season's playoff odds from the new point, so the pages move with the refresh, and the demo's timeline shows the seasons simulated and the seconds they took.
 
 ## Background
 
-- **Step script:** `EXECUTE SCRIPT CFB_INFRA.REFRESH_SIMULATE(run_id, season, week, season_type)`, the contract of registered refresh steps (`loader/refresh-week`).
-  - `loader/load-plan.yaml` registers it as step 300 `SIMULATE`. Step 100 is `MODEL` (`model/refresh-step`); step 200 is left for Phase 5's predictions.
-  - It simulates the point `(season, week, season_type)` with the defaults of `CFB_SIM.SIM_CONFIG` (`N_SIMS`, `SIMS_PER_BATCH`) and the seed rule of `sim-engine/sim-runs` (season × 1,000 + week sequence), with params `CURRENT`.
-  - It runs under the refresh's run lock and takes no lock of its own. Its registry row has `RUN_ORIGIN` `REFRESH` and the refresh's run id as `LOAD_RUN_ID`.
-  - It first cleans up abandoned simulation runs, like a run that takes the lock (`sim-engine/sim-runs`). A refresh killed during its simulation leaves its run `RUNNING`; the next refresh's step cleans it up.
-  - Its steps, checks, outputs and failure handling are those of `sim-engine/sim-runs`. It returns the number of rows the simulation wrote.
-- **Skip:** a point after the season's selection week (`CFB_SIM.SELECTION_WEEK`) has no simulation, because the playoff field is set then. That includes a regular-season week after the championship games, such as the Army–Navy week. The step ends `DONE` with the detail "skipped: playoff field set", and creates no registry row.
-- A failed simulation fails the step, which stops the refresh (`loader/refresh-week`). The slices fetched before it and the model's check log stay as they are.
-- It never reads the virtual schema: the step reports 0 calls.
-- The examples run in the integration-test namespace in replay mode. The load plan registers `MODEL` as step 100 and `SIMULATE` as step 300. `SIM_CONFIG` sets `N_SIMS` 2,000 and `SIMS_PER_BATCH` 500. The replay recordings of the sim league's 2026 weekly slices hold the results of week 9.
+- **Steps** (`loader/refresh-week`: registered steps run after the fetch, by step number, each as `EXECUTE SCRIPT <script>(run_id, season, week, season_type)`):
+  - step 200 `PREDICT`, script `CFB_INFRA.REFRESH_PREDICT`: the freeze of `sim-engine/predictions` at the refreshed point, with `FROZEN_BY` `REFRESH <run id>`;
+  - step 300 `SIMULATE`, script `CFB_INFRA.REFRESH_SIMULATE`: a run of `sim-engine/sim-runs` at the refreshed point with `RUN_ORIGIN` `REFRESH`, the refresh's run id as `LOAD_RUN_ID`, the seed rule season × 1,000 + week sequence, and `N_SIMS` and `SIMS_PER_BATCH` from `SIM_PARAMS` (`REFRESH_N_SIMS`, `REFRESH_SIMS_PER_BATCH`), which `make sim` sets per target from `engine/sim-config.yaml`: 100,000 and 5,000 on the laptop, 1,000,000 and 10,000 on AWS.
+  - `loader/load-plan.yaml` registers both; step 100 `MODEL` belongs to the model (`model/refresh-step`).
+  - Both run under the refresh's run lock and take no lock of their own.
+- **Cleanup of killed runs:** a run killed mid-way (for example by `KILL STATEMENT`) cannot log its own end, and stays `RUNNING`. Whoever next holds the run lock cleans it up: right after `SIMULATE` takes the lock, and at the start of `REFRESH_SIMULATE`, every other `RUNNING` row of `SIM_RUN` becomes `ABANDONED`, its output rows are deleted and the stage is truncated. The registry row and the input snapshot stay.
+- **Skip:** a point whose `CUTOFF_AT` is NULL or not before the season's `SELECTION_AT`, or a season without a `SEASON_RULES` row, has no simulation: `SIMULATE` ends `DONE` with the detail "skipped: no simulation for this point" and no registry row. `PREDICT` freezes nothing outside the current season.
+- Both steps report 0 CFBD calls. A failure fails the step, which stops the refresh; the fetched slices stay stored.
+- The examples run in the integration-test namespace in replay mode, with `REFRESH_N_SIMS` 2,000 and `REFRESH_SIMS_PER_BATCH` 500, on the replay recordings of the synthetic league's 2026 weekly slices.
 
 ## Scenarios
 
-### Scenario: The refresh simulates the season after the model step
+### Scenario: The weekly refresh freezes predictions and simulates the season
 
-* *GIVEN* replay recordings of the sim league's 2026 weekly slices
+* *GIVEN* replay recordings of the synthetic league's 2026 weekly slices and the clock at 2026-10-28 12:00 UTC
 * *WHEN* the presenter runs `EXECUTE SCRIPT CFB_INFRA.REFRESH_WEEK(2026, 9, 'regular')`
-* *THEN* the timeline MUST list `CHECK`, the `FETCH` steps, `MODEL` and `SIMULATE`, in that order, each `DONE`
-* *AND* `SIMULATE` MUST report 0 calls
+* *THEN* the timeline MUST list `CHECK`, the `FETCH` steps, `MODEL` when the model registers it, `PREDICT` and `SIMULATE`, in that order, each `DONE` with 0 calls
 * *AND* `CFB_SIM.SIM_RUN` MUST gain one `DONE` run for 2026 week 9 with `RUN_ORIGIN` `REFRESH`, the refresh's run id as `LOAD_RUN_ID`, 2,000 seasons in batches of 500 and `RUN_SEED` 2026009
+* *AND* the week-10 games MUST be frozen in `PREDICTION` with `FROZEN_BY` naming the refresh
 
-### Scenario: The step follows the deployment's configuration
+### Scenario: A killed run is cleaned up by the next run
 
-* *GIVEN* `SIM_CONFIG` changed by a deploy override to `N_SIMS` 4,000 and `SIMS_PER_BATCH` 1,000
-* *WHEN* the presenter runs `REFRESH_WEEK(2026, 9, 'regular')`
-* *THEN* the new run MUST have 4,000 seasons in 4 batches
-
-### Scenario: A refresh after the selection week skips the simulation
-
-* *GIVEN* replay recordings of the sim league variant whose 2024 season has a regular-season game in week 16, after the championship games of week 15, and of the sim league's 2025 slices
-* *WHEN* the presenter runs `REFRESH_WEEK(2024, 16, 'regular')`, and then `REFRESH_WEEK(2025, 1, 'postseason')`
-* *THEN* `SIMULATE` MUST be `DONE` with the detail "skipped: playoff field set" in both refreshes
-* *AND* `CFB_SIM.SIM_RUN` MUST NOT gain a row
-
-### Scenario: A failed simulation stops the refresh and keeps the fetched data
-
-* *GIVEN* the test hook that makes the engine fail in batch 2
-* *WHEN* the presenter runs `REFRESH_WEEK(2026, 9, 'regular')`
-* *THEN* the call MUST fail with an error that names the step `SIMULATE` and the refresh run
-* *AND* the 2026 slices fetched by the `FETCH` steps MUST stay stored, and `CFB_META.MODEL_CHECK_LOG` MUST keep the run's rows
-* *AND* the simulation run MUST be `FAILED` with no outputs
+* *GIVEN* a `RUNNING` row in `SIM_RUN` whose session no longer exists, with rows in `SIM_TEAM`, `SIM_PATH` and `LEVERAGE` and in `SIM_STAGE`
+* *WHEN* the presenter runs `SIMULATE(2026, 9, 'regular', 2000, 500, NULL, NULL)`
+* *THEN* the old run MUST be `ABANDONED`, with no rows left in its outputs
+* *AND* the new run MUST be `DONE`

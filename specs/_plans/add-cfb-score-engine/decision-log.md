@@ -1,6 +1,6 @@
 # Decision Log: add-cfb-score-engine
 
-Date: 2026-10-22 (planned; revised the same day to resolve the independent review in `review.md`)
+Date: 2026-10-22 (planned; revised the same day to resolve the independent review in `review.md`); replanned light and demo-first on 2026-10-23 ([44]–[57])
 
 ## Interview
 
@@ -120,6 +120,46 @@ The owner was away and delegated these decisions to the orchestrator, who passed
 - `speq plan validate add-cfb-score-engine` must be warning-free.
 - Append a "Review resolution" section to `review.md`.
 - Invoke `exasol:exasol-udfs`, `exasol:exasol-database` and `exasol:exasol-distributed-ml` first.
+
+### Light replan interview (2026-10-23)
+
+The owner changed the process; the orchestrator relayed the brief and the planner logs it here, close to verbatim.
+
+**Q (process):** What changes?
+**A:** The owner: "this is a demo, not a full-blown product offering... we don't need a crazy amount of tests." The plan was written for the heavy process. Restructure it into thin, demo-first slices, sized for 3–5 implementer tasks before the first usable result. Planning only: no DB use, no CFBD calls, no code.
+
+**Q (demo needs):** What must Phase 4 deliver for the demo?
+**A:**
+- Playoff odds per FBS team as of a week: P(make the 12-team CFP), P(first-round bye), P(champion), expected wins, mean seed, and movement since the last run.
+- What-if. The owner asked: "if Auburn wins this weekend, how does that change their playoff %?" It works by filtering stored per-sim outcomes. Spike S4 chose layout C (one BOOLEAN per game), sparse `SIM_TEAM` and a per-run `LEVERAGE` table; what-if p95 was 0.52 s at 1M sims on AWS.
+- "Games to watch" / rooting guide: leverage per game for a team.
+- Weekly predictions: win probability and predicted score per game, frozen before kickoff, then graded; the calibration chart lives on the Predictions page.
+- Upsets: Phase 5 may own these; check.
+
+**Q (inputs):** What to read and assume?
+**A:** The plan, `review.md`, `decision-log.md`; the S3 and S4 write-ups in the main tree (read-only, another session's; do not copy them into git); the main tree's `HANDOVER.md`; Phase 6's "UI revision" and `app/frontend/src/api/types.ts`. S3: the Python UDF engine is a GO; 100k compute-only about 7 s locally and 1.5 s on AWS; full mode about 12 s on AWS, 75 % of it emitting `SIM_TEAM`; 1k–10k per batch, at least 2 batches per slot, explicit `EMITS`. Phase 3's `CFB_MODEL` views are live on AWS and local; assume `TEAM_SEASON_AS_OF` and `GAME_AS_OF` per the as-of spec; 2026 data runs through regular week 7; `CFB_CORE.METRICS_WP_PREGAME` holds CFBD's pregame win probability.
+
+**Q (slices):** What goes where?
+**A:**
+- Slice 1: one engine run for 2026 after week 7 on AWS, producing odds and what-if storage, with the fewest tasks. Rating model: SP+-based margin, home field, normal error; the simplest credible approach, parameters from the existing decisions where sound; calibration can be a simple fitted constant. CFP rule: "12 teams, 5 highest-ranked conference champions plus 7 at-large, with the top 4 champions getting byes (the 2025+ rule). Check the plan's decisions; keep it simple."
+- Slice 2: predictions with freeze and grade, the rooting guide and leverage, movement between runs.
+- Slice 3: hardening (locks, the refresh hook, calibration report) only as far as the demo needs.
+- Per task: files, a couple of tests, the definition of done. Mark superseded heavy items `[-]` with a one-line reason. Hand-offs to Phase 5 (`CFB_API`) and Phase 6 (9.8 outlook) with exact table and column names. Log the light decisions.
+
+**Q (BucketFS):** Is it needed?
+**A:** The owner asked in passing; not a requirement. If a small parameter or calibration file in BucketFS fits cheaply, list it as an optional task with its cost; never a dependency.
+
+**Q (rules for this pass):**
+**A:** Run `speq plan validate add-cfb-score-engine` and fix errors. The orchestrator authorizes the commit (overriding the git-discipline skill) with the message "add-cfb-score-engine: light demo-first replan"; do not push.
+
+**Q (coordinator update during planning, 2026-10-23):** What do the as-of views look like as built?
+**A:**
+- Phase 3's 3.9–3.11 landed (475c534) and are merged into this branch.
+- `AS_OF_POINT`/`CURRENT_AS_OF`, `GAME_AS_OF` and `TEAM_SEASON_AS_OF` have the columns listed in plan.md § Context; the current point is 2026, after week 7. Title games appear from the point before their week; selection games at `LAST_REGULAR_WEEK_SEQ`.
+- At 2026 week 7 `SP_CURRENT_RATING` is NULL (fetched after the cutoff): use `SP_PRIOR_RATING` plus Elo, or decide a rule. Read `RATING_SP` of season − 1 directly.
+- Filter the as-of views with literal or bound `AS_OF_SEASON` and `AS_OF_WEEK_SEQ`; a join to `CURRENT_AS_OF` is not pushed down and evaluates every point (about 21 s); the old plan's manual-test query did that join, fix it.
+- AWS per point: `GAME_AS_OF` 1.75 s, `TEAM_SEASON_AS_OF` 3.2 s, `RANKING_AS_OF` 0.64 s; fine for one engine-input read per run. Phase 3's 4.3 may materialize `GAME`.
+- About 87–92 % of completed FBS games have Elo; the 2025 committee ranking shows only from point 16.
 
 ## Design Decisions
 
@@ -585,12 +625,147 @@ The owner was away and delegated these decisions to the orchestrator, who passed
 - **Rationale:** with the generator's ratings and no resume gap below 0.5 in the top 30, the oracle is exact. The full calibration path keeps its own scenarios.
 - **Promotes to ADR:** no
 
+**Light replan decisions (2026-10-23).** These decisions follow the light-replan interview above. Where they conflict with [1]–[43], they win; the table after [57] gives the status of every earlier decision.
+
+### [44] A light, demo-first plan in three slices
+
+- **Decision:** Phase 4 is rebuilt as three thin slices. Slice 1 (5 tasks) ends with odds and what-if storage for 2026 after week 7 on AWS. Slice 2 adds predictions, the rooting guide and movement. Slice 3 adds the refresh steps, a calibration report, the cfp.org check and docs. 7 features with 30 scenarios replace 9 features with 81. `tasks.md` marks every heavy task as absorbed, kept or superseded with a reason; the reviewed heavy plan stays in git (29fb149) as the reference for anything picked up later.
+- **Alternatives:** implement the reviewed heavy plan; keep its scope and cut only tests.
+- **Rationale:** the owner's process change, the demo window (16–20 November) and the rule that each slice ends in something the owner can look at. Not an ADR: the light process is the owner's project-wide rule; this entry applies it to Phase 4.
+- **Promotes to ADR:** no
+
+### [45] Score model: prior SP+ blended with current Elo, one host fit, no gates
+
+- **Decision:** a team's rating is `B_SP` × `SP_PRIOR_RATING` + `B_ELO` × (`ELO_AS_OF` − `ELO_CENTER`), with fallbacks to one feature and to class defaults (`sim-engine/score-model`); μ adds `HFA` off neutral sites; margins are normal. One fit, `make sim-fit` (host numpy, read-only), estimates the constants by least squares on the completed regular-season games of 2014–2025, using each game's pregame Elo, which is the team's Elo as of the point before the game, so the fit is leak-free one week ahead. It writes the committed seed `sql/sim/010_sim_params.sql`. No week phases, no `HOLDOUT_2023` version, no calibration gate; slice 3 reports the out-of-sample numbers. The current season's SP+ is not a feature.
+- **Alternatives:**
+  - current-season SP+ when visible, a literal reading of "SP+-based": it is not visible at the demo point (week 8 opened 2026-10-20 23:00 UTC, the 2026 slice was fetched on 2026-10-22/23; the coordinator confirmed `SP_CURRENT_RATING` is NULL at week 7), it would switch sources once weekly refreshes fetch it before a cutoff, and past seasons' in-season SP+ was never stored, so it cannot be calibrated leak-free;
+  - prior SP+ only: blind to the 2026 results;
+  - Elo only: drops the SP+ the brief asks for;
+  - the heavy fit with phases, versions and gates ([6], [7], [31], [32]): more than a demo needs.
+- **Rationale:** it keeps [2]'s model, which the review found sound. Elo carries the season's results, the prior SP+ the preseason strength, and the fallbacks cover the 8–13 % of games without Elo. It explains in one sentence.
+- **Promotes to ADR:** yes
+
+### [46] Horizon uncertainty is fitted from lagged Elo; shared team offsets stay
+
+- **Decision:** `SIGMA_1` is the residual standard deviation one week ahead. `TAU` is the growth of the residual variance per week, measured with each team's Elo taken k = 1–6 games earlier; if the growth is not positive, `TAU` is 1.5 (`ASSUMED`). Each game gets `TEAM_SIGMA` = `TAU` × √(h − 1) / √2 for the shared team offsets of [29]; simulated postseason games use `post_team_sigma` at the last remaining week.
+- **Alternatives:** an assumed `TAU` only; independent per-game noise (the original [3]).
+- **Rationale:** without shared drift the season odds are overconfident (review M1). The lag fit reads data the fit already has. One week ahead the prediction and the simulation agree exactly. It amends [3] and [29].
+- **Promotes to ADR:** no
+
+### [47] Outcome layout A: one outcome string per simulated season in a fixed table
+
+- **Decision:** `SIM_PATH (RUN_ID, SIM_ID, OUTCOMES)`, character `PATH_POS` = `GAME_IDX` + 1, `1` for a home win. A what-if condition is `SUBSTR("OUTCOMES", PATH_POS, 1) = '1'` or `'0'`. No per-run tables, no generated views.
+- **Alternatives:** D20's layout C: a per-run table with one `BOOLEAN` column per game, derived in SQL from the string ([16]), with serving views regenerated by Phase 5 per publication.
+- **Rationale:**
+  - D20 names A the near-tie fallback. At 100k, S4 measured A within 2–19 ms of C on every what-if cell, best on the conditional guide, and smallest and fastest to load (AWS 1M: 7.2 s against 30.6 s). At 1M the latency sits in `SIM_TEAM`, which stays sparse as D20 decided.
+  - C costs per-run DDL with up to about 900 commented columns, a derivation step never timed at 1M (the heavy plan needed a probe and a gate for it), escaping school names in generated DDL (Phase 5 review P5-M3), and generated `CFB_API` views.
+  - Risk: A at 1M with the sparse table was not measured on AWS. Expected: one team 0.1–0.3 s, all teams 0.5–1.0 s at k = 1.
+- **Verify and trigger:** task 1.5 times both shapes at 1M on AWS (p95 of 20, k = 1 and 3). If the one-team what-if misses 1 s or the all-team one misses 1.5 s, task 3.6 adds layout C as a per-run table derived for the what-if only.
+- **Outcome (2026-10-23):** AWS run 2, 1M seasons: one-team p95 was 0.163 s at k = 1 and 0.148 s at k = 3; all-team p95 was 0.556 s and 0.595 s (20 cache-off executions per cell). Both are below the triggers, so layout A stays and task 3.6 is not triggered by this run. Details: `docs/engine-verification.md`.
+- **Supersedes:** [16], [34]; amends D20 (task 3.4).
+- **Promotes to ADR:** yes
+
+### [48] `LEVERAGE` comes from engine tallies; batches of at least 5,000 seasons
+
+- **Decision:** per batch the engine emits `L` rows (team × remaining game: seasons in which the team made the field and the home team won, nonzero only) and `G` rows (home wins per game), as one float32 matrix product, exact below 2²⁴. The split sums them and derives `N_AWAY` = `N_SIMS` − `N_HOME` and `N_AWAY_IN_CFP` = the team's seasons in the field − `N_HOME_IN_CFP`. `LEVERAGE` keeps D20's columns. Tally rows grow with the number of batches (about batches × 100 teams × 400 games), so runs use at least 5,000 seasons per batch: local 100k at 5,000, AWS 100k at 5,000 (not D19's 1,000), AWS 1M at 10,000.
+- **Alternatives:** building `LEVERAGE` in SQL after the load (D20; S4: 4.75 s at 1M with C, and with A an unpivot of `SUBSTR` over 1M strings and 400 games); one encoded string per team and batch.
+- **Rationale:** the product costs milliseconds per batch; about 4.4M small rows at 1M emit in about 2.5 s on AWS; the guide no longer depends on the outcome layout. D19 measured 1k–10k per batch as equal on AWS (1.54–1.65 s compute-only per 100k).
+- **Promotes to ADR:** yes
+
+### [49] `SIMULATE` is Lua from slice 1, with a light registry
+
+- **Decision:** a run is one Lua script from the start: Phase 2's lock (kind `SIMULATE`), register, freeze (slice 2), snapshot, engine, split, finish, and cleanup on failure. Timings and sizing are columns of `SIM_RUN`. No step table, no batch table, no `SIMULATE_FROM`, `DROP_SIM_RUN` or `make sim-verify`. Cleanup of killed runs comes in slice 3.
+- **Alternatives:** host-orchestrated runs first (quicker, then rewritten for the refresh step); the heavy registry.
+- **Rationale:** the refresh step becomes a short wrapper, and the demo shows one SQL call. The snapshot, seed and versions keep the mission's reproducibility rule without a verify command.
+- **Supersedes:** [14], [38]; amends [18] (snapshot kept, verify dropped) and [36] (cleanup in slice 3).
+- **Promotes to ADR:** no
+
+### [50] The 2026 selection rules of [9], kept and simplified
+
+- **Decision:** one `SEASON_RULES` row for 2026: the four power champions plus the best-ranked Group of Six team (`POWER_CHAMPIONS_PLUS_G6`, `G6_BID` `TEAM`), Notre Dame in when ranked within 12, seven at-large, straight seeding with byes for the top four. `AUTO_BID_RULE` and `G6_BID` are switches, so the brief's "five highest-ranked champions" (`TOP_CHAMPIONS`) is one value away. `SELECTION_AT` (2026-12-06 12:00 UTC) replaces the selection-week view: later games (Army–Navy, 12 December) are left out, and points whose cutoff is not before it are refused. Title games are always simulated between the top two of the simulated standings. Resume weights are the S3 prototype's (100, 2.0, 0.5, rating 0), not fitted. No 2024/2025 rule sets.
+- **Alternatives:**
+  - the brief's wording, "5 highest-ranked conference champions plus 7 at-large, with the top 4 champions getting byes (the 2025+ rule)": its byes are the 2024 rule (2025 moved to straight seeding) and its bids the 2024–2025 rule, which the January 2026 decision replaced according to [9]'s sources (On3/Yahoo, SI citing The Athletic, an NCAA explainer; confirmed by the review);
+  - the selection-week view ([37]), known title-game pairings ([12], [41]), fitted resume weights ([11]), 2024/2025 rule sets ([10]).
+- **Rationale:** [9] is researched and reviewed, and a correction is a seed edit. Known pairings matter only from the week-13 point (29 November), after the demo window. Selection day is one published date. Task 3.3 checks all of it on cfp.org before the first committee ranking.
+- **Promotes to ADR:** yes
+
+### [51] Predictions, grades, movement and the shown run belong to Phase 4
+
+- **Decision:** `CFB_SIM.PREDICTION` (frozen once; missed weeks reconstructed at their own point and flagged), `PREDICTION_GRADED`, `PREDICTION_SCORECARD`, `PREDICTION_CALIBRATION`, `POINT_RUN` (the latest `DONE` run of a point is the one shown), `CURRENT_RUN`, `ODDS_MOVEMENT` (threshold 0.0070) and `ROOTING_GUIDE`. There is no publication table.
+- **Alternatives:** Phase 5's `CFB_PRED` with `PUBLICATION`, `PUBLISHED_ODDS`, steps 200 and 400, `WHATIF_PUBLICATION` and generated views.
+- **Rationale:** the brief puts them here, and the numbers are computed here. A freeze is one `INSERT … SELECT` per point from `GAME_SCORE_AS_OF`. Runs are never dropped ([54]), so the arrows need no frozen copy of the odds. Phase 5 becomes thin `CFB_API` views (hand-off in plan.md).
+- **Promotes to ADR:** yes
+
+### [52] Tests use Phase 3's synthetic league and crafted models
+
+- **Decision:** integration tests run on Phase 3's league at 2026 week 9 (about 29 FBS teams, a 10-team SEC with a title game, weeks 10–15 scheduled) and assert relations (12 rows per season, counts equal to recounts, values equal to the view), not league-specific odds. Engine and selection rules are unit-tested on crafted models. 30 scenarios in all.
+- **Alternatives:** the dedicated sim league ([26]); the loop-reference oracle.
+- **Rationale:** the light process; the database-equals-host test and the invariants catch what the oracle would.
+- **Supersedes:** [26], [43].
+- **Promotes to ADR:** no
+
+### [53] Deploy through Phase 3's `sqlobjects`, generalized a little
+
+- **Decision:** `sqlobjects.lint` takes the schema placeholder; `deploy(…, keep=…)` exempts named tables from the orphan drop; the data tables are `CREATE TABLE IF NOT EXISTS` statements passed as extra statements; a column that differs from its file is reported, not migrated.
+- **Alternatives:** the heavy data-table kind with column comparison ([27]); a separate deployer or data schema.
+- **Rationale:** the smallest change to proven code; schema changes during the demo are rare and done by hand.
+- **Promotes to ADR:** no
+
+### [54] No partitioning and no run drop
+
+- **Decision:** `SIM_TEAM` and `SIM_PATH` are plain tables; runs stay for the season.
+- **Alternatives:** `PARTITION BY RUN_ID` ([17], probe 1.1e); `make sim-drop` with retention rules.
+- **Rationale:** a season stores a few dozen runs, about 0.2 GB per 1M run on AWS and 20 MB per 100k run. Task 3.6 adds partitioning if what-if latency grows with the stored runs.
+- **Promotes to ADR:** no
+
+### [55] The BucketFS parameter file is optional
+
+- **Decision:** task 3.5, about half a day: `make sim-fit` writes a JSON copy of the constants, `make sim-bfs` uploads it, and the UDF records its digest when present. The seed and the run snapshot stay the source.
+- **Alternatives:** the constants only in BucketFS (two sources; write credentials and reachability on the AWS deployment unverified); skip it.
+- **Rationale:** the owner's passing idea as an Exasol showcase beat; it must never become a dependency.
+- **Promotes to ADR:** no
+
+### [56] Upsets: Phase 5 ranks, Phase 4 keeps `GAME_WIN_PROB`
+
+- **Decision:** `GAME_WIN_PROB` gives each completed game its pregame probability (the stored line since 2013, else Elo with `ELO_PROB_SCALE` and `ELO_PROB_HFA` from a grid search in the fit) and `UPSET_MAGNITUDE`. Ranking and pages are Phase 5's.
+- **Alternatives:** move the view to Phase 5; the maximum-likelihood fit of [8].
+- **Rationale:** Phase 5's upset view already reads it; a grid search is simpler and good enough for a ranking.
+- **Promotes to ADR:** no
+
+### [57] Sentinels instead of NULLs in the emitted stage frame
+
+- **Decision:** numeric stage columns that do not apply to a row kind carry 0 or FALSE; only `OUTCOMES` and `INFO` carry None.
+- **Alternatives:** nullable pandas dtypes (heavy probe 1.1a).
+- **Rationale:** NULLs in emitted DataFrames were never probed; S3 emitted strings, and the split filters by `ROW_KIND` anyway.
+- **Promotes to ADR:** no
+
+### [58] Restore the Pac-12 championship flag from 2026
+
+- **Decision:** add `('Pac-12', 2026, NULL)` to the Phase 3 `CONFERENCE_CHAMPIONSHIP` seed, leaving its 2011–2023 interval intact. Redeploy the model before simulating. The 2026 rebuilt conference plays a championship game, so its teams need `HAS_CCG = TRUE` in the engine snapshot.
+- **Alternatives:** keep the old seed and treat the Pac-12 as a conference without a title game in the simulation.
+- **Rationale:** the old seed covered the two-member gap in 2024–2025 but excluded the current season. The interval keeps that gap and restores the current format; it affects conference-title odds and the resume path.
+- **Promotes to ADR:** yes
+
+### [59] Official CFP check confirms the 2026 selection seed
+
+- **Decision:** keep `POWER_CHAMPIONS_PLUS_G6`, `G6_BID` `TEAM`, Notre Dame's top-12 guarantee, and Selection Day on 2026-12-06. The 12:00 UTC `SELECTION_AT` is a conservative model cutoff before the announcement, not an official CFP deadline.
+- **Evidence:** checked on 2026-10-26 against the [2026-27 CFP bracket](https://collegefootballplayoff.com/sports/2026/8/9/bracket-place-holder) and [selection protocol](https://collegefootballplayoff.com/sports/2016/10/24/selection-committee-protocol). The bracket explicitly awards the fifth automatic bid to the highest-ranked **team** from the American, Conference USA, MAC, Mountain West, Pac-12 or Sun Belt, and a bid to Notre Dame when it is in the final top 12. It lists Selection Day as December 6, noon–3 p.m. ET.
+- **Promotes to ADR:** no; this verifies [9] and [50] without changing their design.
+
+### Status of [1]–[43] under the light plan
+
+| Status | Decisions |
+|---|---|
+| Kept | [1], [2] (refined by [45]), [4], [5], [9] (as [50]), [13], [15], [19] (the lock), [20] (steps 200/300, the seed rule; the skip uses `SELECTION_AT`), [22], [24], [28] (widened by the Non-Goals), [29] (with [46]), [35], [39] |
+| Amended | [3] by [46]; [8] by [56]; [12] by [50] (no known pairings); [17] by [47], [48], [54]; [18] and [36] by [49]; [21] by [50] (2026 only, cutoff before `SELECTION_AT`); [23] by [48] (at least 5,000 per batch); [27] by [53]; [33] (`ELO_CENTER` kept, source-pair report dropped); [41] (all conferences counted, G = 0 gives NULL; the clamp and known title games are moot) |
+| Superseded | [6], [7], [31], [32] by [45]; [10], [11], [37] by [50]; [14], [38] by [49]; [16], [34] by [47]; [25], [30] (no backtest; slice 3 reports calibration); [26], [43] by [52]; [40] (no resume fit); [42] (moot) |
+
 ## Open Questions (assumption + verify step)
 
 | # | Assumption | Verify step | If wrong |
 |---|---|---|---|
-| Q1 | The 2026 G6 automatic bid goes to the best-ranked G6 team, champion or not (confirmed by the review's sources) | Task 1.11: check the official CFP format/selection protocol on cfp.org before the first 2026 committee ranking (about 2026-11-03); record the source in `SELECTION_RULES.SOURCE_NOTE` | Set `G6_BID` to `CHAMPION` in `011_selection_rules.sql` (one value) and redeploy; no engine change |
-| Q2 | The Notre Dame guarantee means "selected if ranked 12 or better in the final ranking", counted as an automatic bid (confirmed by the review's sources) | Same source as Q1 (task 1.11) | Adjust the guarantee semantics in `engine/core.py` (new engine version) and the selection-rules scenario |
+| Q1 | Resolved 2026-10-26: the official bracket says the highest-ranked G6 **team** | Task 3.3 and [59] | No seed change |
+| Q2 | Resolved 2026-10-26: Notre Dame receives an automatic bid when ranked in the final top 12 | Task 3.3 and [59] | No engine change |
 | Q3 | CFBD carries pregame Elo for FCS teams in their games against FBS teams, so most non-FBS opponents are rated by Elo | `SELECT CLASSIFICATION, COUNT(*), COUNT(ELO_AS_OF) FROM CFB_MODEL.TEAM_SEASON_AS_OF WHERE AS_OF_SEASON = 2024 AND AS_OF_WEEK_SEQ = 9 GROUP BY 1` on AWS (6.2) | `CLASS_DEFAULT` covers them; record the shares and check the `NON_FBS_RATING` fit size |
 | Q4 | The 2026 Pac-12 holds a championship game, which the Phase 3 seed `CONFERENCE_CHAMPIONSHIP` (Pac-12 2011–2023) does not list. Under 2026 rules it affects only `P_CONF_CHAMPION`, not selection | Look for a week-15 Pac-12 conference game in the stored 2026 schedule after the regular season, or the conference's announcement | Add a Pac-12 row from 2026 to Phase 3's seed (owned by `model/games`); no change here |
 | Q5 | Deriving layout C at 400 games takes ≤ 5 s at 100k locally and ≤ 10 s at 1M on AWS | Probe 1.1c, both targets, group A ([34]) | Store layout A on both targets per D20's fallback ([16]) |
@@ -606,6 +781,24 @@ The owner was away and delegated these decisions to the orchestrator, who passed
 | Q15 | (Cross-plan X1) Phase 3's championship detection takes the 2026 Army–Navy game, flagged as an American Athletic conference game and alone in week 15, for the American Athletic's title game, and then misses the real one in week 14 | Task 6.1 on the stored 2026 data; the orchestrator relays it to Phase 3 (`model/games`, `CONFERENCE_CHAMPIONSHIP_GAME`) now | This plan leaves the flagged game out (`CCG_AFTER_SELECTION`) and keys the selection week on power conferences. The real game would enter as a regular conference game and can stop 2026 runs from week 13 on with `CONFERENCE_PAIR_REPEATED` until Phase 3 fixes the detection, for example by restricting it to weeks up to the season's power championship week |
 | Q16 | The `EARLY` phase meets the relative targets against the line | Task 6.2 per-phase report | `SP_ELO_PHASED`, then F2; a remaining `EARLY` miss is logged (the demo lives in `MID` and `LATE`) |
 | Q17 | `KILL STATEMENT` stops a Lua script that waits in `os.sleep`, leaving its committed `RUNNING` row | Probe 1.1j | The cleanup test's hook ends the script without cleanup instead |
+
+### Status under the light plan (2026-10-23)
+
+| # | Status |
+|---|---|
+| Q1, Q2 | Task 3.3 (cfp.org) |
+| Q3 | Non-FBS teams without Elo take `NON_FBS_RATING` from the fit; the fit prints the share |
+| Q4 | Resolved by [58]: the Phase 3 seed includes the Pac-12 again from 2026; model redeploy updates `HAS_CCG` |
+| Q5, Q11, Q12 | Replaced by Q18 and [54]; no wide DDL, strings up to 2,000 games |
+| Q6, Q14, Q16 | Moot (no backtest, no selection-week view, no phases) |
+| Q7, Q8 | Task 3.2 report |
+| Q9 | Recorded per run (`NUMPY_VERSION`, `PYTHON_VERSION`) |
+| Q10 | Handled: a pair that met twice decides head-to-head by the later game; no rejection |
+| Q13 | Eligible = FBS with a game in the season; new FBS members count |
+| Q15 | Fixed by Phase 3 (`CONFERENCE_CHAMPIONSHIP_GAME.POWER_CHAMPIONSHIP_WEEK` limits the detection) |
+| Q17 | Replaced by the cleanup test of task 3.1 (a `RUNNING` row of a gone session) |
+| Q18 (new) | Resolved by task 1.5: the AWS 1M one-team p95 is 0.163 s at k = 1 and 0.148 s at k = 3; layout A stays ([47]) |
+| Q19 (new) | Resolved 2026-10-26: Selection Day is 2026-12-06; 12:00 UTC remains a conservative model cutoff ([59]) |
 
 ## Review Findings
 

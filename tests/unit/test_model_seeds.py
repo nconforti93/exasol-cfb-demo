@@ -231,9 +231,9 @@ def test_only_power_tiers_are_flagged_as_power_conferences() -> None:
 # --- CONFERENCE_CHAMPIONSHIP -------------------------------------------------------------------
 
 
-def test_championship_seasons_have_twelve_rows_that_start_in_1992_or_later() -> None:
+def test_championship_seasons_have_thirteen_rows_that_start_in_1992_or_later() -> None:
     rows = table("013_conference_championship.sql")
-    assert len(rows) == 12
+    assert len(rows) == 13
     assert all(row["FIRST_SEASON"] >= 1992 for row in rows)
     for ranges in by_group(rows, "CONFERENCE_NAME").values():
         assert_disjoint(ranges)
@@ -243,7 +243,7 @@ def test_championship_seasons_match_the_review() -> None:
     ranges = by_group(table("013_conference_championship.sql"), "CONFERENCE_NAME")
     assert ranges["SEC"] == [(1992, None)]
     assert sorted(ranges["Big 12"]) == [(1996, 2010), (2017, None)]
-    assert ranges["Pac-12"] == [(2011, 2023)]
+    assert sorted(ranges["Pac-12"], key=lambda r: r[0]) == [(2011, 2023), (2026, None)]
     assert ranges["Western Athletic"] == [(1996, 1998)]
     assert ranges["Sun Belt"] == [(2018, None)]
     assert set(ranges) == {

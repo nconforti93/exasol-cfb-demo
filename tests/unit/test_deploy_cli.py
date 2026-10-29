@@ -6,6 +6,7 @@ from typing import Any, Never
 
 import pytest
 
+from engine import deploy as sim_deploy
 from loader import target_config
 from loader.runlock import HeldLock, RunLockRefused
 from model import deploy as model_deploy
@@ -104,10 +105,35 @@ class ModelCalls:
         return ModelReport(None, 42, False, ("model line", MODEL_LINE))  # type: ignore[arg-type]
 
 
+class SimCalls:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, str, HeldLock | None, str]] = []
+
+    def __call__(
+        self,
+        connection: Any,
+        namespace: Namespace,
+        *,
+        lock: HeldLock | None = None,
+        target_name: str = "local",
+    ) -> sim_deploy.SimReport:
+        self.calls.append((connection, namespace.prefix, lock, target_name))
+        if lock is not None:
+            lock.detail = "PROBE_CFB_SIM: 11 tables, 15 views"
+        return sim_deploy.SimReport(None, "test", 42, ("sim line",))  # type: ignore[arg-type]
+
+
 @pytest.fixture(autouse=True)
 def model_calls(monkeypatch: pytest.MonkeyPatch) -> ModelCalls:
     calls = ModelCalls()
     monkeypatch.setattr(model_deploy, "deploy_model", calls)
+    return calls
+
+
+@pytest.fixture(autouse=True)
+def sim_calls(monkeypatch: pytest.MonkeyPatch) -> SimCalls:
+    calls = SimCalls()
+    monkeypatch.setattr(sim_deploy, "deploy_sim", calls)
     return calls
 
 
@@ -166,8 +192,8 @@ def test_main_deploys_the_loader_after_the_virtual_schema(
     assert db.closed
 
 
-def test_the_model_is_deployed_last_on_the_same_connection(
-    capsys: pytest.CaptureFixture[str], model_calls: ModelCalls
+def test_the_model_and_sim_are_deployed_in_order_on_the_same_connection(
+    capsys: pytest.CaptureFixture[str], model_calls: ModelCalls, sim_calls: SimCalls
 ) -> None:
     db = ClosableDatabase()
     code = deploy_cli.main(
@@ -178,8 +204,12 @@ def test_the_model_is_deployed_last_on_the_same_connection(
     out = capsys.readouterr().out
     assert code == deploy_cli.EXIT_OK
     assert model_calls.calls == [(db, "PROBE_", None)]
+    assert sim_calls.calls == [(db, "PROBE_", None, "local")]
     assert (
-        out.index("load plan in PROBE_CFB_META") < out.index("model line") < out.index(MODEL_LINE)
+        out.index("load plan in PROBE_CFB_META")
+        < out.index("model line")
+        < out.index(MODEL_LINE)
+        < out.index("sim line")
     )
     assert db.closed
 
@@ -514,7 +544,7 @@ def test_a_redeploy_deploys_the_model_under_the_same_lock(
     assert held is not None and held.run_id == 31 and held.kind == "DEPLOY"
     assert len([line for line in db.log if "('acquire'" in line]) == 1
     release = next(line for line in db.log if "('release', 'DONE', 31" in line)
-    assert "'deployed plan " in release and "; PROBE_CFB_MODEL: 1 tables, 2 views'" in release
+    assert "'deployed plan " in release and "; PROBE_CFB_SIM: 11 tables, 15 views'" in release
     out = capsys.readouterr().out
     assert out.index("load plan in PROBE_CFB_META", out.index("run lock: DEPLOY run 31")) < (
         out.index(MODEL_LINE, out.index("run lock: DEPLOY run 31"))
