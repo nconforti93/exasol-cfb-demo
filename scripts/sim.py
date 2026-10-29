@@ -13,7 +13,7 @@
                                   [--lose next|GAME_ID[,...]] [--target ...]
 
     make sim [TARGET=local|aws] [ARGS="--prefix TEST_"]
-    make sim-fit [TARGET=local|aws] [ARGS="--dry-run"]
+    make sim-fit [TARGET=local|aws] [ARGS="--dry-run|--report"]
     make simulate SEASON=2026 WEEK=7 [SIMS=100000] [BATCH=5000] [SEED=..] [LABEL=..] [TARGET=..]
     make what-if TEAM=Auburn [RUN_ID=..] WIN=next [LOSE=..] [TARGET=..]
 
@@ -403,9 +403,17 @@ class _Command:
         connection = self._connector(self._resolve(self._args.target, dsn=self._args.dsn))
         try:
             games, ratings = fit_module.read_inputs(connection, namespace.model_schema)
+            current_lines = (
+                _current_scorecard_lines(connection, namespace) if self._args.report else []
+            )
         finally:
             connection.close()
         table = fit_module.build_table(games, ratings)
+        if self._args.report:
+            for line in (*fit_module.report_lines(table), *current_lines):
+                _print(line)
+            _print("report only: seed unchanged; 0 CFBD calls")
+            return EXIT_OK
         result = fit_module.fit_constants(table)
         for line in fit_module.summary_lines(result, table):
             _print(line)
@@ -416,6 +424,49 @@ class _Command:
         output.write_text(fit_module.render_seed(result), encoding="utf-8")
         _print(f"seed written: {output}; review the diff, then make sim to deploy it")
         return EXIT_OK
+
+
+def _current_scorecard_lines(connection: Any, namespace: Namespace) -> list[str]:
+    """Stored 2026 prediction evidence next to the historic holdout report."""
+    scorecard = qualified_name(namespace.sim_schema, "PREDICTION_SCORECARD")
+    calibration = qualified_name(namespace.sim_schema, "PREDICTION_CALIBRATION")
+    season_row = connection.execute(
+        f"SELECT MAX(SEASON) FROM {scorecard} WHERE WEEK_SEQ IS NULL "
+        "AND POPULATION = 'FBS_INVOLVED'"
+    ).fetchone()
+    if season_row is None or season_row[0] is None:
+        return ["Current prediction scorecard: no graded season yet"]
+    season = int(str(season_row[0]))
+    lines = [
+        f"{season} stored prediction scorecard (FBS involved; advance and reconstructed separate):"
+    ]
+    rows = connection.execute(
+        f"SELECT FREEZE_KIND, GAMES_GRADED, CORRECT, WRONG, MAE_MARGIN, BRIER, LINE_BRIER "
+        f"FROM {scorecard} WHERE SEASON = {season} AND WEEK_SEQ IS NULL "
+        "AND POPULATION = 'FBS_INVOLVED' "
+        "AND FREEZE_KIND IN ('IN_ADVANCE', 'RECONSTRUCTED') ORDER BY FREEZE_KIND"
+    ).fetchall()
+    for kind, games, correct, wrong, mae, brier, line_brier in rows:
+        line_text = "—" if line_brier is None else f"{float(line_brier):.5f}"
+        lines.append(
+            f"  {kind}: {int(games):,} graded, {int(correct):,}-{int(wrong):,}, "
+            f"margin MAE {float(mae):.3f}, Brier {float(brier):.5f}, "
+            f"stored-line Brier {line_text}"
+        )
+    buckets = connection.execute(
+        f"SELECT FREEZE_KIND, BUCKET, GAMES_GRADED, MEAN_PICK_WIN_PROB, PICK_WIN_SHARE "
+        f"FROM {calibration} WHERE SEASON = {season} AND POPULATION = 'FBS_INVOLVED' "
+        "AND FREEZE_KIND IN ('IN_ADVANCE', 'RECONSTRUCTED') "
+        "ORDER BY FREEZE_KIND, BUCKET"
+    ).fetchall()
+    lines.append(f"{season} stored pick-calibration rows:")
+    for kind, bucket, games, predicted, observed in buckets:
+        lines.append(
+            f"  {kind} {int(bucket) / 10:.1f}-{(int(bucket) + 1) / 10:.1f}: "
+            f"n={int(games):,}, predicted={float(predicted):.3f}, "
+            f"observed={float(observed):.3f}"
+        )
+    return lines
 
 
 def _common() -> argparse.ArgumentParser:
@@ -474,6 +525,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     fit_command.add_argument(
         "--dry-run", action="store_true", help="print the fit and write nothing"
+    )
+    fit_command.add_argument(
+        "--report",
+        action="store_true",
+        help="print the 2024-2025 holdout and current scorecard; write nothing",
     )
     return parser
 

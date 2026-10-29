@@ -32,7 +32,7 @@ Light, demo-first replan of 2026-10-23 (decision-log [44]). Details, files, test
 
 ### Group S3-A
 - [x] 3.1 Refresh steps 200 `PREDICT` and 300 `SIMULATE`, per-target defaults, killed-run cleanup, `make deploy` includes the sim. TEST_ replay ran the full chain; real local 2025 replay ran all steps at zero calls; AWS registration passed. Real local 2026 replay needs a missing metrics recording.
-- [ ] 3.2 Calibration report (`make sim-fit ARGS=--report`), reported, never gated
+- [x] 3.2 Calibration report (`make sim-fit ARGS=--report`): AWS read-only holdout and 2026 scorecard reported, no review threshold triggered, seed unchanged, zero CFBD calls; 6 focused unit tests passed
 - [x] 3.3 CFP rules check on cfp.org before about 2026-11-03 (official sources confirm the seed values; source and cutoff caveat recorded)
 - [ ] 3.5 (optional) BucketFS parameter file as a showcase beat; never a dependency
 - [ ] 3.6 (only if triggered by 1.5 or 2.3) What-if storage fallback: `PARTITION BY RUN_ID`, or layout C

@@ -181,6 +181,7 @@ class GameRow(NamedTuple):
     home_post: Decimal | float | None
     away_post: Decimal | float | None
     spread: Decimal | float | None
+    line_home_prob: Decimal | float | None = None
 
 
 class SpRow(NamedTuple):
@@ -217,6 +218,13 @@ class FitTable:
     home_def: Array
     away_off: Array
     away_def: Array
+    line_probability: Array = field(default_factory=lambda: np.array([], dtype=float))
+
+    def __post_init__(self) -> None:
+        if self.line_probability.size == 0:
+            object.__setattr__(self, "line_probability", np.full(len(self), np.nan))
+        elif self.line_probability.shape != self.margin.shape:
+            raise ValueError("line probability must have one value per game")
 
     def where(self, mask: Array) -> FitTable:
         return FitTable(**{name: values[mask] for name, values in self.__dict__.items()})
@@ -245,11 +253,18 @@ class Evaluation:
 
     games: int
     margin_rmse: float
+    margin_mae: float
     margin_bias: float
+    margin_bias_se: float
     brier: float
     line_games: int
     line_rmse: float
+    line_mae: float
     model_rmse_on_line_games: float
+    model_mae_on_line_games: float
+    line_prob_games: int
+    line_brier: float
+    model_brier_on_line_games: float
     buckets: tuple[tuple[float, int, float, float], ...]
 
 
@@ -351,12 +366,14 @@ def build_table(games: Sequence[GameRow], ratings: Sequence[SpRow]) -> FitTable:
     points_home = np.array([g.home_points for g in played], dtype=float)
     points_away = np.array([g.away_points for g in played], dtype=float)
     spreads = [number(g.spread) for g in played]
+    line_probabilities = [number(g.line_home_prob) for g in played]
     return FitTable(
         season=np.array([g.season for g in played], dtype=int),
         home_flag=np.array([0.0 if g.is_neutral else 1.0 for g in played]),
         margin=points_home - points_away,
         total=points_home + points_away,
         spread=np.array([np.nan if s is None else s for s in spreads]),
+        line_probability=np.array([np.nan if p is None else p for p in line_probabilities]),
         home_is_fbs=np.array([g.home_class == FBS for g in played], dtype=bool),
         away_is_fbs=np.array([g.away_class == FBS for g in played], dtype=bool),
         home_elo=home_elo,
@@ -605,29 +622,52 @@ def evaluate(table: FitTable, values: dict[str, float]) -> Evaluation:
     sigma = values["SIGMA_1"]
     p_home = np.array([_win_probability(float(m), sigma) for m in mu])
     won = (table.margin > 0).astype(float)
+    decided = table.margin != 0
     error = table.margin - mu
     on_line = np.isfinite(table.spread)
+    on_line_probability = np.isfinite(table.line_probability) & decided
     line_error = table.margin[on_line] + table.spread[on_line]
     edges = np.linspace(0.0, 1.0, CALIBRATION_BUCKETS + 1)
     index = np.minimum(np.digitize(p_home, edges[1:-1]), CALIBRATION_BUCKETS - 1)
     buckets = tuple(
         (
             float(edges[b]),
-            int((index == b).sum()),
-            float(p_home[index == b].mean()) if (index == b).any() else 0.0,
-            float(won[index == b].mean()) if (index == b).any() else 0.0,
+            int(((index == b) & decided).sum()),
+            float(p_home[(index == b) & decided].mean()) if ((index == b) & decided).any() else 0.0,
+            float(won[(index == b) & decided].mean()) if ((index == b) & decided).any() else 0.0,
         )
         for b in range(CALIBRATION_BUCKETS)
     )
     return Evaluation(
         games=len(table),
         margin_rmse=float(np.sqrt(np.mean(error**2))),
+        margin_mae=float(np.mean(np.abs(error))),
         margin_bias=float(error.mean()),
-        brier=float(np.mean((p_home - won) ** 2)),
+        margin_bias_se=float(np.std(error, ddof=1) / math.sqrt(len(table)))
+        if len(table) > 1
+        else float("nan"),
+        brier=float(np.mean((p_home[decided] - won[decided]) ** 2))
+        if decided.any()
+        else float("nan"),
         line_games=int(on_line.sum()),
         line_rmse=float(np.sqrt(np.mean(line_error**2))) if on_line.any() else float("nan"),
+        line_mae=float(np.mean(np.abs(line_error))) if on_line.any() else float("nan"),
         model_rmse_on_line_games=float(np.sqrt(np.mean(error[on_line] ** 2)))
         if on_line.any()
+        else float("nan"),
+        model_mae_on_line_games=float(np.mean(np.abs(error[on_line])))
+        if on_line.any()
+        else float("nan"),
+        line_prob_games=int(on_line_probability.sum()),
+        line_brier=float(
+            np.mean((table.line_probability[on_line_probability] - won[on_line_probability]) ** 2)
+        )
+        if on_line_probability.any()
+        else float("nan"),
+        model_brier_on_line_games=float(
+            np.mean((p_home[on_line_probability] - won[on_line_probability]) ** 2)
+        )
+        if on_line_probability.any()
         else float("nan"),
         buckets=buckets,
     )
@@ -713,12 +753,74 @@ def _quality_lines(title: str, result: Evaluation) -> list[str]:
     return lines
 
 
+def bucket_tolerance(predicted: float, games: int) -> float:
+    """Three binomial standard errors around one bucket's mean prediction."""
+    return 3 * math.sqrt(predicted * (1 - predicted) / games) if games else float("nan")
+
+
+def report_lines(table: FitTable) -> list[str]:
+    """Out-of-sample 2024-25 score-model review; observations never block deployment."""
+    train = table.where((table.season >= FIRST_SEASON) & (table.season < HOLDOUT_FIRST_SEASON))
+    held_out = table.where(
+        (table.season >= HOLDOUT_FIRST_SEASON)
+        & (table.season <= LAST_SEASON)
+        & table.home_is_fbs
+        & table.away_is_fbs
+    )
+    if len(train) == 0 or len(held_out) == 0:
+        raise FitError("report needs 2014-2023 training games and 2024-2025 FBS holdout games")
+    trained = fit_constants(train)
+    scored = evaluate(held_out, trained.values)
+    lines = [
+        "Calibration report (stored data only, 0 CFBD calls; observations are not gates)",
+        f"2014-2023 fit: {len(train):,} completed games; "
+        f"2024-2025 holdout: {scored.games:,} FBS-vs-FBS regular-season games, one week ahead",
+        f"holdout margin: MAE {scored.margin_mae:.3f} points, RMSE {scored.margin_rmse:.3f}, "
+        f"bias {scored.margin_bias:+.3f} ± {3 * scored.margin_bias_se:.3f} (3 SE)",
+        f"holdout home-win Brier: {scored.brier:.5f} (ties excluded)",
+        f"stored spread comparison ({scored.line_games:,} same games): model MAE "
+        f"{scored.model_mae_on_line_games:.3f}, line MAE {scored.line_mae:.3f} points",
+        f"stored line-probability comparison ({scored.line_prob_games:,} same games): "
+        f"model Brier {scored.model_brier_on_line_games:.5f}, "
+        f"line Brier {scored.line_brier:.5f}",
+        "ten home-win probability buckets (predicted, observed, 3-SE tolerance):",
+    ]
+    outside: list[str] = []
+    for low, games, predicted, observed in scored.buckets:
+        tolerance = bucket_tolerance(predicted, games)
+        flag = games > 0 and abs(observed - predicted) > tolerance
+        if flag:
+            outside.append(f"{low:.1f}-{low + 0.1:.1f}")
+        lines.append(
+            f"  {low:.1f}-{low + 0.1:.1f}: n={games:,}, predicted={predicted:.3f}, "
+            f"observed={observed:.3f}, ±{tolerance:.3f}" + (" REVIEW" if flag else "")
+        )
+    lines.append(
+        f"Elo-lag residual variance on {trained.lag_count:,} training games "
+        f"(TAU={trained.values['TAU']:.4f}, {trained.origins['TAU']}):"
+    )
+    for k, variance in enumerate(trained.lag_variance):
+        lines.append(
+            f"  k={k}: observed {variance:.2f}, "
+            f"TAU line {trained.lag_variance[0] + trained.values['TAU'] ** 2 * k:.2f}"
+        )
+    triggers = []
+    if outside:
+        triggers.append("bucket(s) outside 3 SE: " + ", ".join(outside))
+    if abs(scored.margin_bias) > 1.5:
+        triggers.append(f"|bias| > 1.5 points ({scored.margin_bias:+.3f})")
+    if scored.line_prob_games and (scored.model_brier_on_line_games - scored.line_brier) > 0.03:
+        triggers.append("model Brier exceeds stored line by > 0.03")
+    lines.append("review: " + ("; ".join(triggers) if triggers else "no threshold triggered"))
+    return lines
+
+
 GAME_QUERY = """
 SELECT "SEASON", "WEEK_SEQ", "START_AT", "GAME_ID", "HOME_TEAM_ID", "AWAY_TEAM_ID",
        "HOME_CLASSIFICATION", "AWAY_CLASSIFICATION", "IS_NEUTRAL_SITE", "HOME_POINTS",
        "AWAY_POINTS",
        "HOME_PREGAME_ELO", "AWAY_PREGAME_ELO", "HOME_POSTGAME_ELO", "AWAY_POSTGAME_ELO",
-       "PREGAME_SPREAD"
+       "PREGAME_SPREAD", "HOME_PREGAME_WIN_PROB"
   FROM "{model}"."GAME"
  WHERE "SEASON" BETWEEN {first} AND {last}
    AND "SEASON_TYPE" = 'regular'
@@ -760,6 +862,7 @@ def read_inputs(
             r[13],
             r[14],
             r[15],
+            r[16],
         )
         for r in game_rows
     ]

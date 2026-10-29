@@ -59,3 +59,41 @@ Auburn's `ODDS_MOVEMENT` rows show P(CFP) 1.0705% at week 6 (`NEW`), 4.9287% at 
 `PREDICTION_GRADED` has 56 reconstructed week-8 FBS-involving games with results: 35 correct and 21 wrong. The 2026 `FBS_INVOLVED` season scorecard has 566 graded reconstructed predictions, 434 correct, 132 wrong and Brier 0.15857. All 56 week-9 FBS-involving predictions remain `IN_ADVANCE`, frozen at 2026-10-26 09:32:38 UTC. The catalog check used `EXA_ALL_COLUMNS`: all required columns of 13 Phase 5 hand-off objects are present, and all 30 columns of `PREDICTION` are exposed by `PREDICTION_GRADED` (41 columns total).
 
 `make quota TARGET=aws` read 245/400 used calls and 75 ledger calls of room both before and after the deploy, the two runs and the read-only checks: **zero CFBD calls**.
+
+## Calibration report (2026-10-26)
+
+`make sim-fit TARGET=aws ARGS=--report` read stored model and simulation data. It refitted on 8,130 completed games from 2014–2023 and scored 1,514 FBS-vs-FBS regular-season games from 2024–2025 one week ahead. Report mode did not rewrite the score-parameter seed and made zero CFBD calls. These are observations, not deployment gates.
+
+| Holdout measure | Model | Stored line |
+|---|---:|---:|
+| Margin mean absolute error | 13.082 points | 12.033 points |
+| Home-win Brier score | 0.18728 | 0.17670 |
+
+The model's margin RMSE was 16.468 points. Its mean bias was +1.146 points with a 3-SE tolerance of ±1.267 points. The absolute bias was below the report's 1.5-point review trigger, and its Brier score was 0.01058 above the stored line, below the 0.03 review trigger.
+
+| Predicted home-win probability | Games | Mean prediction | Observed home-win share | 3-SE tolerance |
+|---|---:|---:|---:|---:|
+| 0.0–0.1 | 24 | 0.064 | 0.125 | ±0.150 |
+| 0.1–0.2 | 81 | 0.154 | 0.160 | ±0.120 |
+| 0.2–0.3 | 119 | 0.252 | 0.277 | ±0.119 |
+| 0.3–0.4 | 149 | 0.352 | 0.376 | ±0.117 |
+| 0.4–0.5 | 188 | 0.450 | 0.484 | ±0.109 |
+| 0.5–0.6 | 220 | 0.550 | 0.532 | ±0.101 |
+| 0.6–0.7 | 246 | 0.651 | 0.638 | ±0.091 |
+| 0.7–0.8 | 198 | 0.749 | 0.788 | ±0.092 |
+| 0.8–0.9 | 164 | 0.846 | 0.896 | ±0.084 |
+| 0.9–1.0 | 125 | 0.944 | 0.960 | ±0.062 |
+
+All ten buckets were within their 3-SE tolerance. The fitted Elo-lag variance slope was `TAU=2.8476`. Observed residual variances for lag `k=0..6` were 270.08, 277.77, 285.03, 291.49, 304.10, 309.45 and 318.29; the fitted line gave 270.08, 278.19, 286.29, 294.40, 302.51, 310.62 and 318.73.
+
+The stored 2026 `FBS_INVOLVED` prediction scorecard currently has reconstructed picks only: 566 graded, 434 correct and 132 wrong, margin MAE 13.576, model Brier 0.15857 and stored-line Brier 0.13594. Its five populated calibration buckets were:
+
+| Predicted win probability | Games | Mean prediction | Observed win share |
+|---|---:|---:|---:|
+| 0.5–0.6 | 128 | 0.552 | 0.578 |
+| 0.6–0.7 | 101 | 0.647 | 0.673 |
+| 0.7–0.8 | 97 | 0.752 | 0.763 |
+| 0.8–0.9 | 97 | 0.847 | 0.835 |
+| 0.9–1.0 | 143 | 0.957 | 0.958 |
+
+The 56 week-9 picks were frozen in advance but have not been graded yet. The report printed `review: no threshold triggered`; it did not change the model parameters.

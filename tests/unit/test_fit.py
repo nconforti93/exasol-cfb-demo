@@ -8,8 +8,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from engine import fit
+from scripts import sim as sim_cli
+from vs.host import target
 
 SEED_FILE = Path(fit.SEED_PATH)
 N_GAMES = 20_000
@@ -95,6 +98,77 @@ def test_tau_falls_back_to_an_assumed_value_when_variance_does_not_grow() -> Non
     result = fit.fit_constants(flat)
     assert result.values["TAU"] == fit.ASSUMED_TAU
     assert result.origins["TAU"] == "ASSUMED"
+
+
+def test_report_metrics_match_hand_computed_margin_line_and_probability_scores() -> None:
+    n = 4
+    zeros = np.zeros(n)
+    nan = np.full(n, np.nan)
+    elo = np.full((n, fit.LAGS + 1), 1500.0)
+    table = fit.FitTable(
+        season=np.full(n, 2024),
+        home_flag=zeros,
+        margin=np.array([1.0, -1.0, 3.0, -3.0]),
+        total=zeros,
+        spread=np.array([-1.0, 1.0, -2.0, 2.0]),
+        home_is_fbs=np.ones(n, dtype=bool),
+        away_is_fbs=np.ones(n, dtype=bool),
+        home_elo=elo,
+        away_elo=elo,
+        home_sp=zeros,
+        away_sp=zeros,
+        home_off=nan,
+        home_def=nan,
+        away_off=nan,
+        away_def=nan,
+        line_probability=np.array([0.6, 0.4, 0.7, 0.3]),
+    )
+    values = {
+        "HFA": 0.0,
+        "B_SP": 0.0,
+        "B_ELO": 0.0,
+        "ELO_CENTER": 1500.0,
+        "B_ELO_ONLY": 0.0,
+        "B_SP_ONLY": 0.0,
+        "NON_FBS_RATING": -25.0,
+        "SIGMA_1": 15.0,
+    }
+    scored = fit.evaluate(table, values)
+    assert scored.margin_mae == 2.0 and scored.margin_bias == 0.0
+    assert scored.line_mae == 0.5 and scored.model_mae_on_line_games == 2.0
+    assert scored.brier == 0.25
+    assert abs(scored.line_brier - 0.125) < 1e-12
+    assert scored.model_brier_on_line_games == 0.25
+    assert scored.buckets[5] == (0.5, 4, 0.5, 0.5)
+    assert fit.bucket_tolerance(0.5, 4) == 0.75
+
+
+def test_report_mode_prints_without_writing_the_seed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    class Connection:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = Connection()
+    monkeypatch.setattr(sim_cli.fit_module, "read_inputs", lambda *_: ([], []))
+    monkeypatch.setattr(sim_cli.fit_module, "build_table", lambda *_: generated_table(4))
+    monkeypatch.setattr(sim_cli.fit_module, "report_lines", lambda *_: ["holdout report"])
+    monkeypatch.setattr(sim_cli, "_current_scorecard_lines", lambda *_: ["current scorecard"])
+    output = tmp_path / "seed.sql"
+
+    def resolve(name: str | None, *, dsn: str | None = None) -> target.Target:
+        return target.Target("local", "localhost", 8563, "sys", tmp_path, target.TLS_UNVERIFIED_LOCAL)
+
+    code = sim_cli.main(
+        ["fit", "--report", "--output", str(output)],
+        connector=lambda _: connection,
+        resolve=resolve,
+    )
+    assert code == sim_cli.EXIT_OK and connection.closed and not output.exists()
+    assert "holdout report\ncurrent scorecard\nreport only: seed unchanged" in capsys.readouterr().out
 
 
 def test_elo_series_uses_the_postgame_elo_of_the_last_game_and_hides_the_first_pregame_early() -> (
