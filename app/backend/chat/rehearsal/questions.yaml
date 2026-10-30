@@ -225,10 +225,9 @@ questions:
     oracle:
       sql: >-
         SELECT "WINNER_SCHOOL", "ALL_TIME_RANK", "ALL_TIME_FROM_SEASON" FROM {API}."UPSETS"
-        WHERE "IS_UPSET"
-        AND "SEASON" = (SELECT "AS_OF_SEASON" FROM {API}."CURRENT_POINT")
-        AND "WEEK" = (SELECT "AS_OF_WEEK" FROM {API}."CURRENT_POINT")
-        ORDER BY "RANK_MAGNITUDE" DESC LIMIT 1
+        WHERE "SEASON" = (SELECT "AS_OF_SEASON" FROM {API}."CURRENT_POINT")
+        AND "WEEK_SEQ" = (SELECT "AS_OF_WEEK_SEQ" FROM {API}."CURRENT_POINT")
+        ORDER BY "UPSET_MAGNITUDE" DESC LIMIT 1
       in_results: {WINNER_SCHOOL: name, ALL_TIME_RANK: int}
       in_answer: {WINNER_SCHOOL: name, ALL_TIME_RANK: rank, ALL_TIME_FROM_SEASON: season}
       answer_any: ["since"]
@@ -241,10 +240,9 @@ questions:
               purpose: "the biggest upset of the last played week"
               sql: >-
                 SELECT "WINNER_SCHOOL", "ALL_TIME_RANK", "ALL_TIME_FROM_SEASON" FROM "UPSETS"
-                WHERE "IS_UPSET"
-                AND "SEASON" = (SELECT "AS_OF_SEASON" FROM "CURRENT_POINT")
-                AND "WEEK" = (SELECT "AS_OF_WEEK" FROM "CURRENT_POINT")
-                ORDER BY "RANK_MAGNITUDE" DESC LIMIT 1
+                WHERE "SEASON" = (SELECT "AS_OF_SEASON" FROM "CURRENT_POINT")
+                AND "WEEK_SEQ" = (SELECT "AS_OF_WEEK_SEQ" FROM "CURRENT_POINT")
+                ORDER BY "UPSET_MAGNITUDE" DESC LIMIT 1
       - answer: >-
           The biggest upset was {t1.row.WINNER_SCHOOL}. It ranks #{t1.row.ALL_TIME_RANK|int} all-time,
           since {t1.row.ALL_TIME_FROM_SEASON|int}.
@@ -333,7 +331,7 @@ questions:
       sql: >-
         SELECT o."SCHOOL", o."P_IN_CFP" FROM {API}."RANKINGS" r
         JOIN {API}."PLAYOFF_ODDS" o ON o."TEAM_ID" = r."TEAM_ID"
-        WHERE r."POLL_CODE" = '{poll}' AND r."RANK" <= 10
+        WHERE r."POLL_CODE" = '{poll}' AND r."POLL_RANK" <= 10
         AND r."SEASON" = (SELECT "AS_OF_SEASON" FROM {API}."CURRENT_POINT")
         AND r."WEEK_SEQ" = (SELECT "AS_OF_WEEK_SEQ" FROM {API}."CURRENT_POINT")
         AND o."AS_OF_SEASON" = r."SEASON"
@@ -350,7 +348,7 @@ questions:
               sql: >-
                 SELECT o."SCHOOL", o."P_IN_CFP" FROM "RANKINGS" r
                 JOIN "PLAYOFF_ODDS" o ON o."TEAM_ID" = r."TEAM_ID"
-                WHERE r."POLL_CODE" = '{poll}' AND r."RANK" <= 10
+                WHERE r."POLL_CODE" = '{poll}' AND r."POLL_RANK" <= 10
                 AND r."SEASON" = (SELECT "AS_OF_SEASON" FROM "CURRENT_POINT")
                 AND r."WEEK_SEQ" = (SELECT "AS_OF_WEEK_SEQ" FROM "CURRENT_POINT")
                 AND o."AS_OF_SEASON" = r."SEASON"

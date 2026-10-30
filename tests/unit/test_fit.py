@@ -153,14 +153,16 @@ def test_report_mode_prints_without_writing_the_seed(
             self.closed = True
 
     connection = Connection()
-    monkeypatch.setattr(sim_cli.fit_module, "read_inputs", lambda *_: ([], []))
-    monkeypatch.setattr(sim_cli.fit_module, "build_table", lambda *_: generated_table(4))
-    monkeypatch.setattr(sim_cli.fit_module, "report_lines", lambda *_: ["holdout report"])
+    monkeypatch.setattr(fit, "read_inputs", lambda *_: ([], []))
+    monkeypatch.setattr(fit, "build_table", lambda *_: generated_table(4))
+    monkeypatch.setattr(fit, "report_lines", lambda *_: ["holdout report"])
     monkeypatch.setattr(sim_cli, "_current_scorecard_lines", lambda *_: ["current scorecard"])
     output = tmp_path / "seed.sql"
 
     def resolve(name: str | None, *, dsn: str | None = None) -> target.Target:
-        return target.Target("local", "localhost", 8563, "sys", tmp_path, target.TLS_UNVERIFIED_LOCAL)
+        return target.Target(
+            "local", "localhost", 8563, "sys", tmp_path, target.TLS_UNVERIFIED_LOCAL
+        )
 
     code = sim_cli.main(
         ["fit", "--report", "--output", str(output)],
@@ -168,7 +170,9 @@ def test_report_mode_prints_without_writing_the_seed(
         resolve=resolve,
     )
     assert code == sim_cli.EXIT_OK and connection.closed and not output.exists()
-    assert "holdout report\ncurrent scorecard\nreport only: seed unchanged" in capsys.readouterr().out
+    assert (
+        "holdout report\ncurrent scorecard\nreport only: seed unchanged" in capsys.readouterr().out
+    )
 
 
 def test_elo_series_uses_the_postgame_elo_of_the_last_game_and_hides_the_first_pregame_early() -> (

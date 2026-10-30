@@ -20,5 +20,5 @@ def test_preview_file_is_exact_catalog_render() -> None:
 def test_live_schema_deploys_only_quota() -> None:
     api, live = deploy.prepare(Namespace("TEST_"))
     assert {item.name for item in live} == {"QUOTA"}
-    assert len(api) == 20
+    assert len(api) == 33
     assert all(item.schema == "TEST_CFB_API_LIVE" for item in live)

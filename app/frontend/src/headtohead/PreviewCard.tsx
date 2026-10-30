@@ -71,7 +71,7 @@ interface PreviewControlsProps {
 function PreviewControls({ plan, showing, fetching, onSpend }: PreviewControlsProps) {
   if (plan.game_basis === 'none') return null
   const calls = plan.plan.live_calls
-  const block = blockOf(plan)
+  const block = calls === 0 ? null : blockOf(plan)
   const running = runningOf(plan.plan.source)
   const again = (
     <SpendButton
