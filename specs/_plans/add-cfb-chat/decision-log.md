@@ -63,7 +63,7 @@ The independent review (`review.md`) approved the plan with changes: ten major f
 **A:** Accept.
 - The question and app state are added to history together with the first assistant reply. If a turn stops before the first reply, nothing is appended and history stays valid.
 - A refusal appends no message with empty content.
-- Follow the skill's fallback echo rules: drop the `thinking` and `tool_use` blocks that come before the final fallback block, and don't run those tools.
+- Follow the skill's fallback echo rules: drop the `thinking` and `tool_use` blocks that come before the final fallback block, and don't run those tools. (Amended by [28]: the `fallback` blocks themselves stay in place; blank text blocks are dropped.)
 - Take back partial streamed text after a refusal.
 - Add a default case for unknown stop reasons.
 - Turn the history check into a full API-conformance validator, and run it on every request the scripted model sees.
@@ -581,6 +581,28 @@ The independent review (`review.md`) approved the plan with changes: ten major f
 | A14 | An `IMPORT` subselect in `FROM` is refused for the chat user (by privilege, or as a syntax error where the form does not exist) | The role-boundary scenario accepts either; task 3.1 records which, here |
 | A15 | pyexasol's `abort_query` stops a running chat statement within about a second, or closes the session | The cancel-during-statement scenario (2 s bound); the pool replaces a closed session |
 | A16 | A streamed response at `medium` never stays silent for 60 s (event or ping gaps while the model thinks), so the read timeout does not cut a healthy answer | Task 7.2 records the longest gap between stream events; if it nears 60 s, raise `CHAT_API_TIMEOUT` (the turn deadline still bounds the wall clock) |
+
+## Implementation notes
+
+### Tasks 1.2 and 1.3 (2026-10-23)
+
+- **A2 checked** against the pricing page (`https://platform.claude.com/docs/en/about-claude/pricing`, read 2026-10-23) and the refusals page. The prices match the skill's table, with no change: Opus 5.5 $4 / $20, cache write $5, cache read $0.20; Opus 5 and Opus 4.8 $5 / $25, cache write $6.25, cache read $0.50. `prices.py` also carries the 1-hour cache writes ($8 / $10 / $10), so a usage with `cache_creation.ephemeral_1h_input_tokens` is priced correctly. The chat sets neither fast mode nor `inference_geo`.
+- **Fallback routing is not published** ("The routing is applied server-side and is not published for each model"). The table keeps the expected targets `claude-opus-5` and `claude-opus-4-8`. A served model outside the table is priced at the highest value of each column and reported (`unknown_models`) for the turn log's warning.
+- **Billing nuances, both on the safe side.** A decline before any output is billed only in the categories `bio`, `frontier_llm` and `reasoning_extraction`. Fallback credit offsets the fallback's cache miss. The budget prices every `usage.iterations` entry, so it can count high, never low. The top-level usage describes only the serving attempt and is not added again.
+- **A difference for tasks 1.6, 1.9 and 2.1 (not changed here).** The refusals page's echo table says the `fallback` block is to be kept "exactly where it appeared. The API uses its position to validate the thinking blocks around it, so a request that echoes thinking blocks from both sides of the boundary is rejected if the block is omitted or moved." The skill says "keep or drop", and `chat/conversation` and conformance rule 7 drop it. Dropping it is safe only while no thinking block from before the boundary is echoed, which the echo rule already ensures. Keeping it matches the page. Decision for the orchestrator.
+- **The guard (`sqlguard`) is stricter than the spec's letter in four places.** All of them only refuse more:
+  - any bare `INTO` word is refused, not only `INTO TABLE`, so no separator can split the pair;
+  - the live schema is matched as a substring of folded names, so any prefix (`TEST_`, `PROBE_`) matches;
+  - text that two SQL lexers could read differently is refused: a `/*` inside a block comment, a line break other than a newline in a `--` comment, control, direction and invisible characters;
+  - the text sent is cut before the trailing `;`, so a comment after it is dropped. Removing only the `;` could merge `-` with a following `--` (`1-;-- c` would become `1--- c`).
+- **The spend file fails closed on reads too.** A line that does not parse, a last line without a newline, bytes that are not UTF-8 and a file lock not granted within 10 s all turn the process `spend_log_unwritable`, like a failed write: spend that cannot be proven is not available. A call still open when the process dies leaves no line, so at most the open reservations (2 turns × one worst case) can go unrecorded.
+
+### [28] The `fallback` block is echoed back exactly where it appeared (orchestrator, 2026-10-23)
+
+- **Decision:** when echoing an assistant response, keep the `fallback` block in its original position. Still drop the pre-boundary `thinking`/`redacted_thinking`/`tool_use` blocks, and still don't run their tools. This supersedes the "drop the marker from history" part of [22]. Conformance rule 7 and the echo rule (tasks 1.6, 1.9, 2.1) change to match. Task 3.4 refuses a `CHAT_MODEL` outside `prices.TABLE`.
+- **Alternatives:** drop the marker (the original [22]).
+- **Rationale:** the live refusals docs say the API uses the block's position to validate the thinking blocks around it, and that a request is rejected if the block is omitted or moved. Follow the documented contract.
+- **Promotes to ADR:** no
 
 ## Review Findings
 

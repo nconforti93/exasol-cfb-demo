@@ -296,7 +296,7 @@ run_turn(conv, question, app_state):                          # in a background 
   4. No message has empty content, and no text block is empty or only whitespace.
   5. Every `assistant` message with `tool_use` blocks is followed by a `user` message that starts with exactly one `tool_result` per `tool_use` id, in the same order, before any other block; a `tool_result` appears nowhere else.
   6. The last message is a `user` or `system` message (no assistant prefill on Opus 5.5).
-  7. No `assistant` message holds a `thinking`, `redacted_thinking` or `tool_use` block before a `fallback` block, and none holds a `fallback` block.
+  7. No `assistant` message holds a `thinking`, `redacted_thinking` or `tool_use` block before the last `fallback` block; only text and `fallback` blocks may precede it (decision [28]).
 - **Rules with state** (the scripted model runs these too, per conversation):
   8. `system` and `tools` are byte-identical to the conversation's first request.
   9. Every `assistant` message equals a response the model returned in this conversation (after the fallback echo rule), and every message before it equals, byte for byte, the messages of the request that produced that response.
