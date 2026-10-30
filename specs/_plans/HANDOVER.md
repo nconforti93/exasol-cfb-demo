@@ -2,18 +2,19 @@
 
 **Read this whole file before doing anything.** It is the single source of truth for the autonomous run and is kept current by whoever orchestrates. `ORCHESTRATOR-STATUS.md` next to it is the older, partly stale history log; when the two disagree, this file wins.
 
-**Living document.** Update **Current state** and **Log** after each milestone and bump "Last updated." Nico explicitly requested no Git commits until his final large commit, so leave handover and code changes uncommitted.
+**Living document.** Update **Current state** and **Log** after each milestone and bump "Last updated." On 2026-10-30 Nico asked for everything to be committed and merged into one tree: commit locally on `cfb-demo-integrated`, never push.
 
-Last updated: 2026-10-27 by Claude Code after the Phase 8 light replan and its Oct 31 items
+Last updated: 2026-10-30 by Claude Code after merging every phase into one tree (`cfb-demo-integrated`)
 
 ---
 
 ## 0. Resume here
 
+- **One tree now (2026-10-30).** Every phase branch (foundation, p2–p8) is committed and merged into branch `cfb-demo-integrated` in the main folder `~/Github/exasol-cfb-demo`; the sibling worktrees p2–p8 are removed (their branches remain). Venv: `UV_PROJECT_ENVIRONMENT=$HOME/.cache/cfbvenv`. The app runs from the main folder: `UV_PROJECT_ENVIRONMENT=$HOME/.cache/cfbvenv APP_LEDGER_PLAN=add-cfb-app setsid nohup make app-serve TARGET=aws`. Mentions of p4/p5/p6/p7/p8 below refer to those branches, now all in this tree.
 - **App:** `http://127.0.0.1:8000/` serves real AWS data. At handover its homepage and `/api/config` answered; verify health on resume. `/api/config` reported `target=aws`, `FETCH_MODE=LIVE`, next target 2026 regular week 9, 1392 of 1400 app-plan calls unspent, and 146 calls of October ledger room (after the 3-call console fan-out). The app is the p6 worktree, launched with `APP_LEDGER_PLAN=add-cfb-app setsid nohup make app-serve TARGET=aws` (log in Claude's session scratchpad). To restart, kill the `make`/`scripts.app serve` PIDs explicitly; `pkill -f` with that pattern kills the calling shell. Do not stop the AWS database.
 - **Fresh data:** AWS `REFRESH_WEEK` run 18 finished `DONE` on October 27 at 11:44 UTC, used four CFBD calls, and moved `CURRENT_POINT` to **2026 after regular week 8**. `/info` usage is **250/400 for October**; the shared ledger has one Phase 6 preview call plus `REFRESH_WEEK#18` costing four. Publication/what-if run 4 is current, odds return 138 teams, and 56 week-9 picks were frozen before the first listed kickoff at 23:00 UTC. The local database is still at week 7 in replay mode.
 - **Why the refresh was initially blocked:** the former 12-call Phase 6 ledger allocation had 11 left, below the four due slices' 16-call maximum with retries. Nico explicitly ordered that separate restriction removed. P6 `vs/live/ledger.yaml` now gives `add-cfb-app` and `app` caps of 1400 each (decision [46]); October 400, November 1000, the shared ledger, retry bound and `REFRESH_SPENDABLE` still apply. The main orchestration branch does not contain that YAML file; keep the p6 version when integrating.
-- **Owner's current Git/permission instruction:** unrestricted filesystem and Git access for this work, including sibling trees and subagents; do not ask for routine permission. **No Git commits for now and never push.** Nico will make a large final commit. Do not reset, clean or discard another worktree's staged or untracked work.
+- **Owner's current Git/permission instruction:** unrestricted filesystem and Git access for this work; do not ask for routine permission. **Local commits on `cfb-demo-integrated` are allowed (2026-10-30); never push.** Do not reset, clean or discard staged or untracked work.
 - **Console done (p6 4.3).** `routes/console.py` serves listing/explain/run as `CFB_CONSOLE_WEB`; AWS verified all four plans and runs (one paid fan-out, 3 calls). Evidence in p6 `docs/app-verification.md`.
 - **Phase 8 light replan done; Oct 31 items done (uncommitted).** `specs/_plans/add-cfb-demo-hardening/tasks.md` (L1–L7) overrides the heavy task list (decisions [43]–[45]). New worktree `../exasol-cfb-demo-p8` (branch `add-cfb-demo-hardening` from `main`, venv `~/.cache/p8venv`) has `scripts/release_check.py` (freeze rule, content digests of the working tree), `make demo-freeze`, `make release-check-fast`, the freeze check last in `make lint`, and CLI tests. The `CLAUDE.md` hard rules are in p8, p6 and the main tree. Snapshot `aws-2026-w08` (0 calls) is the base for recording week 9 on Nov 1.
 - **Next:** Nov 1 cadence (L2.1, plan `add-cfb-demo-hardening`, ≤ 8 calls): refresh week 9 on AWS, snapshot `aws-2026-w09`, record week-9 slices against `aws-2026-w08`, then `make demo-freeze FROM=2026-11-01 UNTIL=2026-11-21` on the integrated tree (load-plan.yaml must be the p4/p5 version AWS runs). Before that, integrate p4/p5 into p6 and p8's release check into it. Then meet the Oct 31 Phase 8 freeze deadline, harden refresh and preview recovery, adopt `loader/guard.py` in the CLI, finish app verification and source integration, and resume p7 chat with the scripted model. Detailed order is in §4 below.
@@ -30,7 +31,7 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 - **CFBD API calls:** at most **400 in October 2026** (250 used per `/info` after run 18 on October 27) and **1000 in November 2026**. The active cap configuration is in p6 `vs/live/ledger.yaml`; every live call is logged in the shared main-tree `cache/live-calls.jsonl`. Never bypass the monthly caps or the ledger. Nico lifted only the separate 12-call Phase 6 allocation; see [46] and §0.
 - **AWS instance (Exasol Personal deployment `default`, 2026.1.1, 3 nodes):** deploy and run only. **Never stop, start, resize or destroy it.**
 - **Never run `exakit` runtime commands or plain `exakit mcp-doctor`.** `deployments/default` is the AWS instance. Only `exakit mcp-doctor --json` is safe. The local DB is controlled with `exasol start -d local` / `exasol stop -d local`.
-- **Git:** Nico's latest instruction is **make no commits until he makes the final large commit**, and never push. Git reads and reversible operations are authorized; do not ask him to approve them. Preserve every worktree's staged, modified and untracked work. One branch per plan (git worktrees, below); integrate only when verified.
+- **Git:** commit locally on `cfb-demo-integrated` (Nico, 2026-10-30), never push. Git reads and reversible operations are authorized; do not ask him to approve them. Preserve every worktree's staged, modified and untracked work. One branch per plan (git worktrees, below); integrate only when verified.
 - **Secrets:** never read, print or log the CFBD key or any password. Tooling reads them from `~/.exasol/personal/deployments/<local|default>/secrets.json` via `vs/host/target.py`. Never extract `CONNECTION` secrets from the database (e.g. via a UDF).
 - **sys owns everything** in the demo deployment (owner decision). Roles are fine; the creator/owner is sys.
 - **Don't touch** schemas `CFB_DIAG`, `VECTOR_DEMO`, `VEC_SMOKE`, or anything outside `CFB_*`, `CFBD_VS`, `TEST_*`, `PERF_*`.
@@ -42,23 +43,17 @@ Nico is mostly away. He authorized an autonomous run under these limits:
 - **Phase 7 chat:** there is no Anthropic API key. Build and test with the scripted/stub model, but never call the real API.
 - **Secrets location (owner, 2026-10-23):** app/console/chat passwords and `ANTHROPIC_API_KEY` live in `~/.cfb-demo/app.env` (0600), never in the repo `.env` (the repo is on OneDrive, which syncs to the cloud).
 - **Logos:** team logos are cached locally in `~/.cfb-demo/logos/`, outside the repo and OneDrive. Never commit them and never hotlink ESPN at runtime.
-- **Commit trailer:** no commits now. If Nico later changes that instruction, Claude's prior commits used `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- **Commit trailer:** `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## 3. Layout
 
 | Path | Branch | Purpose |
 |---|---|---|
-| `~/Github/exasol-cfb-demo` (main tree) | `add-cfbd-vs-foundation` | Orchestrator branch: holds the plans for Phases 4, 5, 7(orig), 8 and this file. 10 commits ahead of `main` (plan commits only) |
-| `../exasol-cfb-demo-p2` | `add-cfb-persistence-refresh` | Phase 2. **Done and recorded** (df2a647 = `main`) |
-| `../exasol-cfb-demo-p3` | `add-cfb-analytical-model` | Phase 3, **done and recorded** (= `main`) |
-| `../exasol-cfb-demo-p5` | `add-cfb-analyses` (from main) | Phase 5 CFB_API views |
-| `../exasol-cfb-demo-p6` | `add-cfb-app` | Phase 6 live web app (week-8 refresh done; console and hardening next) |
-| `../exasol-cfb-demo-p4` | `add-cfb-score-engine` (from p3) | Phase 4 score engine |
-| `../exasol-cfb-demo-p7` | `add-cfb-chat` (from p6) | Phase 7 chat, groups A–B done, rest blocked |
+| `~/Github/exasol-cfb-demo` (the only tree) | `cfb-demo-integrated` | All phases merged (foundation, persistence, model, score engine, analyses, app, chat groups A–B, demo hardening). Phase branches are kept for history |
 
-`~/Github` = `/mnt/c/Users/nc/OneDrive - EXASOL AG/Github Projects`. The repo is on OneDrive (slow I/O). Python via `uv run` (in p7 a native venv at `~/.cache/p7venv` via `UV_PROJECT_ENVIRONMENT` is much faster). Frontend `node_modules` live at `~/.cache/cfb-app-frontend` (symlinked, outside OneDrive).
+`~/Github` = `/mnt/c/Users/nc/OneDrive - EXASOL AG/Github Projects`. The repo is on OneDrive (slow I/O). Python via `uv run` with `UV_PROJECT_ENVIRONMENT=$HOME/.cache/cfbvenv` (a native venv, much faster than one on OneDrive). Frontend `node_modules` live at `~/.cache/cfb-app-frontend` (symlinked, outside OneDrive).
 
-**New phase:** create a worktree from `main` (`git worktree add ../exasol-cfb-demo-pN -b <plan-name> main`), then copy the latest plan folder from the main tree (`git checkout add-cfbd-vs-foundation -- specs/_plans/<plan>`). Lesson learned: always sync the latest plan into a new worktree.
+**New work:** stay in this one tree (owner, 2026-10-30: no more sibling worktree folders).
 
 **Databases**
 - **local:** Exasol Personal nano 2026.2 at 127.0.0.1:8563. Has the full real data restored from the AWS snapshot (2026-10-23) in `CFB_CORE`, `FETCH_MODE='replay'` (no live calls). Integration tests use `TEST_*` namespaces plus a mock CFBD sidecar container started by the test harness.
@@ -122,6 +117,7 @@ Owner list U1–U11 is in `ORCHESTRATOR-STATUS.md` ("Owner actions"); some older
 
 ## 7. Log (newest first; one line per milestone)
 
+- 2026-10-30: **All phases merged into one tree.** Committed each worktree's uncommitted work on its branch, merged foundation → p4 → p5 → p6 → p8 → p7 into `cfb-demo-integrated` (p5's staged copy of Phase 4 matched p4 48f3713; p4's newer fit work and p6's newer what-if modules won; CLAUDE.md, Makefile, pyproject and tests/conftest.py combined; uv.lock regenerated). Integration fixes: `test_fit` mypy/line length, `CFB_API` view count 33, chat rehearsal RQ08/RQ12 against the real `UPSETS`/`RANKINGS` columns, `PreviewCard` restored to the live-spend spec (0-call replay not blocked by a refresh). Ruff, strict mypy (338 files), 8331 unit+CLI tests, frontend typecheck/lint/build and 694 frontend tests pass; release check OK. Worktrees p2–p8 removed after their probe files were copied to `cache/probe/`. AWS refused connections for ~4 min at 08:19 UTC (not touched); the app now runs from the main folder with the read cache (warm requests 4–10 ms).
 - 2026-10-27: **Phase 8 light replan and Oct 31 items without a commit.** `tasks.md` L1–L7 replaces the heavy 46-task list: kept captures, freeze, thin `make weekly`, merged rehearse/abort, checklist preflight, docs; cut `CFB_BENCH`/sync/scale card/dial button, bench harness, transcript replay, kit facts tooling, full release check (deferred to the Labs gate). [44] pins working-tree content digests (no commits); [45] snapshot now. `speq plan validate` passes. Worktree p8 created from `main`; `scripts/release_check.py --fast` (freeze), `make demo-freeze`, lint hook, 4 CLI tests; p8 `make lint` clean and `make test` 6930 passed. Hard rules added to p8, p6 and main-tree `CLAUDE.md`. `make snapshot TARGET=aws NAME=aws-2026-w08`: SNAPSHOT run 19, 156,004 rows, 0 CFBD calls.
 
 - 2026-10-27: **Phase 6 curated console live on AWS without a commit (task 4.3).** New `app/backend/routes/console.py` mounts `GET /api/console`, `POST /api/console/{id}/explain` and `/run`. EXPLAIN and the statement run as `CFB_CONSOLE_WEB`; the owner path only reads quota and writes the fetch log. `LiveExecutor` gained `run_statement(query=…)` (preview now delegates to it) with context `APP_CONSOLE#<action>`. AWS: fan-out plans 3 live slices, contradiction 0 requests, stored 157 stored slices, over-budget refused with the adapter's `BudgetError`; contradiction/stored runs 0 calls; over-budget and unconfirmed fan-out 409 before sending; one confirmed fan-out spent exactly 3 calls (84 rows, three parallel 200s), ledger 40→43 entries, plan 1392/1400, October room 146. A `REQ_AT`-as-text 500 found on AWS was fixed with a unit test. 602 app units, Ruff, strict mypy pass. Port-8000 restarted twice with the same env.
